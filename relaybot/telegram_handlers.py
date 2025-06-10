@@ -77,7 +77,7 @@ def setup_telegram_handlers(app, queues, mappings):
         reply_to = None
         repost_text = None
 
-        # Only set reply_to if this is actually a reply
+        # Reply extraction logic, but do not block forwarding if not a reply
         if hasattr(msg, "reply_to_message") and msg.reply_to_message:
             replied_user = msg.reply_to_message.from_user
             # If replying to a bot message, extract the text between first ']' and last ':' in first paragraph
@@ -94,6 +94,7 @@ def setup_telegram_handlers(app, queues, mappings):
         if is_repost(msg):
             repost_text = get_repost_text(msg)
 
+        # Always forward the message, reply or not
         body = format_message(
             "Telegram",
             group_title,
