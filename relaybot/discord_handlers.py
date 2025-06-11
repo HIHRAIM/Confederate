@@ -33,7 +33,7 @@ async def get_reply_to_name(message, bot_user):
             if replied.author.id == bot_user.id and replied.content:
                 extracted = extract_reply_text_from_bot_message(replied.content)
                 if extracted:
-                    return f'"{extracted}"'
+                    return extracted
             return get_discord_display_name(replied.author)
     return None
 

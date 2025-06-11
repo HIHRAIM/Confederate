@@ -39,7 +39,6 @@ def extract_reply_text_from_bot_message(message_text):
         idx1 = first_paragraph.index(']')
         idx2 = first_paragraph.rindex(':')
         if idx2 > idx1:
-            # Trim and return only the text between the first ']' and last ':'
             return first_paragraph[idx1+1:idx2].strip()
     except ValueError:
         return None
@@ -62,10 +61,12 @@ def setup_telegram_handlers(app, queues, mappings):
         sender = get_plain_telegram_name(update.effective_user)
         text = msg.text or ""
         attachments = []
+
+        # Only append the largest photo (last in msg.photo) if present
         if msg.photo:
-            for p in msg.photo:
-                file = await context.bot.get_file(p.file_id)
-                attachments.append(file.file_path)
+            largest_photo = msg.photo[-1]
+            file = await context.bot.get_file(largest_photo.file_id)
+            attachments.append(file.file_path)
         if msg.document:
             file = await context.bot.get_file(msg.document.file_id)
             attachments.append(file.file_path)
@@ -74,27 +75,29 @@ def setup_telegram_handlers(app, queues, mappings):
             attachments.append(file.file_path)
         group_title = get_telegram_group_title(msg)
 
+        # Only show reply label if replying to a different user (not self)
         reply_to = None
-        repost_text = None
-
-        # Reply extraction logic, but do not block forwarding if not a reply
-        if hasattr(msg, "reply_to_message") and msg.reply_to_message:
-            replied_user = msg.reply_to_message.from_user
-            # If replying to a bot message, extract the text between first ']' and last ':' in first paragraph
-            if replied_user and getattr(replied_user, "is_bot", False) and msg.reply_to_message.text:
-                extracted = extract_reply_text_from_bot_message(msg.reply_to_message.text)
-                if extracted:
-                    reply_to = f'"{extracted}"'
+        if getattr(msg, "reply_to_message", None):
+            replied_msg = msg.reply_to_message
+            replied_user = getattr(replied_msg, "from_user", None)
+            if (
+                replied_user and
+                replied_user.id != msg.from_user.id
+            ):
+                if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
+                    extracted = extract_reply_text_from_bot_message(replied_msg.text)
+                    if extracted:
+                        reply_to = extracted
+                    else:
+                        reply_to = get_plain_telegram_name(replied_user)
                 else:
                     reply_to = get_plain_telegram_name(replied_user)
-            else:
-                reply_to = get_plain_telegram_name(replied_user)
+        # If replying to self (or not a reply), reply_to remains None
 
-        # Only set repost_text if this is actually a repost/forward
+        repost_text = None
         if is_repost(msg):
             repost_text = get_repost_text(msg)
 
-        # Always forward the message, reply or not
         body = format_message(
             "Telegram",
             group_title,
@@ -122,9 +125,9 @@ def setup_telegram_handlers(app, queues, mappings):
         text = msg.text or ""
         attachments = []
         if msg.photo:
-            for p in msg.photo:
-                file = await context.bot.get_file(p.file_id)
-                attachments.append(file.file_path)
+            largest_photo = msg.photo[-1]
+            file = await context.bot.get_file(largest_photo.file_id)
+            attachments.append(file.file_path)
         if msg.document:
             file = await context.bot.get_file(msg.document.file_id)
             attachments.append(file.file_path)
@@ -134,19 +137,23 @@ def setup_telegram_handlers(app, queues, mappings):
         group_title = get_telegram_group_title(msg)
 
         reply_to = None
-        repost_text = None
-
-        if hasattr(msg, "reply_to_message") and msg.reply_to_message:
-            replied_user = msg.reply_to_message.from_user
-            if replied_user and getattr(replied_user, "is_bot", False) and msg.reply_to_message.text:
-                extracted = extract_reply_text_from_bot_message(msg.reply_to_message.text)
-                if extracted:
-                    reply_to = f'"{extracted}"'
+        if getattr(msg, "reply_to_message", None):
+            replied_msg = msg.reply_to_message
+            replied_user = getattr(replied_msg, "from_user", None)
+            if (
+                replied_user and
+                replied_user.id != msg.from_user.id
+            ):
+                if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
+                    extracted = extract_reply_text_from_bot_message(replied_msg.text)
+                    if extracted:
+                        reply_to = extracted
+                    else:
+                        reply_to = get_plain_telegram_name(replied_user)
                 else:
                     reply_to = get_plain_telegram_name(replied_user)
-            else:
-                reply_to = get_plain_telegram_name(replied_user)
 
+        repost_text = None
         if is_repost(msg):
             repost_text = get_repost_text(msg)
 
