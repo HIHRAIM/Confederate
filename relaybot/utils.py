@@ -13,6 +13,7 @@ def format_message(platform, group_name, username, text, reply_to=None, repost=N
     lines = [f"[{platform} | {group_name}] {username}:"]
     if repost:
         lines.append(repost)
+        print(repost)
     if reply_to:
         lines.append(f"(отвечая {reply_to})")
     lines.append(text)

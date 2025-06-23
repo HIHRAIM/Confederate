@@ -1,5 +1,5 @@
 import discord
-from relaybot.config import DISCORD_CHANNEL_IDS
+from relaybot.config import DISCORD_CHANNEL_IDS, EXTRA_BRIDGES
 from relaybot.utils import format_message
 
 def get_discord_server_name(message):
@@ -53,28 +53,40 @@ def setup_discord_handlers(bot, queues, mappings):
             if message.channel.id in DISCORD_CHANNEL_IDS
             else (message.thread.id if getattr(message, "thread", None) and message.thread.id in DISCORD_CHANNEL_IDS else None)
         )
-        if not channel_id:
-            return
+        if channel_id:
+            username = get_discord_display_name(message.author)
+            text = message.content or ""
+            attachments = [a.url for a in message.attachments] if message.attachments else []
+            server_name = get_discord_server_name(message)
+            reply_to = await get_reply_to_name(message, bot.user)
+            body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
+            await queues.discord_to_telegram.put(((channel_id, message.id), body))
 
-        username = get_discord_display_name(message.author)
-        text = message.content or ""
-        attachments = [a.url for a in message.attachments] if message.attachments else []
-        server_name = get_discord_server_name(message)
-        reply_to = await get_reply_to_name(message, bot.user)
-        body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
-        await queues.discord_to_telegram.put(((channel_id, message.id), body))
+            # Crosspost to other Discord channels
+            for dst_chan_id in DISCORD_CHANNEL_IDS:
+                if dst_chan_id == channel_id:
+                    continue
+                dst_channel = bot.get_channel(dst_chan_id)
+                if dst_channel:
+                    try:
+                        sent = await dst_channel.send(body)
+                        mappings['discord_crosspost'].setdefault((channel_id, message.id), {})[dst_chan_id] = sent.id
+                    except Exception as e:
+                        print(f"[Discord] Crosspost error: {e}")
 
-        # Crosspost to other Discord channels
-        for dst_chan_id in DISCORD_CHANNEL_IDS:
-            if dst_chan_id == channel_id:
-                continue
-            dst_channel = bot.get_channel(dst_chan_id)
-            if dst_channel:
-                try:
-                    sent = await dst_channel.send(body)
-                    mappings['discord_crosspost'].setdefault((channel_id, message.id), {})[dst_chan_id] = sent.id
-                except Exception as e:
-                    print(f"[Discord] Crosspost error: {e}")
+        # --- Additive: Extra bridge handling for Discord -> Telegram ---
+        for idx, bridge in enumerate(EXTRA_BRIDGES):
+            if message.channel.id == bridge["discord_channel_id"]:
+                username = get_discord_display_name(message.author)
+                text = message.content or ""
+                attachments = [a.url for a in message.attachments] if message.attachments else []
+                server_name = get_discord_server_name(message)
+                reply_to = await get_reply_to_name(message, bot.user)
+                body = format_message(
+                    "Discord", server_name, username, text, reply_to=reply_to, attachments=attachments
+                )
+                # Instead of sending directly, put it in the bridge queue for mapping (for edits/deletes)
+                await queues.bridge_discord_to_telegram.put((idx, message, body))
 
     @bot.event
     async def on_message_edit(before, after):
@@ -85,35 +97,50 @@ def setup_discord_handlers(bot, queues, mappings):
             if after.channel.id in DISCORD_CHANNEL_IDS
             else (after.thread.id if getattr(after, "thread", None) and after.thread.id in DISCORD_CHANNEL_IDS else None)
         )
-        if not channel_id:
-            return
-        username = get_discord_display_name(after.author)
-        text = after.content or ""
-        attachments = [a.url for a in after.attachments] if after.attachments else []
-        server_name = get_discord_server_name(after)
-        reply_to = await get_reply_to_name(after, bot.user)
-        body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
-        for key, tg_msg_id in list(mappings["discord_to_telegram"].items()):
-            tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
-            if d_chan_id == channel_id and d_msg_id == after.id:
-                try:
-                    await mappings["telegram_app"].bot.edit_message_text(
-                        chat_id=tg_chat_id,
-                        message_id=tg_msg_id,
-                        text=body,
-                        parse_mode="HTML",
-                    )
-                except Exception as e:
-                    print(f"[Discord->TG Edit] {e}")
-        crossposts = mappings["discord_crosspost"].get((channel_id, after.id), {})
-        for dst_chan_id, dst_msg_id in crossposts.items():
-            dst_channel = bot.get_channel(dst_chan_id)
-            if dst_channel:
-                try:
-                    dst_msg = await dst_channel.fetch_message(dst_msg_id)
-                    await dst_msg.edit(content=body)
-                except Exception as e:
-                    print(f"[Discord Crosspost Edit] {e}")
+        if channel_id:
+            username = get_discord_display_name(after.author)
+            text = after.content or ""
+            attachments = [a.url for a in after.attachments] if after.attachments else []
+            server_name = get_discord_server_name(after)
+            reply_to = await get_reply_to_name(after, bot.user)
+            body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
+            for key, tg_msg_id in list(mappings["discord_to_telegram"].items()):
+                tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
+                if d_chan_id == channel_id and d_msg_id == after.id:
+                    try:
+                        await mappings["telegram_app"].bot.edit_message_text(
+                            chat_id=tg_chat_id,
+                            message_id=tg_msg_id,
+                            text=body,
+                            parse_mode="HTML",
+                        )
+                    except Exception as e:
+                        print(f"[Discord->TG Edit] {e}")
+            crossposts = mappings["discord_crosspost"].get((channel_id, after.id), {})
+            for dst_chan_id, dst_msg_id in crossposts.items():
+                dst_channel = bot.get_channel(dst_chan_id)
+                if dst_channel:
+                    try:
+                        dst_msg = await dst_channel.fetch_message(dst_msg_id)
+                        await dst_msg.edit(content=body)
+                    except Exception as e:
+                        print(f"[Discord Crosspost Edit] {e}")
+
+        # --- Additive: Extra bridge edit handling ---
+        for idx, bridge in enumerate(EXTRA_BRIDGES):
+            if after.channel.id == bridge["discord_channel_id"]:
+                username = get_discord_display_name(after.author)
+                text = after.content or ""
+                attachments = [a.url for a in after.attachments] if after.attachments else []
+                server_name = get_discord_server_name(after)
+                reply_to = await get_reply_to_name(after, bot.user)
+                body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
+                await queues.bridge_discord_edit_delete.put({
+                    "action": "edit",
+                    "bridge_idx": idx,
+                    "discord_msg": after,
+                    "body": body
+                })
 
     @bot.event
     async def on_message_delete(message):
@@ -122,25 +149,33 @@ def setup_discord_handlers(bot, queues, mappings):
             if message.channel.id in DISCORD_CHANNEL_IDS
             else (message.thread.id if getattr(message, "thread", None) and message.thread.id in DISCORD_CHANNEL_IDS else None)
         )
-        if not channel_id:
-            return
-        for key in list(mappings["discord_to_telegram"].keys()):
-            tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
-            if d_chan_id == channel_id and d_msg_id == message.id:
-                telegram_msg_id = mappings["discord_to_telegram"].pop(key)
-                try:
-                    await mappings["telegram_app"].bot.delete_message(
-                        chat_id=tg_chat_id,
-                        message_id=telegram_msg_id
-                    )
-                except Exception as e:
-                    print(f"[Discord->TG Delete] {e}")
-        crossposts = mappings["discord_crosspost"].pop((channel_id, message.id), {})
-        for dst_chan_id, dst_msg_id in crossposts.items():
-            dst_channel = bot.get_channel(dst_chan_id)
-            if dst_channel:
-                try:
-                    dst_msg = await dst_channel.fetch_message(dst_msg_id)
-                    await dst_msg.delete()
-                except Exception as e:
-                    print(f"[Discord Crosspost Delete] {e}")
+        if channel_id:
+            for key in list(mappings["discord_to_telegram"].keys()):
+                tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
+                if d_chan_id == channel_id and d_msg_id == message.id:
+                    telegram_msg_id = mappings["discord_to_telegram"].pop(key)
+                    try:
+                        await mappings["telegram_app"].bot.delete_message(
+                            chat_id=tg_chat_id,
+                            message_id=telegram_msg_id
+                        )
+                    except Exception as e:
+                        print(f"[Discord->TG Delete] {e}")
+            crossposts = mappings["discord_crosspost"].pop((channel_id, message.id), {})
+            for dst_chan_id, dst_msg_id in crossposts.items():
+                dst_channel = bot.get_channel(dst_chan_id)
+                if dst_channel:
+                    try:
+                        dst_msg = await dst_channel.fetch_message(dst_msg_id)
+                        await dst_msg.delete()
+                    except Exception as e:
+                        print(f"[Discord Crosspost Delete] {e}")
+
+        # --- Additive: Extra bridge delete handling ---
+        for idx, bridge in enumerate(EXTRA_BRIDGES):
+            if message.channel.id == bridge["discord_channel_id"]:
+                await queues.bridge_discord_edit_delete.put({
+                    "action": "delete",
+                    "bridge_idx": idx,
+                    "discord_msg": message,
+                })
