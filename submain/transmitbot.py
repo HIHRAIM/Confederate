@@ -8,7 +8,7 @@ import json
 import os
 import shutil
 
-# ---------- НАСТРОЙКИ ----------
+# == Настройки ==
 TOKEN = 'MTM5MzU5ODk1ODkwNjkwNDU3Ng.GmeVoI.KPOLxYfEL7AalXSpZuRSEXUrfRVWmkw7RyXTlg'
 VOTE_THREAD_ID = 1236406030250934303
 ACCEPTED_THREAD_ID = 1393607029158842578
@@ -19,7 +19,7 @@ ORGANIZERS = [
 
 EMBED_COLOR = 0x3a66a3
 
-# ---------- ЛОКАЛИЗАЦИЯ ----------
+# == Локализация ==
 LOCALES = {
     'ru': {
         'start_embed': 'Заготовка',
@@ -84,12 +84,15 @@ LOCALES = {
 }
 SUPPORTED_LANGS = ['ru', 'uk', 'pl', 'en']
 
-# ---------- ПАМЯТЬ О СООБЩЕНИЯХ ----------
+# == Память и файлы ==
 VOTES_FILE = "votes_db.json"
 BACKUP_FILE = "votes_db_backup.json"
 BANNED_FILE = "banned_users.json"
 votes_db = {}
 banned_users = set()
+USER_MESSAGE_COUNT_FILE = "user_message_count.json"
+user_message_count = {}
+user_lang = {}
 
 def load_votes_db():
     global votes_db
@@ -137,10 +140,7 @@ async def periodic_save_votes(interval=300):
         save_banned_users()
         await asyncio.sleep(interval)
 
-# ---------- ХРАНЕНИЕ ВЫБОРА ЯЗЫКА ПОЛЬЗОВАТЕЛЯ ----------
-user_lang = {}
-
-# ---------- УТИЛИТЫ ----------
+# == Утилиты ==
 def gen_key():
     return str(random.randint(10**9, 10**10-1))
 
@@ -157,14 +157,28 @@ def get_user_lang(user_id):
     return user_lang.get(user_id, 'ru')
 
 def is_banned(user_id):
-    return user_id in banned_users
+    return str(user_id) in banned_users
 
-# ---------- БОТ И КОМАНДЫ ----------
+# == Инициализация бота ==
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
+
+async def update_presence():
+    while True:
+        guild_count = len(bot.guilds)
+        member_ids = set()
+        for guild in bot.guilds:
+            try:
+                member_ids.update(member.id for member in guild.members)
+            except Exception:
+                pass
+        member_count = len(member_ids)
+        status_text = f"Servers: {guild_count} | Users: {member_count}"
+        await bot.change_presence(activity=discord.Game(name=status_text))
+        await asyncio.sleep(300)
 
 @bot.event
 async def on_ready():
@@ -175,8 +189,9 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
     bot.loop.create_task(periodic_save_votes())
+    bot.loop.create_task(update_presence())
 
-# ---------- КОМАНДЫ В ЛС ----------
+# === Команды бота ===
 @tree.command(name="start", description="Start the bot and select the language")
 @app_commands.describe(lang="Select your language (ru, uk, pl, en)")
 async def start(interaction: Interaction, lang: str):
@@ -204,7 +219,7 @@ async def vote_articles(interaction: Interaction, text: str):
     if is_banned(interaction.user.id):
         lang = get_user_lang(interaction.user.id)
         loc = get_locale(lang)
-        await interaction.response.send_message(loc['banned'], ephemeral=True)
+        await interaction.response.send_message(loc['banned'])
         return
     await process_vote_command_slash(interaction, "articles", text)
 
@@ -230,14 +245,14 @@ async def support(interaction: Interaction, text: str):
 
 async def process_vote_command_slash(interaction: Interaction, vote_type, text):
     if is_banned(interaction.user.id):
-        lang = get_user_lang(interaction.user.id)
-        loc = get_locale(lang)
-        await interaction.response.send_message(loc['banned'], ephemeral=True)
         return
     if not is_dm(interaction):
-        await interaction.response.send_message("Эта команда работает только в ЛС.", ephemeral=True)
         return
     lang = user_lang.get(interaction.user.id, 'ru')
+    user_id_str = str(interaction.user.id)
+    count = user_message_count.get(user_id_str, 0) + 1
+    user_message_count[user_id_str] = count
+    save_user_message_count()
     key = gen_key()
     votes_db[key] = {
         'user_id': interaction.user.id,
@@ -245,16 +260,16 @@ async def process_vote_command_slash(interaction: Interaction, vote_type, text):
         'user_avatar': str(interaction.user.display_avatar.url) if interaction.user.display_avatar else None,
         'text': text,
         'lang': lang,
-        'datetime': now_fmt()
+        'user_message_number': count
     }
     save_votes_db()
     emb = Embed(
-        title=f"Голосование: {vote_type.capitalize()}",
+        title=f"Category: {vote_type.capitalize()}",
         description=text,
         color=EMBED_COLOR
     )
     emb.set_footer(
-        text=f"{interaction.user} | ID: {interaction.user.id} | {votes_db[key]['datetime']} | Ключ: {key}",
+        text=f"{interaction.user} | ID: {interaction.user.id} | Сообщение №{count} | Ключ: {key}",
         icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else discord.Embed.Empty
     )
     thread = bot.get_channel(VOTE_THREAD_ID)
@@ -267,7 +282,7 @@ async def process_vote_command_slash(interaction: Interaction, vote_type, text):
         loc.get('vote_sent', f"Ваш голос отправлен. Ключ: {key}").format(key=key)
     )
 
-# ---------- ОРГАНИЗАТОРСКИЕ КОМАНДЫ ----------
+# ==== Команды организаторов ====
 def is_organizer(user):
     return user.id in ORGANIZERS
 
@@ -276,42 +291,44 @@ async def find_vote_by_key(key):
 
 @tree.command(name="ban", description="Organizer: ban a user by ID")
 @app_commands.describe(user_id="ID пользователя для бана")
-async def ban(interaction: Interaction, user_id: int):
+async def ban(interaction: Interaction, user_id: str):
     if not is_organizer(interaction.user):
-        await interaction.response.send_message(LOCALES['ru']['not_organizer'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['not_organizer'])
         return
-    if user_id in banned_users:
+    user_id_str = str(user_id).strip()
+    if user_id_str in banned_users:
         loc = get_locale(get_user_lang(interaction.user.id))
-        await interaction.response.send_message(loc['already_banned'], ephemeral=True)
+        await interaction.response.send_message(loc['already_banned'])
         return
-    banned_users.add(user_id)
+    banned_users.add(user_id_str)
     save_banned_users()
     loc = get_locale(get_user_lang(interaction.user.id))
-    await interaction.response.send_message(loc['ban_success'], ephemeral=True)
+    await interaction.response.send_message(loc['ban_success'])
 
 @tree.command(name="unban", description="Organizer: unban a user by ID")
 @app_commands.describe(user_id="ID пользователя для разбана")
-async def unban(interaction: Interaction, user_id: int):
+async def unban(interaction: Interaction, user_id: str):
     if not is_organizer(interaction.user):
-        await interaction.response.send_message(LOCALES['ru']['not_organizer'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['not_organizer'])
         return
-    if user_id not in banned_users:
+    user_id_str = str(user_id).strip()
+    if user_id_str not in banned_users:
         loc = get_locale(get_user_lang(interaction.user.id))
-        await interaction.response.send_message(loc['not_banned'], ephemeral=True)
+        await interaction.response.send_message(loc['not_banned'])
         return
-    banned_users.remove(user_id)
+    banned_users.remove(user_id_str)
     save_banned_users()
     loc = get_locale(get_user_lang(interaction.user.id))
-    await interaction.response.send_message(loc['unban_success'], ephemeral=True)
+    await interaction.response.send_message(loc['unban_success'])
 
 @tree.command(name="accepted", description="Organizer: approve a vote by key")
 @app_commands.describe(key="10-значный ключ сообщения")
 async def accepted(interaction: Interaction, key: str):
     if not is_organizer(interaction.user):
-        await interaction.response.send_message(LOCALES['ru']['not_organizer'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['not_organizer'])
         return
     if not key or key not in votes_db:
-        await interaction.response.send_message(LOCALES['ru']['msg_not_found'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['msg_not_found'])
         return
     vote = votes_db[key]
     emb = Embed(
@@ -340,17 +357,17 @@ async def accepted(interaction: Interaction, key: str):
     del votes_db[key]
     save_votes_db()
     await interaction.response.send_message(
-        f"The vote from user **{vote['username']}** with key `{key}` has been ACCEPTED, and a notification has been sent to the participant.", ephemeral=True
+        f"The vote from user **{vote['username']}** with key `{key}` has been ACCEPTED, and a notification has been sent to the participant."
     )
 
 @tree.command(name="denied", description="Organizer: deny a vote by key")
 @app_commands.describe(key="10-значный ключ сообщения", reason="Причина отказа")
 async def denied(interaction: Interaction, key: str, reason: str):
     if not is_organizer(interaction.user):
-        await interaction.response.send_message(LOCALES['ru']['not_organizer'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['not_organizer'])
         return
     if not key or key not in votes_db:
-        await interaction.response.send_message(LOCALES['ru']['msg_not_found'], ephemeral=True)
+        await interaction.response.send_message(LOCALES['ru']['msg_not_found'])
         return
     vote = votes_db[key]
     user = await bot.fetch_user(vote['user_id'])
@@ -369,10 +386,11 @@ async def denied(interaction: Interaction, key: str, reason: str):
     save_votes_db()
     if not dm_sent:
         await interaction.response.send_message(
-            f":warning: Failed to send a direct message to the user, but the vote with key `{key}` has been REJECTED.", ephemeral=True)
+            f":warning: Failed to send a direct message to the user, but the vote with key `{key}` has been REJECTED."
+        )
     else:
         await interaction.response.send_message(
-            f"The vote from user **{vote['username']}** with key `{key}` has been REJECTED. Reason: {reason}. A notification has been sent to the participant.", ephemeral=True
+            f"The vote from user **{vote['username']}** with key `{key}` has been REJECTED. Reason: {reason}. A notification has been sent to the participant."
         )
 
 @tree.command(name="reply", description="Organizer: reply to a user by key")
@@ -401,8 +419,27 @@ async def reply(interaction: Interaction, key: str, text: str):
         f"The response to the request from user **{vote['username']}** with key `{key}` has been SENT.", ephemeral=True
     )
 
-# ---------- ЗАПУСК ----------
+def load_user_message_count():
+    global user_message_count
+    if os.path.exists(USER_MESSAGE_COUNT_FILE):
+        try:
+            with open(USER_MESSAGE_COUNT_FILE, "r", encoding="utf-8") as f:
+                user_message_count = json.load(f)
+        except Exception:
+            user_message_count = {}
+    else:
+        user_message_count = {}
+
+def save_user_message_count():
+    try:
+        with open(USER_MESSAGE_COUNT_FILE, "w", encoding="utf-8") as f:
+            json.dump(user_message_count, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+# == Запуск бота ==
 if __name__ == '__main__':
     load_votes_db()
     load_banned_users()
+    load_user_message_count()
     bot.run(TOKEN)
