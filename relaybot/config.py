@@ -90,9 +90,19 @@ EXTRA_BRIDGES = [
         "telegram_topic_id": 35,
     },
     {
+        "discord_channel_id": 1386652252378497124, #творчество (Pokémon Wiki)
+        "telegram_chat_id": -1002775568603,
+        "telegram_topic_id": 26,
+    },
+    {
         "discord_channel_id": 1384476237057097738, #legends-za/Pokémon Legends: Z-A (Pokémon Wiki)
         "telegram_chat_id": -1002775568603,
         "telegram_topic_id": 10,
+    },
+    {
+        "discord_channel_id": 1368956802057633923, #вики (Pokémon Wiki)
+        "telegram_chat_id": -1002775568603,
+        "telegram_topic_id": 12,
     },
     {
         "discord_channel_id": 1384496786491707492, #вопрос-ответ (Pokémon Wiki)
@@ -118,10 +128,5 @@ EXTRA_BRIDGES = [
         "discord_channel_id": 1375774067134566482, #minecraft (Pokémon Wiki)
         "telegram_chat_id": -1002775568603,
         "telegram_topic_id": 23,
-    },
-    {
-        "discord_channel_id": 1368956802057633923, #вики (Pokémon Wiki)
-        "telegram_chat_id": -1002775568603,
-        "telegram_topic_id": 12,
     },
 ]
