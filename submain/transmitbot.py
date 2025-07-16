@@ -10,26 +10,54 @@ import shutil
 
 # == Настройки ==
 TOKEN = 'MTM5MzU5ODk1ODkwNjkwNDU3Ng.GmeVoI.KPOLxYfEL7AalXSpZuRSEXUrfRVWmkw7RyXTlg'
-VOTE_THREAD_ID = 1236406030250934303
-ACCEPTED_THREAD_ID = 1393607029158842578
+
 ORGANIZERS = [
-    428596508271575040,
-    986333707575119872
+    428596508271575040, # hihraim
+    986333707575119872, # fersteaxpasique4
+    199998796741083137, # taxcymus
+    902982388886429697, # no.more.exe
+    439829989274157057, # kyomist
+    606330360606883860  # Alemaster01
 ]
+
+DESIGN_CHANNELS = {
+    'ru': 1394301596984279140,
+    'uk': 1394301596984279140,
+    'pl': 1394301596984279140,
+    'es': 1394445357206863993,
+}
+
+DESIGN_ACCEPTED_CHANNEL = {
+    'ru': 1394288397706592356,
+    'uk': 1394288397706592356,
+    'pl': 1394288397706592356,
+    'es': 1394603841852280893
+}
+
+ARTICLE_CHANNELS = {
+    'ru': 1394301596984279140,
+    'es': 1394445478531436695,
+}
+
+ARTICLE_ACCEPTED_CHANNEL = {
+    'ru': 1394288355231006720,
+    'es': 1394603889050779688
+}
 
 EMBED_COLOR = 0x3a66a3
 
 # == Локализация ==
 LOCALES = {
     'ru': {
-        'start_embed': 'Заготовка',
+        'start_embed': 'Вы выбрали русский язык. Пожалуйста, проголосуйте, используя команду `/vote_articles` или `/vote_designs` и следуя инструкции в блоге.',
         'vote_sent': 'Ваш голос отправлен. Ключ: {key}',
+        'vote_accepted_title': 'Ваш голос принят!',
+        'vote_rejected_title': 'Ваш голос отклонён!',
         'vote_accepted': 'Ваш голос одобрен одним из организаторов!',
         'vote_denied': 'Один из организаторов отклонил ваш голос. Причина: {reason}',
         'not_supported': ':x: Выбранный вами язык не поддерживается.',
         'not_organizer': ':x: Только организаторы могут использовать эту команду.',
         'msg_not_found': ':x: Сообщение с таким ключом не найдено.',
-        'reply_prefix': '',
         'banned': ':x: Вы были заблокированы и не можете пользоваться ботом.',
         'ban_success': ':white_check_mark: Пользователь заблокирован.',
         'unban_success': ':white_check_mark: Пользователь разблокирован.',
@@ -39,12 +67,14 @@ LOCALES = {
     'uk': {
         'start_embed': 'Ви вибрали українську мову. Будь ласка, надішліть свій голос.',
         'vote_sent': 'Ваш голос надіслано. Ключ: {key}',
+        'no_article_competition': 'У цьому конкурсі не беруть участь проєкти обраною мовою.',
+        'vote_accepted_title': 'Ваш голос прийнято!',
+        'vote_rejected_title': 'Ваш голос відхилено!',
         'vote_accepted': 'Ваш голос схвалено одним з організаторів!',
         'vote_denied': 'Один з організаторів відхилив ваш голос. Причина: {reason}',
         'not_supported': ':x: Обрана вами мова не підтримується.',
         'not_organizer': ':x: Тільки організатори можуть використовувати цю команду.',
         'msg_not_found': ':x: Повідомлення з таким ключем не знайдено.',
-        'reply_prefix': '',
         'banned': ':x: Ви були заблоковані і не можете користуватися ботом.',
         'ban_success': ':white_check_mark: Користувача заблоковано.',
         'unban_success': ':white_check_mark: Користувача розблоковано.',
@@ -52,47 +82,54 @@ LOCALES = {
         'not_banned': ':x: Користувач не був заблокований.',
     },
     'pl': {
-        'start_embed': 'Wybrałeś język polski. Proszę, wyślij swoją opinię.',
-        'vote_sent': 'Twoja opinia została wysłana. Klucz: {key}',
-        'vote_accepted': 'Twoja opinia została zaakceptowana przez jednego z organizatorów!',
-        'vote_denied': 'Jeden z organizatorów odrzucił twoją opinię. Powód: {reason}',
+        'start_embed': 'Wybrano język polski. Proszę oddać swoje głosy.',
+        'vote_sent': 'Twój głos został oddany. Klucz: {key}',
+        'no_article_competition': 'W tym konkursie nie biorą udziału projekty w wybranym języku.',
+        'vote_accepted_title': '',
+        'vote_rejected_title': '',
+        'vote_accepted': 'Twój głos został odebrany i zaakceptowany przez jednego z organizatorów!',
+        'vote_denied': 'Jeden z organizatorów odrzucił twój głos. Powód: {reason}',
         'not_supported': ':x: Wybrany przez Ciebie język nie jest obsługiwany.',
         'not_organizer': ':x: Tylko organizatorzy mogą używać tej komendy.',
         'msg_not_found': ':x: Nie znaleziono wiadomości o podanym kluczu.',
-        'reply_prefix': '',
-        'banned': ':x: Zostałeś zablokowany i nie możesz korzystać z bota.',
-        'ban_success': ':white_check_mark: Użytkownik zablokowany.',
-        'unban_success': ':white_check_mark: Użytkownik odblokowany.',
+        'banned': ':x: Zostałeś/aś zablokowany/a i nie możesz korzystać z bota.',
+        'ban_success': ':white_check_mark: Zablokowano użytkownika.',
+        'unban_success': ':white_check_mark: Odblokowano użytkownika.',
         'already_banned': ':x: Użytkownik jest już zablokowany.',
         'not_banned': ':x: Użytkownik nie był zablokowany.',
     },
-    'en': {
-        'start_embed': 'You have selected English. Please send your vote.',
-        'vote_sent': 'Your vote has been sent. Key: {key}',
-        'vote_accepted': 'Your vote has been accepted by one of the organizers!',
-        'vote_denied': 'One of the organizers has denied your vote. Reason: {reason}',
-        'not_supported': ':x: The language you selected is not supported.',
-        'not_organizer': ':x: Only organizers can use this command.',
-        'msg_not_found': ':x: Message with the specified key not found.',
-        'reply_prefix': '',
-        'banned': ':x: You have been banned and cannot use the bot.',
-        'ban_success': ':white_check_mark: User has been banned.',
-        'unban_success': ':white_check_mark: User has been unbanned.',
-        'already_banned': ':x: User is already banned.',
-        'not_banned': ':x: User was not banned.',
+    'es': {
+        'start_embed': 'Has seleccionado español. Vota usando el comando /vote_articles o /vote_designs y siguiendo las instrucciones ~~del blog~~.',
+        'vote_sent': 'Tu voto ha sido enviado. Key: {key}',
+        'vote_accepted_title': '¡Tu voto fue aceptado!',
+        'vote_rejected_title': 'Una disculpa, tu voto fue rechazado.',
+        'vote_accepted': '¡Tu voto fue aprobado por uno de nuestros organizadores!',
+        'vote_denied': 'Uno de nuestros organizados rechazó tu voto.  Motivo: {reason}',
+        'not_supported': ':x: El idioma seleccionado no está disponible.',
+        'not_organizer': ':x: Solo los organizadores pueden usar este comando.',
+        'msg_not_found': ':x: No se encontró ningún mensaje con la clave dada.',
+        'banned': ':x: Has sido bloqueado y no puedes usar el bot.',
+        'ban_success': ':white_check_mark: El usuario fue bloqueado.',
+        'unban_success': ':white_check_mark: El usuario fue desbloqueado.',
+        'already_banned': ':x: El usuario ya está actualmente bloqueado.',
+        'not_banned': ':x: El usuario no ha sido bloqueado previamente.',
     }
 }
-SUPPORTED_LANGS = ['ru', 'uk', 'pl', 'en']
+
+SUPPORTED_LANGS = ['ru', 'uk', 'pl', 'es']
 
 # == Память и файлы ==
+votes_db = {}
 VOTES_FILE = "votes_db.json"
 BACKUP_FILE = "votes_db_backup.json"
-BANNED_FILE = "banned_users.json"
-votes_db = {}
 banned_users = set()
-USER_MESSAGE_COUNT_FILE = "user_message_count.json"
+BANNED_FILE = "banned_users.json"
 user_message_count = {}
+USER_MESSAGE_COUNT_FILE = "user_message_count.json"
 user_lang = {}
+USER_LANG_FILE = "user_lang.json"
+user_fandom_nick = {}
+USER_FANDOM_NICK_FILE = "user_fandom_nick.json"
 
 def load_votes_db():
     global votes_db
@@ -139,6 +176,42 @@ async def periodic_save_votes(interval=300):
         save_votes_db()
         save_banned_users()
         await asyncio.sleep(interval)
+
+def save_user_lang():
+    try:
+        with open(USER_LANG_FILE, "w", encoding="utf-8") as f:
+            json.dump(user_lang, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def load_user_lang():
+    global user_lang
+    if os.path.exists(USER_LANG_FILE):
+        try:
+            with open(USER_LANG_FILE, "r", encoding="utf-8") as f:
+                user_lang = json.load(f)
+        except Exception:
+            user_lang = {}
+    else:
+        user_lang = {}
+
+def save_user_fandom_nick():
+    try:
+        with open(USER_FANDOM_NICK_FILE, "w", encoding="utf-8") as f:
+            json.dump(user_fandom_nick, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def load_user_fandom_nick():
+    global user_fandom_nick
+    if os.path.exists(USER_FANDOM_NICK_FILE):
+        try:
+            with open(USER_FANDOM_NICK_FILE, "r", encoding="utf-8") as f:
+                user_fandom_nick = json.load(f)
+        except Exception:
+            user_fandom_nick = {}
+    else:
+        user_fandom_nick = {}
 
 # == Утилиты ==
 def gen_key():
@@ -193,8 +266,8 @@ async def on_ready():
 
 # === Команды бота ===
 @tree.command(name="start", description="Start the bot and select the language")
-@app_commands.describe(lang="Select your language (ru, uk, pl, en)")
-async def start(interaction: Interaction, lang: str):
+@app_commands.describe(lang="Select language (ru, uk, pl, es)", fandom_nick="Your username on Fandom")
+async def start(interaction: Interaction, lang: str, fandom_nick: str):
     if is_banned(interaction.user.id):
         loc = get_locale(lang)
         await interaction.response.send_message(loc['banned'], ephemeral=True)
@@ -206,6 +279,9 @@ async def start(interaction: Interaction, lang: str):
         await interaction.response.send_message(LOCALES['ru']['not_supported'], ephemeral=True)
         return
     user_lang[interaction.user.id] = lang
+    user_fandom_nick[interaction.user.id] = fandom_nick
+    save_user_lang()
+    save_user_fandom_nick()
     emb = Embed(
         title="Supraconfedetative Wiki Olympiad 2025",
         description=LOCALES[lang]['start_embed'],
@@ -214,41 +290,74 @@ async def start(interaction: Interaction, lang: str):
     await interaction.response.send_message(embed=emb)
 
 @tree.command(name="vote_articles", description="A vote for the wiki in the articles competition")
-@app_commands.describe(text="Текст вашего голоса")
+@app_commands.describe(text="The text of your vote")
 async def vote_articles(interaction: Interaction, text: str):
+    if interaction.user.id not in user_lang or interaction.user.id not in user_fandom_nick:
+        await interaction.response.send_message(
+            "First, use the `/start` command and specify your language and nickname on Fandom.",
+            ephemeral=True
+        )
+        return
+    lang = get_user_lang(interaction.user.id)
     if is_banned(interaction.user.id):
-        lang = get_user_lang(interaction.user.id)
         loc = get_locale(lang)
         await interaction.response.send_message(loc['banned'])
         return
-    await process_vote_command_slash(interaction, "articles", text)
+    if lang in ['uk', 'pl']:
+        loc = get_locale(lang)
+        await interaction.response.send_message(loc['no_article_competition'])
+        return
+    channel_id = ARTICLE_CHANNELS.get(lang)
+    accepted_channel_id = ARTICLE_ACCEPTED_CHANNEL.get(lang)
+    await process_vote_command_slash(interaction, "articles", text, channel_id, accepted_channel_id)
 
 @tree.command(name="vote_designs", description="A vote for the wiki in the design competition")
-@app_commands.describe(text="Текст вашего голоса")
+@app_commands.describe(text="The text of your vote")
 async def vote_designs(interaction: Interaction, text: str):
-    if is_banned(interaction.user.id):
-        lang = get_user_lang(interaction.user.id)
-        loc = get_locale(lang)
-        await interaction.response.send_message(loc['banned'], ephemeral=True)
+    if interaction.user.id not in user_lang or interaction.user.id not in user_fandom_nick:
+        await interaction.response.send_message(
+            "First, use the `/start` command and specify your language and nickname on Fandom.",
+            ephemeral=True
+        )
         return
-    await process_vote_command_slash(interaction, "designs", text)
+    lang = get_user_lang(interaction.user.id)
+    if is_banned(interaction.user.id):
+        loc = get_locale(lang)
+        await interaction.response.send_message(loc['banned'])
+        return
+    channel_id = DESIGN_CHANNELS.get(lang)
+    accepted_channel_id = DESIGN_ACCEPTED_CHANNEL.get(lang)
+    await process_vote_command_slash(interaction, "designs", text, channel_id, accepted_channel_id)
 
 @tree.command(name="support", description="Appeal to the organizers")
-@app_commands.describe(text="Текст вашего обращения")
+@app_commands.describe(text="The text of your appeal to the organizers")
 async def support(interaction: Interaction, text: str):
+    if interaction.user.id not in user_lang or interaction.user.id not in user_fandom_nick:
+        await interaction.response.send_message(
+            "First, use the `/start` command and specify your language and nickname on Fandom.",
+            ephemeral=True
+        )
+        return
+    lang = get_user_lang(interaction.user.id)
     if is_banned(interaction.user.id):
-        lang = get_user_lang(interaction.user.id)
         loc = get_locale(lang)
         await interaction.response.send_message(loc['banned'], ephemeral=True)
         return
-    await process_vote_command_slash(interaction, "support", text)
+    if lang in ['ru', 'uk', 'pl']:
+        channel_id = 1394300619308925009
+    elif lang == 'es':
+        channel_id = 1394445015996174356
+    else:
+        channel_id = 1394300619308925009
+    await process_vote_command_slash(interaction, "support", text, channel_id, None)
 
-async def process_vote_command_slash(interaction: Interaction, vote_type, text):
+async def process_vote_command_slash(interaction: Interaction, vote_type, text, channel_id, accepted_channel_id):
     if is_banned(interaction.user.id):
         return
     if not is_dm(interaction):
         return
     lang = user_lang.get(interaction.user.id, 'ru')
+    fandom_nick = user_fandom_nick.get(interaction.user.id, interaction.user.name)
     user_id_str = str(interaction.user.id)
     count = user_message_count.get(user_id_str, 0) + 1
     user_message_count[user_id_str] = count
@@ -260,21 +369,31 @@ async def process_vote_command_slash(interaction: Interaction, vote_type, text):
         'user_avatar': str(interaction.user.display_avatar.url) if interaction.user.display_avatar else None,
         'text': text,
         'lang': lang,
-        'user_message_number': count
+        'user_message_number': count,
+        'accepted_channel_id': accepted_channel_id,
+        'fandom_nick': fandom_nick
     }
     save_votes_db()
+    if lang in ['ru', 'uk', 'pl']:
+        fandom_url = f"https://confederation.fandom.com/ru/wiki/User:{fandom_nick}"
+    elif lang == 'es':
+        fandom_url = f"https://confederacion-hispana.fandom.com/es/wiki/User:{fandom_nick}"
+    else:
+        fandom_url = fandom_nick
+    footer_text = f"{fandom_nick} | ID: {interaction.user.id} | Message №{count} | Key: {key}"
     emb = Embed(
         title=f"Category: {vote_type.capitalize()}",
         description=text,
         color=EMBED_COLOR
     )
     emb.set_footer(
-        text=f"{interaction.user} | ID: {interaction.user.id} | Сообщение №{count} | Ключ: {key}",
+        text=footer_text,
         icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else discord.Embed.Empty
     )
-    thread = bot.get_channel(VOTE_THREAD_ID)
+    thread = bot.get_channel(channel_id)
     if thread:
-        await thread.send(embed=emb)
+        msg = await thread.send(embed=emb)
+        await thread.send(f"Fandom: {fandom_url}")
     else:
         print("Ветка для голосов не найдена!")
     loc = get_locale(lang)
@@ -290,7 +409,7 @@ async def find_vote_by_key(key):
     return votes_db.get(key)
 
 @tree.command(name="ban", description="Organizer: ban a user by ID")
-@app_commands.describe(user_id="ID пользователя для бана")
+@app_commands.describe(user_id="User ID for banning")
 async def ban(interaction: Interaction, user_id: str):
     if not is_organizer(interaction.user):
         await interaction.response.send_message(LOCALES['ru']['not_organizer'])
@@ -306,7 +425,7 @@ async def ban(interaction: Interaction, user_id: str):
     await interaction.response.send_message(loc['ban_success'])
 
 @tree.command(name="unban", description="Organizer: unban a user by ID")
-@app_commands.describe(user_id="ID пользователя для разбана")
+@app_commands.describe(user_id="User ID for unbanning")
 async def unban(interaction: Interaction, user_id: str):
     if not is_organizer(interaction.user):
         await interaction.response.send_message(LOCALES['ru']['not_organizer'])
@@ -322,7 +441,7 @@ async def unban(interaction: Interaction, user_id: str):
     await interaction.response.send_message(loc['unban_success'])
 
 @tree.command(name="accepted", description="Organizer: approve a vote by key")
-@app_commands.describe(key="10-значный ключ сообщения")
+@app_commands.describe(key="10-digit message key")
 async def accepted(interaction: Interaction, key: str):
     if not is_organizer(interaction.user):
         await interaction.response.send_message(LOCALES['ru']['not_organizer'])
@@ -331,22 +450,27 @@ async def accepted(interaction: Interaction, key: str):
         await interaction.response.send_message(LOCALES['ru']['msg_not_found'])
         return
     vote = votes_db[key]
+    fandom_nick = vote.get('fandom_nick', vote['username'])
+    lang = vote['lang']
+    user_discord = vote['username']
+    if lang in ['ru', 'uk', 'pl']:
+        embed_title = f"Голос от пользователя {user_discord} / {fandom_nick}"
+    elif lang == 'es':
+        embed_title = f"Voz del usuario {user_discord} / {fandom_nick}"
+    else:
+        embed_title = f"Голос от пользователя {user_discord} / {fandom_nick}"
     emb = Embed(
-        title=f"Голос одобрен",
+        title=embed_title,
         description=vote['text'],
         color=EMBED_COLOR
     )
-    emb.set_footer(
-        text=f"{vote['username']} | ID: {vote['user_id']}",
-        icon_url=vote['user_avatar'] if vote['user_avatar'] else discord.Embed.Empty
-    )
-    thread = bot.get_channel(ACCEPTED_THREAD_ID)
+    thread = bot.get_channel(vote.get('accepted_channel_id'))
     if thread:
         await thread.send(embed=emb)
     user = await bot.fetch_user(vote['user_id'])
-    loc = get_locale(vote['lang'])
+    loc = get_locale(lang)
     emb2 = Embed(
-        title="Ваш голос принят!",
+        title=loc['vote_accepted_title'],
         description=f"{loc.get('vote_accepted', 'Ваш голос одобрен одним из организаторов!')}",
         color=EMBED_COLOR
     )
@@ -361,7 +485,7 @@ async def accepted(interaction: Interaction, key: str):
     )
 
 @tree.command(name="denied", description="Organizer: deny a vote by key")
-@app_commands.describe(key="10-значный ключ сообщения", reason="Причина отказа")
+@app_commands.describe(key="10-digit message key", reason="Reason for denial")
 async def denied(interaction: Interaction, key: str, reason: str):
     if not is_organizer(interaction.user):
         await interaction.response.send_message(LOCALES['ru']['not_organizer'])
@@ -373,8 +497,8 @@ async def denied(interaction: Interaction, key: str, reason: str):
     user = await bot.fetch_user(vote['user_id'])
     loc = get_locale(vote['lang'])
     emb = Embed(
-        title="Ваш голос отклонён",
-        description=loc['vote_denied'].format(reason=reason) + f"",
+        title=loc['vote_rejected_title'],
+        description=loc['vote_denied'].format(reason=reason),
         color=EMBED_COLOR
     )
     dm_sent = True
@@ -394,7 +518,7 @@ async def denied(interaction: Interaction, key: str, reason: str):
         )
 
 @tree.command(name="reply", description="Organizer: reply to a user by key")
-@app_commands.describe(key="10-значный ключ сообщения", text="Текст ответа")
+@app_commands.describe(key="10-digit message key", text="Текст ответа")
 async def reply(interaction: Interaction, key: str, text: str):
     if not is_organizer(interaction.user):
         await interaction.response.send_message(LOCALES['ru']['not_organizer'], ephemeral=True)
@@ -405,8 +529,8 @@ async def reply(interaction: Interaction, key: str, text: str):
     vote = votes_db[key]
     user = await bot.fetch_user(vote['user_id'])
     emb = Embed(
-        title="Ответ организатора",
-        description=f"{text}\n\nВаш исходный голос: {vote['text']}\nКлюч: {key}",
+        title="Organizer's reply",
+        description=f"{text}\n\nYour original vote: {vote['text']}\Key: {key}",
         color=EMBED_COLOR
     )
     try:
@@ -442,4 +566,6 @@ if __name__ == '__main__':
     load_votes_db()
     load_banned_users()
     load_user_message_count()
+    load_user_lang()
+    load_user_fandom_nick()
     bot.run(TOKEN)
