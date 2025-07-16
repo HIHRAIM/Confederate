@@ -49,7 +49,7 @@ EMBED_COLOR = 0x3a66a3
 # == Локализация ==
 LOCALES = {
     'ru': {
-        'start_embed': 'Вы выбрали русский язык. Пожалуйста, проголосуйте, используя команду `/vote_articles` или `/vote_designs` и следуя инструкции в блоге.',
+        'start_embed': 'Вы выбрали русский язык. Пожалуйста, проголосуйте, используя команду `/vote_articles` или `/vote_designs` и следуя инструкции в [блоге](https://confederation.fandom.com/ru/wiki/Блог_участника:HIHRAIM/Супраконфедеративная_Викиолимпиада-2025/Голосование).',
         'vote_sent': 'Ваш голос отправлен. Ключ: {key}',
         'vote_accepted_title': 'Ваш голос принят!',
         'vote_rejected_title': 'Ваш голос отклонён!',
@@ -65,7 +65,7 @@ LOCALES = {
         'not_banned': ':x: Пользователь не был заблокирован.',
     },
     'uk': {
-        'start_embed': 'Ви вибрали українську мову. Будь ласка, надішліть свій голос.',
+        'start_embed': 'Ви вибрали українську мову. Будь ласка, надішліть свій голос за найкращу вікі в номінації дизайнів, використовуючи команду `/vote_designs`.',
         'vote_sent': 'Ваш голос надіслано. Ключ: {key}',
         'no_article_competition': 'У цьому конкурсі не беруть участь проєкти обраною мовою.',
         'vote_accepted_title': 'Ваш голос прийнято!',
@@ -82,11 +82,11 @@ LOCALES = {
         'not_banned': ':x: Користувач не був заблокований.',
     },
     'pl': {
-        'start_embed': 'Wybrano język polski. Proszę oddać swoje głosy.',
+        'start_embed': 'Wybrano język polski. Proszę oddać swoje głosy (`/vote_designs`).', # Требуется проверка
         'vote_sent': 'Twój głos został oddany. Klucz: {key}',
         'no_article_competition': 'W tym konkursie nie biorą udziału projekty w wybranym języku.',
-        'vote_accepted_title': '',
-        'vote_rejected_title': '',
+        'vote_accepted_title': 'Twój głos został zaakceptowany!', # Требуется проверка
+        'vote_rejected_title': 'Twój głos został odrzucony!', # Требуется проверка
         'vote_accepted': 'Twój głos został odebrany i zaakceptowany przez jednego z organizatorów!',
         'vote_denied': 'Jeden z organizatorów odrzucił twój głos. Powód: {reason}',
         'not_supported': ':x: Wybrany przez Ciebie język nie jest obsługiwany.',
