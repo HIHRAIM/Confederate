@@ -129,4 +129,24 @@ EXTRA_BRIDGES = [
         "telegram_chat_id": -1002775568603,
         "telegram_topic_id": 23,
     },
+    {
+        "discord_channel_id": 1404498175363911702, #трактир (Конфедерация)
+        "telegram_chat_id": -1002336919485,
+        "telegram_topic_id": 13390,
+    },
+    {
+        "discord_channel_id": 1279167438738423970, #блоги (Конфедерация)
+        "telegram_chat_id": -1002336919485,
+        "telegram_topic_id": 13396,
+    },
+    {
+        "discord_channel_id": 1279170056131182612, #о-себе (Конфедерация)
+        "telegram_chat_id": -1002336919485,
+        "telegram_topic_id": 13398,
+    },
+    {
+        "discord_channel_id": 1202887165110124554, #общий-совет (Конфедерация)
+        "telegram_chat_id": -1002630143496,
+        "telegram_topic_id": 3,
+    },
 ]
