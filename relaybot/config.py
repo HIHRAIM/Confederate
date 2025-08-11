@@ -149,4 +149,9 @@ EXTRA_BRIDGES = [
         "telegram_chat_id": -1002630143496,
         "telegram_topic_id": 3,
     },
+    {
+        "discord_channel_id": 1020371913450717255, #international (Конфедерация) 
+        "telegram_chat_id": -1002336919485,
+        "telegram_topic_id": 13384,
+    },
 ]
