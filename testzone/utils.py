@@ -1,3 +1,5 @@
+import re
+
 def format_message(platform, group_name, username, text, reply_to=None, repost=None, attachments=None):
     """
     Format a message for forwarding.
@@ -36,3 +38,20 @@ def get_plural_form(number, forms):
     if 2 <= number % 10 <= 4:
         return forms[1]
     return forms[2]
+
+def replace_discord_mentions(text, mentions):
+    """
+    Заменяет упоминания пользователей Discord (@user) в тексте на их отображаемые имена.
+    - text: Текст сообщения.
+    - mentions: Список объектов discord.Member или discord.User из message.mentions.
+    """
+    if not mentions:
+        return text
+
+    mention_map = {str(user.id): user.display_name for user in mentions}
+
+    def replacer(match):
+        user_id = match.group(1)
+        return f"{mention_map.get(user_id, match.group(0))}"
+
+    return re.sub(r'<@!?(\d+)>', replacer, text)
