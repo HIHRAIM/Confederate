@@ -1,6 +1,6 @@
 import discord
 from relaybot.config import RELAY_GROUPS, EXTRA_BRIDGES
-from relaybot.utils import format_message
+from relaybot.utils import format_message, replace_discord_mentions
 
 def get_discord_server_name(message):
     return message.guild.name if message.guild else "Unknown Server"
@@ -57,10 +57,9 @@ def setup_discord_handlers(bot, queues, mappings):
             channel_id = message.thread.id
 
         group_idx, group = find_relay_group_for_discord(channel_id)
-
         if group:
             username = get_discord_display_name(message.author)
-            text = message.content or ""
+            text = replace_discord_mentions(message.content or "", message.mentions)
             attachments = [a.url for a in message.attachments] if message.attachments else []
             server_name = get_discord_server_name(message)
             reply_to = await get_reply_to_name(message, bot.user)
@@ -74,7 +73,8 @@ def setup_discord_handlers(bot, queues, mappings):
                 dst_channel = bot.get_channel(dst_chan_id)
                 if dst_channel:
                     try:
-                        sent = await dst_channel.send(body)
+                        crosspost_body = format_message("Discord", server_name, username, message.content or "", reply_to=reply_to, attachments=attachments)
+                        sent = await dst_channel.send(crosspost_body)
                         mappings['discord_crosspost'].setdefault((group_idx, channel_id, message.id), {})[dst_chan_id] = sent.id
                     except Exception as e:
                         print(f"[Discord] Crosspost error: {e}")
@@ -82,7 +82,7 @@ def setup_discord_handlers(bot, queues, mappings):
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if message.channel.id == bridge["discord_channel_id"]:
                 username = get_discord_display_name(message.author)
-                text = message.content or ""
+                text = replace_discord_mentions(message.content or "", message.mentions)
                 attachments = [a.url for a in message.attachments] if message.attachments else []
                 server_name = get_discord_server_name(message)
                 reply_to = await get_reply_to_name(message, bot.user)
@@ -101,10 +101,9 @@ def setup_discord_handlers(bot, queues, mappings):
             channel_id = after.thread.id
 
         group_idx, group = find_relay_group_for_discord(channel_id)
-
         if group:
             username = get_discord_display_name(after.author)
-            text = after.content or ""
+            text = replace_discord_mentions(after.content or "", after.mentions)
             attachments = [a.url for a in after.attachments] if after.attachments else []
             server_name = get_discord_server_name(after)
             reply_to = await get_reply_to_name(after, bot.user)
@@ -115,10 +114,7 @@ def setup_discord_handlers(bot, queues, mappings):
                 if g_idx == group_idx and d_chan_id == channel_id and d_msg_id == after.id:
                     try:
                         await mappings["telegram_app"].bot.edit_message_text(
-                            chat_id=tg_chat_id,
-                            message_id=tg_msg_id,
-                            text=body,
-                            parse_mode="HTML",
+                            chat_id=tg_chat_id, message_id=tg_msg_id, text=body, parse_mode="HTML"
                         )
                     except Exception as e:
                         print(f"[Discord->TG Edit] {e}")
@@ -128,24 +124,22 @@ def setup_discord_handlers(bot, queues, mappings):
                 dst_channel = bot.get_channel(dst_chan_id)
                 if dst_channel:
                     try:
+                        crosspost_body = format_message("Discord", server_name, username, after.content or "", reply_to=reply_to, attachments=attachments)
                         dst_msg = await dst_channel.fetch_message(dst_msg_id)
-                        await dst_msg.edit(content=body)
+                        await dst_msg.edit(content=crosspost_body)
                     except Exception as e:
                         print(f"[Discord Crosspost Edit] {e}")
 
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if after.channel.id == bridge["discord_channel_id"]:
                 username = get_discord_display_name(after.author)
-                text = after.content or ""
+                text = replace_discord_mentions(after.content or "", after.mentions)
                 attachments = [a.url for a in after.attachments] if after.attachments else []
                 server_name = get_discord_server_name(after)
                 reply_to = await get_reply_to_name(after, bot.user)
                 body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
                 await queues.bridge_discord_edit_delete.put({
-                    "action": "edit",
-                    "bridge_idx": idx,
-                    "discord_msg": after,
-                    "body": body
+                    "action": "edit", "bridge_idx": idx, "discord_msg": after, "body": body
                 })
 
     @bot.event
@@ -155,17 +149,13 @@ def setup_discord_handlers(bot, queues, mappings):
             channel_id = message.thread.id
 
         group_idx, group = find_relay_group_for_discord(channel_id)
-
         if group:
             for key in list(mappings["discord_to_telegram"].keys()):
                 g_idx, tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
                 if g_idx == group_idx and d_chan_id == channel_id and d_msg_id == message.id:
                     telegram_msg_id = mappings["discord_to_telegram"].pop(key)
                     try:
-                        await mappings["telegram_app"].bot.delete_message(
-                            chat_id=tg_chat_id,
-                            message_id=telegram_msg_id
-                        )
+                        await mappings["telegram_app"].bot.delete_message(chat_id=tg_chat_id, message_id=telegram_msg_id)
                     except Exception as e:
                         print(f"[Discord->TG Delete] {e}")
 
@@ -182,7 +172,5 @@ def setup_discord_handlers(bot, queues, mappings):
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if message.channel.id == bridge["discord_channel_id"]:
                 await queues.bridge_discord_edit_delete.put({
-                    "action": "delete",
-                    "bridge_idx": idx,
-                    "discord_msg": message,
+                    "action": "delete", "bridge_idx": idx, "discord_msg": message,
                 })
