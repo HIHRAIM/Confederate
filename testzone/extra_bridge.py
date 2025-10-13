@@ -6,8 +6,8 @@ class ExtraBridge:
         self.discord_channel_id = bridge_config["discord_channel_id"]
         self.telegram_chat_id = bridge_config["telegram_chat_id"]
         self.telegram_topic_id = bridge_config.get("telegram_topic_id")
-        self.d2t_map = {}  # Discord msg_id -> Telegram msg_id
-        self.t2d_map = {}  # Telegram msg_id -> Discord msg_id
+        self.d2t_map = {}
+        self.t2d_map = {}
         self.discord_to_telegram = asyncio.Queue()
         self.telegram_to_discord = asyncio.Queue()
 

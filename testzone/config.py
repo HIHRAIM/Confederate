@@ -16,14 +16,15 @@ RELAY_GROUPS = [
         ]
     },
     {
-        "name": "Группа ретрансляции 2", # Добавьте сюда ваши каналы
+        "name": "Международная группа",
         "discord_channels": [
             1020371913450717255,
-            1404217771398533130
+            1404217771398533130,
+            719671421273505822
         ],
         "telegram_targets": [
             {"chat_id": -1002336919485, "topic_id": 13384},
-            {"chat_id": -1002775568603, "topic_id": 28},
+            {"chat_id": -1002775568603, "topic_id": 11346},
         ]
     }
 ]
@@ -164,9 +165,55 @@ EXTRA_BRIDGES = [
         "telegram_chat_id": -1002630143496,
         "telegram_topic_id": 3,
     },
+
     {
-        "discord_channel_id": 1020371913450717255, #international (Конфедерация) 
-        "telegram_chat_id": -1002336919485,
-        "telegram_topic_id": 13384,
+        "discord_channel_id": 1166270570099392565, #новости (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 71,
+    },
+    {
+        "discord_channel_id": 1166042631302811760, #основной (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 1,
+    },
+    {
+        "discord_channel_id": 1166342818197934140, #цифровой-цирк (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 5,
+    },
+    {
+        "discord_channel_id": 1270121002386329681, #ослепительный-район (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 6,
+    },
+    {
+        "discord_channel_id": 1330967975339102228, #рыцари-гвиневры (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 1860,
+    },
+    {
+        "discord_channel_id": 1167400404779282493, #дроны-убийцы (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 4,
+    },
+    {
+        "discord_channel_id": 1166320840430866462, #офф-топик (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 7,
+    },
+    {
+        "discord_channel_id": 1166056263948443712, #мемы (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 1347,
+    },
+    {
+        "discord_channel_id": 1166344541520015422, #искусство (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 380,
+    },
+    {
+        "discord_channel_id": 1166353920545792040, #музыка (GLITCH Вики)
+        "telegram_chat_id": -1002305262900,
+        "telegram_topic_id": 608,
     },
 ]

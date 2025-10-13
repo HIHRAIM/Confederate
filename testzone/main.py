@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import discord
 from discord.ext import commands
 from telegram.ext import Application
@@ -6,6 +7,7 @@ from relaybot.config import DISCORD_TOKEN, TELEGRAM_TOKEN, RELAY_GROUPS, EXTRA_B
 from relaybot.queues import RelayQueues
 from relaybot.discord_handlers import setup_discord_handlers
 from relaybot.telegram_handlers import setup_telegram_handlers
+from relaybot.utils import get_plural_form
 
 async def discord_to_telegram_worker(queues, mappings):
     while True:
@@ -43,7 +45,6 @@ async def telegram_to_discord_worker(bot, queues, mappings):
                         mappings["telegram_to_discord_map"][back_key] = []
                     mappings["telegram_to_discord_map"][back_key].append((chan_id, sent.id))
                     
-                    # Обратное сопоставление для редактирования из Discord
                     d2t_key = (group_idx, telegram_chat_id, telegram_topic_id, chan_id, sent.id)
                     mappings["discord_to_telegram"][d2t_key] = telegram_msg_id
             except Exception as e:
@@ -66,7 +67,6 @@ async def telegram_to_telegram_worker(queues, mappings):
             except Exception as e:
                 print(f"[TG->TG Worker] {e}")
 
-# --- Воркеры для мостов (EXTRA_BRIDGES) остаются без изменений ---
 async def bridge_discord_to_telegram_worker(queues, mappings):
     while True:
         bridge_idx, discord_message, body = await queues.bridge_discord_to_telegram.get()
@@ -130,6 +130,69 @@ async def bridge_telegram_edit_delete_worker(queues, mappings):
         except Exception as e:
             print(f"[Bridge TG Edit/Delete] {e}")
 
+STATUS_LANGUAGES = {
+    'ru': {
+        'template': "Объединяет {} {} с {} {}",
+        'members': ('участника', 'участника', 'участников'),
+        'servers': ('сервера', 'серверов', 'серверов')
+    },
+    'uk': {
+        'template': "Об'єднує {} {} з {} {}",
+        'members': ('учасника', 'учасника', 'учасників'),
+        'servers': ('сервера', 'серверів', 'серверів')
+    },
+    'pl': {
+        'template': "Łączy {} {} z {} {}",
+        'members': ('użytkownika', 'użytkowników', 'użytkowników'),
+        'servers': ('serwera', 'serwerów', 'serwerów')
+    },
+    'en': {
+        'template': "Connecting {} {} from {} {}",
+        'members': ('member', 'members', 'members'),
+        'servers': ('server', 'servers', 'servers')
+    },
+    'es': {
+        'template': "Uniendo a {} {} de {} {}",
+        'members': ('miembro', 'miembros', 'miembros'),
+        'servers': ('servidor', 'servidores', 'servidores')
+    },
+    'pt': {
+        'template': "Conectando {} {} de {} {}",
+        'members': ('membro', 'membros', 'membros'),
+        'servers': ('servidor', 'servidores', 'servidores')
+    }
+}
+
+async def update_status_task(bot):
+    """Задача, которая обновляет статус бота каждую минуту."""
+    await bot.wait_until_ready()
+    
+    lang_cycle = itertools.cycle(STATUS_LANGUAGES.keys())
+
+    while not bot.is_closed():
+        try:
+            server_count = len(bot.guilds)
+            member_count = sum(guild.member_count for guild in bot.guilds)
+
+            lang_code = next(lang_cycle)
+            lang_data = STATUS_LANGUAGES[lang_code]
+            
+            member_word = get_plural_form(member_count, lang_data['members'])
+            server_word = get_plural_form(server_count, lang_data['servers'])
+            
+            if member_count == 1 and lang_code in ['en', 'es', 'pt']: member_word = lang_data['members'][0]
+            if server_count == 1 and lang_code in ['en', 'es', 'pt']: server_word = lang_data['servers'][0]
+
+            status_text = lang_data['template'].format(member_count, member_word, server_count, server_word)
+            
+            activity = discord.Game(name=status_text)
+            await bot.change_presence(activity=activity)
+            
+            await asyncio.sleep(60)
+        except Exception as e:
+            print(f"[Status Update Task] Error: {e}")
+            await asyncio.sleep(300)
+
 async def main():
     queues = RelayQueues()
     mappings = {
@@ -157,12 +220,10 @@ async def main():
     await telegram_app.updater.start_polling()
     await discord_bot.login(DISCORD_TOKEN)
 
-    # Основные воркеры
     asyncio.create_task(discord_to_telegram_worker(queues, mappings))
     asyncio.create_task(telegram_to_telegram_worker(queues, mappings))
     asyncio.create_task(telegram_to_discord_worker(discord_bot, queues, mappings))
 
-    # Воркеры для мостов
     queues.bridge_discord_to_telegram = asyncio.Queue()
     queues.bridge_telegram_to_discord = asyncio.Queue()
     queues.bridge_discord_edit_delete = asyncio.Queue()
@@ -171,6 +232,8 @@ async def main():
     asyncio.create_task(bridge_telegram_to_discord_worker(queues, mappings))
     asyncio.create_task(bridge_discord_edit_delete_worker(queues, mappings))
     asyncio.create_task(bridge_telegram_edit_delete_worker(queues, mappings))
+    
+    asyncio.create_task(update_status_task(discord_bot))
 
     await discord_bot.connect()
 

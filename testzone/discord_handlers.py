@@ -25,11 +25,9 @@ def extract_reply_text_from_bot_message(message_text):
     return None
 
 async def get_reply_to_name(message, bot_user):
-    # If replying to a message, get proper reply target
     if message.reference and message.reference.resolved:
         replied = message.reference.resolved
         if hasattr(replied, "author"):
-            # If replying to this bot, extract the special text
             if replied.author.id == bot_user.id and replied.content:
                 extracted = extract_reply_text_from_bot_message(replied.content)
                 if extracted:
@@ -68,10 +66,8 @@ def setup_discord_handlers(bot, queues, mappings):
             reply_to = await get_reply_to_name(message, bot.user)
             body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
             
-            # Отправка в Telegram через очередь
             await queues.discord_to_telegram.put(((group_idx, channel_id, message.id), body))
 
-            # Кросспост в другие каналы Discord в той же группе
             for dst_chan_id in group["discord_channels"]:
                 if dst_chan_id == channel_id:
                     continue
@@ -83,7 +79,6 @@ def setup_discord_handlers(bot, queues, mappings):
                     except Exception as e:
                         print(f"[Discord] Crosspost error: {e}")
 
-        # --- Логика для EXTRA_BRIDGES (без изменений) ---
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if message.channel.id == bridge["discord_channel_id"]:
                 username = get_discord_display_name(message.author)
@@ -115,7 +110,6 @@ def setup_discord_handlers(bot, queues, mappings):
             reply_to = await get_reply_to_name(after, bot.user)
             body = format_message("Discord", server_name, username, text, reply_to=reply_to, attachments=attachments)
 
-            # Обновление в Telegram
             for key, tg_msg_id in list(mappings["discord_to_telegram"].items()):
                 g_idx, tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
                 if g_idx == group_idx and d_chan_id == channel_id and d_msg_id == after.id:
@@ -129,7 +123,6 @@ def setup_discord_handlers(bot, queues, mappings):
                     except Exception as e:
                         print(f"[Discord->TG Edit] {e}")
             
-            # Обновление в кросспостах Discord
             crossposts = mappings["discord_crosspost"].get((group_idx, channel_id, after.id), {})
             for dst_chan_id, dst_msg_id in crossposts.items():
                 dst_channel = bot.get_channel(dst_chan_id)
@@ -140,7 +133,6 @@ def setup_discord_handlers(bot, queues, mappings):
                     except Exception as e:
                         print(f"[Discord Crosspost Edit] {e}")
 
-        # --- Логика для EXTRA_BRIDGES (без изменений) ---
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if after.channel.id == bridge["discord_channel_id"]:
                 username = get_discord_display_name(after.author)
@@ -165,7 +157,6 @@ def setup_discord_handlers(bot, queues, mappings):
         group_idx, group = find_relay_group_for_discord(channel_id)
 
         if group:
-            # Удаление из Telegram
             for key in list(mappings["discord_to_telegram"].keys()):
                 g_idx, tg_chat_id, tg_topic_id, d_chan_id, d_msg_id = key
                 if g_idx == group_idx and d_chan_id == channel_id and d_msg_id == message.id:
@@ -178,7 +169,6 @@ def setup_discord_handlers(bot, queues, mappings):
                     except Exception as e:
                         print(f"[Discord->TG Delete] {e}")
 
-            # Удаление из кросспостов Discord
             crossposts = mappings["discord_crosspost"].pop((group_idx, channel_id, message.id), {})
             for dst_chan_id, dst_msg_id in crossposts.items():
                 dst_channel = bot.get_channel(dst_chan_id)
@@ -189,7 +179,6 @@ def setup_discord_handlers(bot, queues, mappings):
                     except Exception as e:
                         print(f"[Discord Crosspost Delete] {e}")
 
-        # --- Логика для EXTRA_BRIDGES (без изменений) ---
         for idx, bridge in enumerate(EXTRA_BRIDGES):
             if message.channel.id == bridge["discord_channel_id"]:
                 await queues.bridge_discord_edit_delete.put({

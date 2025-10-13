@@ -20,3 +20,19 @@ def format_message(platform, group_name, username, text, reply_to=None, repost=N
     if attachments:
         lines.append("\n".join(attachments))
     return "\n".join(lines)
+
+def get_plural_form(number, forms):
+    """
+    Возвращает правильную форму слова для заданного числа.
+    `forms` должен быть кортежем из 3 строк. Например: ('сервер', 'сервера', 'серверов')
+    """
+    if not forms or len(forms) < 3:
+        return ""
+    
+    if 10 < number % 100 < 20:
+        return forms[2]
+    if number % 10 == 1:
+        return forms[0]
+    if 2 <= number % 10 <= 4:
+        return forms[1]
+    return forms[2]
