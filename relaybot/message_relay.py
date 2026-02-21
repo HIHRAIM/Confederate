@@ -8,6 +8,7 @@ async def relay_message(
     origin_platform,
     origin_chat_id,
     origin_message_id,
+    origin_sender_id,
     messenger_name,
     place_name,
     sender_name,
@@ -28,10 +29,10 @@ async def relay_message(
     db.cur.execute(
         """
         INSERT INTO messages
-        (bridge_id, origin_platform, origin_chat_id, origin_message_id, created_at)
-        VALUES (?,?,?,?,?)
+        (bridge_id, origin_platform, origin_chat_id, origin_message_id, origin_sender_id, created_at)
+        VALUES (?,?,?,?,?,?)
         """,
-        (bridge_id, origin_platform, origin_chat_id, origin_message_id, int(time.time()))
+        (bridge_id, origin_platform, origin_chat_id, origin_message_id, str(origin_sender_id), int(time.time()))
     )
     msg_id = db.cur.lastrowid
     db.conn.commit()
@@ -67,3 +68,9 @@ async def relay_message(
         )
 
     db.conn.commit()
+
+try:
+    cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_id TEXT")
+    conn.commit()
+except Exception:
+    pass
