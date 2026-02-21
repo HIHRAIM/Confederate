@@ -1,5 +1,105 @@
 import db
 import time
+import html
+import re
+
+def _utf16_index_map(text: str):
+    pos_map = {0: 0}
+    utf16_pos = 0
+    for i, ch in enumerate(text):
+        utf16_pos += len(ch.encode("utf-16-le")) // 2
+        pos_map[utf16_pos] = i + 1
+    return pos_map
+
+def _wrap_blockquote(segment: str) -> str:
+    lines = segment.splitlines() or [segment]
+    return "\n".join(f"> {ln}" if ln else ">" for ln in lines)
+
+def telegram_entities_to_discord(text: str, entities):
+    if not text:
+        return ""
+    if not entities:
+        return text
+
+    pos_map = _utf16_index_map(text)
+    opens = {}
+    closes = {}
+
+    def add_open(i, token):
+        opens.setdefault(i, []).append(token)
+
+    def add_close(i, token):
+        closes.setdefault(i, []).append(token)
+
+    for e in entities:
+        start = pos_map.get(getattr(e, "offset", 0))
+        end = pos_map.get(getattr(e, "offset", 0) + getattr(e, "length", 0))
+        if start is None or end is None or start >= end:
+            continue
+
+        et = getattr(e, "type", "")
+        if et == "bold":
+            add_open(start, "**"); add_close(end, "**")
+        elif et == "italic":
+            add_open(start, "*"); add_close(end, "*")
+        elif et == "underline":
+            add_open(start, "__"); add_close(end, "__")
+        elif et == "strikethrough":
+            add_open(start, "~~"); add_close(end, "~~")
+        elif et == "code":
+            add_open(start, "`"); add_close(end, "`")
+        elif et == "pre":
+            lang = getattr(e, "language", "") or ""
+            add_open(start, f"```{lang}\n"); add_close(end, "\n```")
+        elif et == "spoiler":
+            add_open(start, "||"); add_close(end, "||")
+        elif et == "blockquote":
+            seg = _wrap_blockquote(text[start:end])
+            text = text[:start] + seg + text[end:]
+            return telegram_entities_to_discord(text, [x for x in entities if x is not e])
+
+    out = []
+    for i, ch in enumerate(text):
+        if i in closes:
+            out.append("".join(reversed(closes[i])))
+        if i in opens:
+            out.append("".join(opens[i]))
+        out.append(ch)
+    end_idx = len(text)
+    if end_idx in closes:
+        out.append("".join(reversed(closes[end_idx])))
+    return "".join(out)
+
+def discord_to_telegram_html(text: str):
+    if not text:
+        return ""
+
+    escaped = html.escape(text)
+
+    escaped = re.sub(
+        r"```([a-zA-Z0-9_-]*)\n([\s\S]*?)```",
+        lambda m: f"<pre><code>{m.group(2)}</code></pre>",
+        escaped,
+    )
+    escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*\n]+)\*\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"__([^_\n]+)__", r"<u>\1</u>", escaped)
+    escaped = re.sub(r"~~([^~\n]+)~~", r"<s>\1</s>", escaped)
+    escaped = re.sub(r"\|\|([^|\n]+)\|\|", r"<tg-spoiler>\1</tg-spoiler>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", escaped)
+
+    lines = escaped.splitlines()
+    converted = []
+    for ln in lines:
+        if ln.startswith("&gt; "):
+            converted.append(f"<blockquote>{ln[5:]}</blockquote>")
+        else:
+            converted.append(ln)
+    return "\n".join(converted)
+
+def escape_html(text: str):
+    return html.escape(text or "")
+
 from utils import get_chat_lang, localized_replying
 
 async def relay_message(
@@ -13,6 +113,8 @@ async def relay_message(
     place_name,
     sender_name,
     text,
+    discord_text=None,
+    telegram_html=None,
     reply_to_name=None,
     send_to_chat_func,
 ):
@@ -47,14 +149,16 @@ async def relay_message(
 
         header = f"[{messenger_name} | {place_name}] {sender_name}:"
 
-        if reply_to_name:
-            body = f"{localized_replying(reply_to_name, lang)}\n{text}"
-        else:
-            body = text
+        reply_line = localized_replying(reply_to_name, lang) if reply_to_name else None
 
-        full_text = f"{header}\n{body}".strip()
-
-        sent_id = await send_to_chat_func(chat, full_text)
+        sent_id = await send_to_chat_func(
+            chat,
+            header=header,
+            body_plain=text,
+            body_discord=discord_text or text,
+            body_telegram_html=telegram_html,
+            reply_line=reply_line,
+        )
         if not sent_id:
             continue
 
