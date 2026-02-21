@@ -108,7 +108,6 @@ def get_next_status_text(total_members, total_servers):
 SUPPORTED_LANGS = {"ru", "uk", "pl", "en", "es", "pt"}
 DEFAULT_LANG = "en"
 
-# Заменить текущее определение _LOCALE на этот блок
 _LOCALE = {
     "replying": {
         "ru": "(отвечая {name})",
@@ -173,6 +172,30 @@ _LOCALE = {
         "en": "Bot joined the bridge.",
         "es": "El bot se unió al puente.",
         "pt": "O bot entrou na ponte."
+    },
+    "consent_title": {
+        "ru": "Внимание — мост сообщений",
+        "uk": "Увага — міст повідомлень",
+        "pl": "Uwaga — most wiadomości",
+        "en": "Notice — message bridge",
+        "es": "Aviso — puente de mensajes",
+        "pt": "Aviso — ponte de mensagens"
+    },
+    "consent_body": {
+        "ru": "Привет! Этот чат связан с другими чатами трансляцией сообщений. Твои сообщения будут дублироваться в другие чаты, но ты можешь их редактировать/удалять через оригинальное сообщение в течение месяца после отправки. Подробнее: Заготовка для ссылки",
+        "uk": "Привіт! Цей чат пов'язаний з іншими чатами трансляцією повідомлень. Твої повідомлення будуть дублюватись в інші чати, але ти можеш редагувати/видаляти їх через оригінал протягом місяця після відправки. Деталі: Заготовка для ссылки",
+        "pl": "Cześć! Ten czat jest powiązany z innymi czatami poprzez transmisję wiadomości. Twoje wiadomości będą powielane w innych czatach, ale możesz je edytować/usunąć przez oryginał w ciągu miesiąca od wysłania. Szczegóły: Заготовка для ссылки",
+        "en": "Hello! This chat is bridged with other chats. Your messages will be duplicated to other chats, but you can edit/delete them from the original message for one month after sending. Details: Заготовка для ссылки",
+        "es": "¡Hola! Este chat está conectado con otros a través de un puente de mensajes. Tus mensajes se duplicarán en otros chats, pero puedes editarlos/eliminarlos desde el mensaje original durante un mes. Detalles: Заготовка для ссылки",
+        "pt": "Olá! Este chat está ligado a outros chats por um ponte de mensagens. As suas mensagens serão duplicadas para outros chats, mas pode editá-las/eliminá-las a partir da mensagem original durante um mês. Detalhes: Заготовка для ссылки"
+    },
+    "consent_button": {
+        "ru": "Принимаю",
+        "uk": "Приймаю",
+        "pl": "Akceptuję",
+        "en": "I accept",
+        "es": "Acepto",
+        "pt": "Aceito"
     },
 }
 
@@ -253,3 +276,12 @@ def localized_bridge_leave(channel, server, lang):
 
 def localized_bot_joined(lang):
     return _LOCALE["bot_joined"].get(lang, _LOCALE["bot_joined"][DEFAULT_LANG])
+
+def localized_consent_title(lang):
+    return _LOCALE["consent_title"].get(lang, _LOCALE["consent_title"][DEFAULT_LANG])
+
+def localized_consent_body(lang):
+    return _LOCALE["consent_body"].get(lang, _LOCALE["consent_body"][DEFAULT_LANG])
+
+def localized_consent_button(lang):
+    return _LOCALE["consent_button"].get(lang, _LOCALE["consent_button"][DEFAULT_LANG])

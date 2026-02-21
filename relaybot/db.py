@@ -1,4 +1,5 @@
 import sqlite3
+import time
 
 conn = sqlite3.connect("bridge.db", check_same_thread=False)
 conn.execute("PRAGMA journal_mode=WAL;")
@@ -72,6 +73,37 @@ def init():
         chat_id TEXT PRIMARY KEY,
         lang TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS verified_users (
+        platform TEXT,
+        user_id TEXT,
+        prefix TEXT,
+        verified_at INTEGER,
+        expires_at INTEGER,
+        PRIMARY KEY (platform, user_id, prefix)
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_consents (
+        platform TEXT,
+        prefix TEXT,
+        user_id TEXT,
+        bot_message_id TEXT,
+        chat_key TEXT,
+        created_at INTEGER,
+        PRIMARY KEY (platform, prefix, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bridge_admins (
+        bridge_id INTEGER,
+        user_id TEXT,
+        PRIMARY KEY (bridge_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shadow_bans (
+        platform TEXT,
+        user_id TEXT,
+        PRIMARY KEY (platform, user_id)
+    );                 
     """)
     conn.commit()
 
@@ -80,7 +112,6 @@ def chat_exists(chat_id):
         "SELECT 1 FROM chats WHERE chat_id=?",
         (chat_id,)
     ).fetchone() is not None
-
 
 def attach_chat(platform, chat_id, bridge_id):
     cur.execute(
@@ -92,7 +123,6 @@ def attach_chat(platform, chat_id, bridge_id):
         (platform, chat_id, bridge_id)
     )
     conn.commit()
-
 
 def get_bridge_chats(bridge_id):
     return cur.execute(
@@ -165,3 +195,136 @@ def get_telegram_chat_count():
         "SELECT COUNT(*) as cnt FROM chats WHERE platform='telegram'"
     ).fetchone()
     return row['cnt'] if row else 0
+
+def add_verified_user(platform, user_id, prefix, days_valid=365):
+    now = int(time.time())
+    expires = now + days_valid * 86400
+    cur.execute(
+        "INSERT OR REPLACE INTO verified_users (platform, user_id, prefix, verified_at, expires_at) VALUES (?,?,?,?,?)",
+        (platform, str(user_id), str(prefix), now, expires)
+    )
+    conn.commit()
+
+def is_user_verified(platform, user_id, prefix):
+    """
+    Возвращает True, если для данной платформы и user_id есть запись,
+    которая либо привязана к конкретному prefix, либо глобальная (prefix='*'),
+    и срок ещё не истёк.
+    """
+    now = int(time.time())
+    row = cur.execute(
+        """
+        SELECT expires_at FROM verified_users
+        WHERE platform=? AND user_id=? AND (prefix=? OR prefix=?)
+        ORDER BY expires_at DESC
+        LIMIT 1
+        """,
+        (platform, str(user_id), str(prefix), "*")
+    ).fetchone()
+    if not row:
+        return False
+    try:
+        return int(row["expires_at"]) >= now
+    except Exception:
+        return False
+
+def remove_verified_user(platform, user_id, prefix):
+    cur.execute(
+        "DELETE FROM verified_users WHERE platform=? AND user_id=? AND prefix=?",
+        (platform, str(user_id), str(prefix))
+    )
+    conn.commit()
+
+def add_pending_consent(platform, prefix, user_id, bot_message_id, chat_key):
+    now = int(time.time())
+    cur.execute(
+        "INSERT OR REPLACE INTO pending_consents (platform, prefix, user_id, bot_message_id, chat_key, created_at) VALUES (?,?,?,?,?,?)",
+        (platform, str(prefix), str(user_id), str(bot_message_id), str(chat_key), now)
+    )
+    conn.commit()
+
+def get_pending_consent(platform, prefix, user_id):
+    return cur.execute(
+        "SELECT * FROM pending_consents WHERE platform=? AND prefix=? AND user_id=?",
+        (platform, str(prefix), str(user_id))
+    ).fetchone()
+
+def remove_pending_consent(platform, prefix, user_id):
+    cur.execute(
+        "DELETE FROM pending_consents WHERE platform=? AND prefix=? AND user_id=?",
+        (platform, str(prefix), str(user_id))
+    )
+    conn.commit()
+
+def get_expired_pending_consents(older_than_seconds=24*3600):
+    cutoff = int(time.time()) - older_than_seconds
+    return cur.execute(
+        "SELECT * FROM pending_consents WHERE created_at<?",
+        (cutoff,)
+    ).fetchall()
+
+def cleanup_expired_verified():
+    now = int(time.time())
+    cur.execute(
+        "DELETE FROM verified_users WHERE expires_at<?",
+        (now,)
+    )
+    conn.commit()
+
+def delete_pending(platform, prefix, user_id):
+    remove_pending_consent(platform, prefix, user_id)
+
+def add_bridge_admin(bridge_id, user_id):
+    cur.execute(
+        "INSERT OR IGNORE INTO bridge_admins (bridge_id, user_id) VALUES(?,?)",
+        (bridge_id, str(user_id))
+    )
+    rows = cur.execute("SELECT platform, chat_id FROM chats WHERE bridge_id=?", (bridge_id,)).fetchall()
+    for r in rows:
+        cur.execute(
+            "INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id) VALUES (?,?,?)",
+            (r["platform"], r["chat_id"], str(user_id))
+        )
+    conn.commit()
+
+def get_bridge_admins(bridge_id):
+    return [r["user_id"] for r in cur.execute("SELECT user_id FROM bridge_admins WHERE bridge_id=?", (bridge_id,)).fetchall()]
+
+_old_attach_chat = attach_chat
+def attach_chat(platform, chat_id, bridge_id):
+    cur.execute(
+        "INSERT OR IGNORE INTO bridges(id) VALUES(?)",
+        (bridge_id,)
+    )
+    cur.execute(
+        "INSERT OR REPLACE INTO chats(platform, chat_id, bridge_id) VALUES(?,?,?)",
+        (platform, chat_id, bridge_id)
+    )
+    rows = cur.execute("SELECT user_id FROM bridge_admins WHERE bridge_id=?", (bridge_id,)).fetchall()
+    for r in rows:
+        cur.execute(
+            "INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id) VALUES (?,?,?)",
+            (platform, chat_id, r["user_id"])
+        )
+    conn.commit()
+
+def add_shadow_ban(platform, user_id):
+    cur.execute(
+        "INSERT OR IGNORE INTO shadow_bans (platform, user_id) VALUES (?,?)",
+        (platform, str(user_id))
+    )
+    conn.commit()
+
+def remove_shadow_ban(platform, user_id):
+    cur.execute(
+        "DELETE FROM shadow_bans WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    )
+    conn.commit()
+
+def is_shadow_banned(platform, user_id):
+    row = cur.execute(
+        "SELECT 1 FROM shadow_bans WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).fetchone()
+    return row is not None
