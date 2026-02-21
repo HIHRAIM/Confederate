@@ -2,6 +2,7 @@ from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.types import Message, ChatMemberUpdated, CallbackQuery
 import db, message_relay
+from message_relay import telegram_entities_to_discord, escape_html
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
     localized_forward_from_chat, localized_forward_from_user, localized_forward_unknown,
@@ -11,11 +12,38 @@ from utils import (
 )
 from config import TELEGRAM_TOKEN
 import time
+import asyncio
 
 bot = Bot(TELEGRAM_TOKEN)
 dp = Dispatcher()
 router = Router()
 dp.include_router(router)
+
+_media_group_buffer = {}
+
+def _count_telegram_files(message: Message) -> int:
+    count = 0
+    if getattr(message, "document", None):
+        count += 1
+    if getattr(message, "photo", None):
+        count += 1
+    if getattr(message, "video", None):
+        count += 1
+    if getattr(message, "audio", None):
+        count += 1
+    if getattr(message, "voice", None):
+        count += 1
+    if getattr(message, "animation", None):
+        count += 1
+    return count
+
+
+async def _flush_media_group(buffer_key):
+    await asyncio.sleep(1.0)
+    payload = _media_group_buffer.pop(buffer_key, None)
+    if not payload:
+        return
+    await _relay_from_telegram_impl(payload["message"], grouped_file_count=payload["count"])
 
 async def resolve_telegram_user(identifier: str):
     """
@@ -39,6 +67,13 @@ async def resolve_telegram_user(identifier: str):
         return ch.id
     except Exception:
         return None
+
+async def is_telegram_native_admin(chat_id: int, user_id: int):
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ("creator", "administrator")
+    except Exception:
+        return False
 
 @router.message(Command("atb"))
 async def atb(message: Message):
@@ -172,8 +207,33 @@ async def rfb_handler(message: Message):
 
     await message.reply("Chat removed from bridge")
 
-@router.message()
+@router.message(lambda message: not ((getattr(message, "text", "") or "").startswith("/")))
 async def relay_from_telegram(message: Message):
+    media_group_id = getattr(message, "media_group_id", None)
+    if media_group_id:
+        files_count = _count_telegram_files(message)
+        if files_count > 0:
+            thread = message.message_thread_id or 0
+            key = (f"{message.chat.id}:{thread}", str(media_group_id))
+            payload = _media_group_buffer.get(key)
+            if not payload:
+                payload = {"message": message, "count": 0, "task": None}
+                _media_group_buffer[key] = payload
+
+            payload["count"] += files_count
+            if getattr(message, "caption", None) and not getattr(payload["message"], "caption", None):
+                payload["message"] = message
+            elif message.message_id < payload["message"].message_id:
+                payload["message"] = message
+
+            if payload.get("task"):
+                payload["task"].cancel()
+            payload["task"] = asyncio.create_task(_flush_media_group(key))
+            return
+
+    await _relay_from_telegram_impl(message)
+
+async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None):
     if message.from_user and message.from_user.is_bot:
         return
 
@@ -275,18 +335,9 @@ async def relay_from_telegram(message: Message):
     else:
         base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
 
-        files = []
-        if getattr(message, "document", None):
-            files.append(("document", message.document.file_id))
-        if getattr(message, "photo", None):
-            try:
-                files.append(("photo", message.photo[-1].file_id))
-            except Exception:
-                pass
-        if getattr(message, "video", None):
-            files.append(("video", message.video.file_id))
+        total_files = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
 
-        if files:
+        if total_files > 0:
             username = getattr(message.chat, "username", None)
             thread_id = thread
             if username:
@@ -296,17 +347,26 @@ async def relay_from_telegram(message: Message):
                     link = f"https://t.me/{username}/{message.message_id}"
                 texts = [(base_text + "\n" if base_text else "") + link]
             else:
-                n = len(files)
-                marker = localized_file_count_text(n, lang)
+                marker = localized_file_count_text(total_files, lang)
                 texts = [(base_text + "\n" if base_text else "") + f"[{marker}]"]
+        else:
+            texts = [base_text]
 
-    async def send_to_chat(chat, text):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
+            if body_telegram_html:
+                body_html = body_telegram_html
+            else:
+                body_html = escape_html(body_plain)
+            if reply_line:
+                body_html = f"{escape_html(reply_line)}\n{body_html}"
+            html_text = f"{escape_html(header)}\n{body_html}".strip()
             sent = await bot.send_message(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
-                text=text
+                text=html_text,
+                parse_mode="HTML"
             )
             return str(sent.message_id)
 
@@ -316,10 +376,29 @@ async def relay_from_telegram(message: Message):
             channel = dc_bot.get_channel(channel_id)
             if not channel:
                 return None
-            sent = await channel.send(text)
+            body = body_discord
+            if reply_line:
+                body = f"{reply_line}\n{body}"
+            sent = await channel.send(f"{header}\n{body}".strip())
             return str(sent.id)
 
+    source_text = getattr(message, "text", None)
+    source_caption = getattr(message, "caption", None)
+    tg_html_source = None
+    if source_text is not None:
+        tg_html_source = getattr(message, "html_text", None)
+        discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
+    elif source_caption is not None:
+        tg_html_source = getattr(message, "html_caption", None)
+        discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
+    else:
+        discord_text = texts[0] if texts else ""
+
+    telegram_html = tg_html_source
+
     for text in texts:
+        current_discord_text = discord_text if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else text
+        current_telegram_html = telegram_html if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else None
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="telegram",
@@ -330,6 +409,8 @@ async def relay_from_telegram(message: Message):
             place_name=message.chat.title or "Private chat",
             sender_name=message.from_user.full_name if message.from_user else "Unknown",
             text=text,
+            discord_text=current_discord_text,
+            telegram_html=current_telegram_html,
             reply_to_name=reply_to_name,
             send_to_chat_func=send_to_chat
         )
@@ -378,10 +459,12 @@ async def set_lang_handler(message: Message):
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
 
-    if not (
+    has_permission = (
         is_admin("telegram", message.from_user.id)
         or is_chat_admin("telegram", chat_key, message.from_user.id)
-    ):
+        or await is_telegram_native_admin(message.chat.id, message.from_user.id)
+    )
+    if not has_permission:
         await message.reply("No permission")
         return
 
@@ -608,12 +691,18 @@ async def shadow_ban_cmd(message: Message):
 
 @router.message(Command("whois"))
 async def whois_cmd(message: Message):
-    if not message.reply_to_message:
+    reply = getattr(message, "reply_to_message", None)
+    replied_id = str(
+        getattr(reply, "message_id", "")
+        or getattr(message, "reply_to_message_id", "")
+        or ""
+    )
+
+    if not replied_id.strip():
         await message.reply("Use this command in reply to a bot-relay message.")
         return
 
     chat_key = f"{message.chat.id}:{message.message_thread_id or 0}"
-    replied_id = str(message.reply_to_message.message_id)
 
     row = db.cur.execute(
         "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
@@ -631,7 +720,7 @@ async def whois_cmd(message: Message):
 
     origin_platform = msg_row["origin_platform"]
     origin_chat_id = msg_row["origin_chat_id"]
-    origin_sender_id = msg_row.get("origin_sender_id") or ""
+    origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
 
     if origin_platform != "telegram":
         await message.reply("Origin is not Telegram; use /whois in corresponding platform or use Discord whois.")
@@ -646,6 +735,54 @@ async def whois_cmd(message: Message):
         await message.reply(f"Nickname: {full}\nUsername: {uname}\nID: {u.id}")
     except Exception as e:
         await message.reply(f"Could not fetch user data: {e}")
+
+@router.edited_message()
+async def edited_message_handler(message: Message):
+    thread = message.message_thread_id or 0
+    origin_chat_id = f"{message.chat.id}:{thread}"
+    row = db.cur.execute(
+        """
+        SELECT id FROM messages
+        WHERE origin_platform='telegram' AND origin_chat_id=? AND origin_message_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (origin_chat_id, str(message.message_id))
+    ).fetchone()
+    if not row:
+        return
+
+    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    if getattr(message, "text", None) is not None:
+        discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
+        telegram_html = getattr(message, "html_text", None)
+    else:
+        discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
+        telegram_html = getattr(message, "html_caption", None)
+
+    header = f"[Telegram | {message.chat.title or 'Private chat'}] {message.from_user.full_name if message.from_user else 'Unknown'}:"
+
+    copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
+    for c in copies:
+        try:
+            if c["platform"] == "telegram":
+                chat_id_str, th = c["chat_id"].split(":")
+                text_html = f"{escape_html(header)}\n{telegram_html or escape_html(base_text)}"
+                await bot.edit_message_text(
+                    chat_id=int(chat_id_str),
+                    message_id=int(c["message_id_platform"]),
+                    text=text_html,
+                    parse_mode="HTML"
+                )
+            elif c["platform"] == "discord":
+                from discord_bot import bot as dc_bot
+                channel_id = int(c["chat_id"].split(":")[1])
+                channel = dc_bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                msg = await channel.fetch_message(int(c["message_id_platform"]))
+                await msg.edit(content=f"{header}\n{discord_text}".strip())
+        except Exception:
+            pass
 
 async def main():
     db.init()

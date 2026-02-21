@@ -11,6 +11,7 @@ from utils import (
 import time
 import asyncio
 import json
+from message_relay import discord_to_telegram_html, escape_html
 
 async def resolve_discord_user(guild: discord.Guild, identifier: str):
     identifier = identifier.strip()
@@ -89,13 +90,21 @@ class DiscordBot(discord.Client):
 
     async def status_loop(self):
         await self.wait_until_ready()
+        from telegram_bot import bot as tg_bot
         while not self.is_closed():
             try:
-                total_members = sum(g.member_count for g in self.guilds)
-
+                discord_members = sum((g.member_count or 0) for g in self.guilds)
+                telegram_members = 0
+                for gid in db.get_telegram_group_ids():
+                    try:
+                        members_count = await tg_bot.get_chat_member_count(int(gid))
+                        telegram_members += int(members_count or 0)
+                    except Exception:
+                        continue
+                total_members = discord_members + telegram_members
                 discord_servers = len(self.guilds)
-                telegram_chats = db.get_telegram_chat_count()
-                total_servers = discord_servers + telegram_chats
+                telegram_groups = db.get_telegram_group_count()
+                total_servers = discord_servers + telegram_groups
 
                 status_text = get_next_status_text(total_members, total_servers)
 
@@ -365,22 +374,30 @@ async def on_message(message: discord.Message):
         else:
             texts = [content]
 
-    async def send_to_chat(chat, text):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
         if chat["platform"] == "discord":
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = bot.get_channel(channel_id)
             if not channel:
                 return None
-            sent = await channel.send(text)
+            body = body_discord
+            if reply_line:
+                body = f"{reply_line}\n{body}"
+            sent = await channel.send(f"{header}\n{body}".strip())
             return str(sent.id)
 
         if chat["platform"] == "telegram":
             from telegram_bot import bot as tg_bot
             chat_id_str, thread = chat["chat_id"].split(":")
+            body_html = body_telegram_html or escape_html(body_plain)
+            if reply_line:
+                body_html = f"{escape_html(reply_line)}\n{body_html}"
+            text_html = f"{escape_html(header)}\n{body_html}".strip()
             sent = await tg_bot.send_message(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
-                text=text
+                text=text_html,
+                parse_mode="HTML"
             )
             return str(sent.message_id)
 
@@ -395,9 +412,52 @@ async def on_message(message: discord.Message):
             place_name=message.guild.name or message.channel.name,
             sender_name=message.author.display_name or str(message.author),
             text=text,
+            discord_text=text,
+            telegram_html=discord_to_telegram_html(text),
             reply_to_name=reply_to_name,
             send_to_chat_func=send_to_chat
     )
+
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+    if after.author.bot:
+        return
+    row = db.cur.execute(
+        """
+        SELECT id FROM messages
+        WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (f"{after.guild.id}:{after.channel.id}", str(after.id))
+    ).fetchone()
+    if not row:
+        return
+
+    header = f"[Discord | {after.guild.name or after.channel.name}] {after.author.display_name or str(after.author)}:"
+    text = replace_mentions(after, after.content or "")
+    text_html = discord_to_telegram_html(text)
+
+    copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
+    for c in copies:
+        try:
+            if c["platform"] == "discord":
+                channel_id = int(c["chat_id"].split(":")[1])
+                ch = bot.get_channel(channel_id)
+                if not ch:
+                    continue
+                m = await ch.fetch_message(int(c["message_id_platform"]))
+                await m.edit(content=f"{header}\n{text}".strip())
+            elif c["platform"] == "telegram":
+                from telegram_bot import bot as tg_bot
+                chat_id, _ = c["chat_id"].split(":")
+                await tg_bot.edit_message_text(
+                    chat_id=int(chat_id),
+                    message_id=int(c["message_id_platform"]),
+                    text=f"{escape_html(header)}\n{text_html}",
+                    parse_mode="HTML"
+                )
+        except Exception:
+            pass
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
     row = db.cur.execute(
@@ -1089,14 +1149,23 @@ async def whois_command(interaction: discord.Interaction):
 async def status_loop():
     """Меняет статус бота раз в минуту, чередуя языки."""
     await bot.wait_until_ready()
+    from telegram_bot import bot as tg_bot
     
     while not bot.is_closed():
         try:
-            total_members = sum(g.member_count for g in bot.guilds)
+            discord_members = sum((g.member_count or 0) for g in bot.guilds)
+            telegram_members = 0
+            for gid in db.get_telegram_group_ids():
+                try:
+                    members_count = await tg_bot.get_chat_member_count(int(gid))
+                    telegram_members += int(members_count or 0)
+                except Exception:
+                    continue
+            total_members = discord_members + telegram_members
 
             discord_servers = len(bot.guilds)
-            telegram_chats = db.get_telegram_chat_count()
-            total_servers = discord_servers + telegram_chats
+            telegram_groups = db.get_telegram_group_count()
+            total_servers = discord_servers + telegram_groups
 
             status_text = get_next_status_text(total_members, total_servers)
 

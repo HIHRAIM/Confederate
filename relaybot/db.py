@@ -26,6 +26,7 @@ def init():
         origin_platform TEXT,
         origin_chat_id TEXT,
         origin_message_id TEXT,
+        origin_sender_id TEXT,
         created_at INTEGER
     );
 
@@ -106,6 +107,11 @@ def init():
     );                 
     """)
     conn.commit()
+
+    cols = [r["name"] for r in cur.execute("PRAGMA table_info(messages)").fetchall()]
+    if "origin_sender_id" not in cols:
+        cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_id TEXT")
+        conn.commit()
 
 def chat_exists(chat_id):
     return cur.execute(
@@ -195,6 +201,27 @@ def get_telegram_chat_count():
         "SELECT COUNT(*) as cnt FROM chats WHERE platform='telegram'"
     ).fetchone()
     return row['cnt'] if row else 0
+
+def get_telegram_group_count():
+    """Количество уникальных Telegram-групп (без учета топиков)."""
+    row = cur.execute(
+        """
+        SELECT COUNT(DISTINCT SUBSTR(chat_id, 1, INSTR(chat_id, ':') - 1)) AS cnt
+        FROM chats
+        WHERE platform='telegram'
+        """
+    ).fetchone()
+    return row['cnt'] if row else 0
+
+def get_telegram_group_ids():
+    rows = cur.execute(
+        """
+        SELECT DISTINCT SUBSTR(chat_id, 1, INSTR(chat_id, ':') - 1) AS group_id
+        FROM chats
+        WHERE platform='telegram'
+        """
+    ).fetchall()
+    return [r['group_id'] for r in rows if r['group_id']]
 
 def add_verified_user(platform, user_id, prefix, days_valid=365):
     now = int(time.time())
