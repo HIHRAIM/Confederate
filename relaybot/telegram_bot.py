@@ -1,461 +1,438 @@
-from telegram.ext import MessageHandler, filters
-from relaybot.utils import format_message
-from relaybot.config import TELEGRAM_TARGETS, EXTRA_BRIDGES
+from aiogram import Bot, Dispatcher, Router
+from aiogram.filters import Command
+from aiogram.types import Message, ChatMemberUpdated
+import db, message_relay
+from utils import (
+    is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
+    localized_forward_from_chat, localized_forward_from_user, localized_forward_unknown,
+    localized_file_count_text, localized_bridge_join, localized_bridge_leave, localized_bot_joined,
+    set_chat_lang
+)
+from config import TELEGRAM_TOKEN
+import time
 
-def get_telegram_group_title(msg):
-    return msg.chat.title if hasattr(msg.chat, 'title') and msg.chat.title else str(msg.chat.id)
+bot = Bot(TELEGRAM_TOKEN)
+dp = Dispatcher()
+router = Router()
+dp.include_router(router)
 
-def get_plain_telegram_name(user):
-    if hasattr(user, "full_name") and user.full_name:
-        return user.full_name
-    elif hasattr(user, "username") and user.username:
-        return user.username
-    return "unknown"
 
-def is_repost(msg):
-    # Attribute or dict access for all possible cases
-    return any([
-        getattr(msg, "forward_sender_name", None),
-        getattr(msg, "forward_from_chat", None),
-        getattr(msg, "forward_origin", None),
-        isinstance(msg, dict) and (
-            msg.get("forward_sender_name")
-            or msg.get("forward_from_chat")
-            or msg.get("forward_origin")
-        )
-    ])
+@router.message(Command("atb"))
+async def atb(message: Message):
+    if not is_admin("telegram", message.from_user.id):
+        await message.reply("No permission")
+        return
 
-def get_repost_text(msg):
-    # 1. Anonymous forward (top-level)
-    sender_name = getattr(msg, "forward_sender_name", None)
-    if not sender_name and isinstance(msg, dict):
-        sender_name = msg.get("forward_sender_name")
-    if sender_name:
-        return f"(переслано от {sender_name})"
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.reply("Usage: /atb <bridge_id>")
+        return
 
-    # 2. User forward (legacy)
-    fwd_from = getattr(msg, "forward_from", None)
-    if not fwd_from and isinstance(msg, dict):
-        fwd_from = msg.get("forward_from")
-    if fwd_from:
-        name = None
-        if isinstance(fwd_from, dict):
-            name = fwd_from.get("first_name") or fwd_from.get("username")
-        else:
-            name = getattr(fwd_from, "first_name", None) or getattr(fwd_from, "username", None)
-        if name:
-            return f"(переслано от {name})"
-
-    # 3. Channel forward (legacy)
-    fwd_from_chat = getattr(msg, "forward_from_chat", None)
-    if not fwd_from_chat and isinstance(msg, dict):
-        fwd_from_chat = msg.get("forward_from_chat")
-    if fwd_from_chat:
-        title = fwd_from_chat.get("title") if isinstance(fwd_from_chat, dict) else getattr(fwd_from_chat, "title", None)
-        if title:
-            return f"(переслано из {title})"
-
-    # 4. New API: forward_origin
-    origin = getattr(msg, "forward_origin", None)
-    if not origin and isinstance(msg, dict):
-        origin = msg.get("forward_origin")
-    if origin:
-        if isinstance(origin, dict):
-            # Channel forward
-            chat = origin.get("chat")
-            if chat and chat.get("title"):
-                return f"(переслано из {chat['title']})"
-            # User forward (new API)
-            sender_user = origin.get("sender_user")
-            if sender_user:
-                name = sender_user.get("first_name") or sender_user.get("username")
-                if name:
-                    return f"(переслано от {name})"
-            # User forward (hidden user)
-            if origin.get("sender_user_name"):
-                return f"(переслано от {origin['sender_user_name']})"
-            if origin.get("sender_name"):
-                return f"(переслано от {origin['sender_name']})"
-        else:
-            chat = getattr(origin, "chat", None)
-            if chat and getattr(chat, "title", None):
-                return f"(переслано из {chat.title})"
-            sender_user = getattr(origin, "sender_user", None)
-            if sender_user:
-                name = getattr(sender_user, "first_name", None) or getattr(sender_user, "username", None)
-                if name:
-                    return f"(переслано от {name})"
-            name = getattr(origin, "sender_user_name", None)
-            if name:
-                return f"(переслано от {name})"
-            name = getattr(origin, "sender_name", None)
-            if name:
-                return f"(переслано от {name})"
-
-    return None
-
-def extract_reply_text_from_bot_message(message_text):
-    """
-    Extracts the text between the first ']' and the last ':' in the first paragraph.
-    """
-    if not message_text:
-        return None
-    first_paragraph = message_text.split('\n', 1)[0]
     try:
-        idx1 = first_paragraph.index(']')
-        idx2 = first_paragraph.rindex(':')
-        if idx2 > idx1:
-            return first_paragraph[idx1+1:idx2].strip()
+        bridge_id = int(parts[1])
     except ValueError:
-        return None
-    return None
+        await message.reply("Invalid bridge id")
+        return
 
-def setup_telegram_handlers(app, queues, mappings):
-    # Store bridge message mappings for edits/deletes: {(bridge_idx, tg_msg_id): discord_msg_id}
-    if "bridge_telegram_to_discord" not in mappings:
-        mappings["bridge_telegram_to_discord"] = {}  # (bridge_idx, tg_msg_id) -> (discord_channel_id, discord_msg_id)
-    if "bridge_discord_to_telegram" not in mappings:
-        mappings["bridge_discord_to_telegram"] = {}  # (bridge_idx, discord_msg_id) -> (tg_chat_id, tg_topic_id, tg_msg_id)
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
 
-    async def telegram_message_handler(update, context):
-        msg = update.effective_message
-        print("DEBUG: msg dict:", msg.to_dict() if hasattr(msg, "to_dict") else vars(msg))
-        chat_id = msg.chat_id
-        topic_id = getattr(msg, "message_thread_id", None)
-        msg_id = msg.message_id
+    if db.chat_exists(chat_id):
+        await message.reply("Chat already attached to a bridge")
+        return
 
-        # --- Main relay logic (untouched) ---
-        if not any(
-            chat_id == t["chat_id"] and (t.get("topic_id") is None or t.get("topic_id") == topic_id)
-            for t in TELEGRAM_TARGETS
-        ):
-            pass  # don't return here! allow bridge relay too
-        else:
-            if not msg.edit_date:
-                sender = get_plain_telegram_name(update.effective_user)
-                text = msg.text or msg.caption or ""
-                attachments = []
-                if msg.photo:
-                    largest_photo = msg.photo[-1]
-                    file = await context.bot.get_file(largest_photo.file_id)
-                    attachments.append(file.file_path)
-                if msg.document:
-                    file = await context.bot.get_file(msg.document.file_id)
-                    attachments.append(file.file_path)
-                if msg.video:
-                    file = await context.bot.get_file(msg.video.file_id)
-                    attachments.append(file.file_path)
-                if msg.audio:
-                    file = await context.bot.get_file(msg.audio.file_id)
-                    attachments.append(file.file_path)
-                if msg.voice:
-                    file = await context.bot.get_file(msg.voice.file_id)
-                    attachments.append(file.file_path)
-                if msg.video_note:
-                    file = await context.bot.get_file(msg.video_note.file_id)
-                    attachments.append(file.file_path)
-                group_title = get_telegram_group_title(msg)
-                reply_to = None
-                if getattr(msg, "reply_to_message", None):
-                    replied_msg = msg.reply_to_message
-                    replied_user = getattr(replied_msg, "from_user", None)
-                # Suppress "replied to" if reply is to topic starter in forum/topic chat
-                    suppress_reply = False
-                    # Check if this is a topic message (forum)
-                    if getattr(msg, "is_topic_message", False):
-                    # Suppress reply if replying to the topic starter
-                    # The topic starter's message_id == message_thread_id
-                        if getattr(msg, "message_thread_id", None) is not None and \
-                            getattr(replied_msg, "message_id", None) == msg.message_thread_id:
-                            suppress_reply = True
-                        # Optionally: suppress if replied message is the thread starter
-                        # (You can add more conditions here if needed)
-                    if not suppress_reply and replied_user and replied_user.id != msg.from_user.id:
-                        if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
-                            extracted = extract_reply_text_from_bot_message(replied_msg.text)
-                            if extracted:
-                                reply_to = extracted
-                            else:
-                                reply_to = get_plain_telegram_name(replied_user)
-                        else:
-                            reply_to = get_plain_telegram_name(replied_user)
-                repost_text = None
-                if is_repost(msg):
-                    print("DEBUG: msg type:", type(msg))
-                    print("DEBUG: msg as dict:", msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else vars(msg)))
-                    repost_text = get_repost_text(msg)
-                if text or attachments:
-                    body = format_message(
-                        "Telegram",
-                        group_title,
-                        sender,
-                        text,
-                        reply_to=reply_to,
-                        repost=repost_text,
-                        attachments=attachments
-                    )
-                    await queues.telegram_to_discord.put(((chat_id, topic_id, msg_id), body))
-                    await queues.telegram_to_telegram.put((chat_id, topic_id, msg_id, body))
+    db.attach_chat("telegram", chat_id, bridge_id)
 
-        # --- Bridge relay logic (additive, for each bridge) ---
-        for idx, bridge in enumerate(EXTRA_BRIDGES):
-            if chat_id == bridge["telegram_chat_id"] and (bridge.get("telegram_topic_id") is None or topic_id == bridge.get("telegram_topic_id")):
-                discord_channel = mappings["discord_bot"].get_channel(bridge["discord_channel_id"])
-                if discord_channel:
-                    sender = get_plain_telegram_name(update.effective_user)
-                    text = msg.text or msg.caption or ""
-                    attachments = []
-                    if msg.photo:
-                        largest_photo = msg.photo[-1]
-                        file = await context.bot.get_file(largest_photo.file_id)
-                        attachments.append(file.file_path)
-                    if msg.document:
-                        file = await context.bot.get_file(msg.document.file_id)
-                        attachments.append(file.file_path)
-                    if msg.video:
-                        file = await context.bot.get_file(msg.video.file_id)
-                        attachments.append(file.file_path)
-                    if msg.audio:
-                        file = await context.bot.get_file(msg.audio.file_id)
-                        attachments.append(file.file_path)
-                    if msg.voice:
-                        file = await context.bot.get_file(msg.voice.file_id)
-                        attachments.append(file.file_path)
-                    if msg.video_note:
-                        file = await context.bot.get_file(msg.video_note.file_id)
-                        attachments.append(file.file_path)
-                    group_title = get_telegram_group_title(msg)
-                    reply_to = None
-                if getattr(msg, "reply_to_message", None):
-                    replied_msg = msg.reply_to_message
-                    replied_user = getattr(replied_msg, "from_user", None)
-                # Suppress "replied to" if reply is to topic starter in forum/topic chat
-                    suppress_reply = False
-                    # Check if this is a topic message (forum)
-                    if getattr(msg, "is_topic_message", False):
-                    # Suppress reply if replying to the topic starter
-                    # The topic starter's message_id == message_thread_id
-                        if getattr(msg, "message_thread_id", None) is not None and \
-                            getattr(replied_msg, "message_id", None) == msg.message_thread_id:
-                            suppress_reply = True
-                        # Optionally: suppress if replied message is the thread starter
-                        # (You can add more conditions here if needed)
-                    if not suppress_reply and replied_user and replied_user.id != msg.from_user.id:
-                        if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
-                            extracted = extract_reply_text_from_bot_message(replied_msg.text)
-                            if extracted:
-                                reply_to = extracted
-                            else:
-                                reply_to = get_plain_telegram_name(replied_user)
-                        else:
-                            reply_to = get_plain_telegram_name(replied_user)
-                    repost_text = None
-                    if is_repost(msg):
-                        print("DEBUG: msg type:", type(msg))
-                        print("DEBUG: msg as dict:", msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else vars(msg)))
-                        repost_text = get_repost_text(msg)
-                    if text or attachments:
-                        body = format_message(
-                            "Telegram",
-                            group_title,
-                            sender,
-                            text,
-                            reply_to=reply_to,
-                            repost=repost_text,
-                            attachments=attachments
-                        )
-                        sent = await discord_channel.send(body)
-                        # Store mapping for future edit/delete
-                        mappings["bridge_telegram_to_discord"][(idx, msg_id)] = (bridge["discord_channel_id"], sent.id)
+    # send confirmation to this chat in its language
+    lang = get_chat_lang(chat_id)
+    try:
+        await bot.send_message(
+            chat_id=int(message.chat.id),
+            message_thread_id=int(thread) or None,
+            text=localized_bot_joined(lang)
+        )
+    except Exception:
+        # try to at least notify the command issuer
+        await message.reply(f"Chat attached to bridge {bridge_id}")
+    else:
+        await message.reply(f"Chat attached to bridge {bridge_id}")
 
-    async def telegram_edit_handler(update, context):
-        msg = update.effective_message
-        print("DEBUG: msg dict:", msg.to_dict() if hasattr(msg, "to_dict") else vars(msg))
-        chat_id = msg.chat_id
-        topic_id = getattr(msg, "message_thread_id", None)
-        msg_id = msg.message_id
+    # notify other chats in this bridge
+    # prepare origin display names
+    channel_or_topic = f"topic {thread}" if thread else (message.chat.title or f"chat {message.chat.id}")
+    server_name = message.chat.title or "Private chat"
 
-        # --- Main relay logic (untouched) ---
-        if any(
-            chat_id == t["chat_id"] and (t.get("topic_id") is None or t.get("topic_id") == topic_id)
-            for t in TELEGRAM_TARGETS
-        ) and msg.edit_date:
-            sender = get_plain_telegram_name(update.effective_user)
-            text = msg.text or msg.caption or ""
-            attachments = []
-            if msg.photo:
-                largest_photo = msg.photo[-1]
-                file = await context.bot.get_file(largest_photo.file_id)
-                attachments.append(file.file_path)
-            if msg.document:
-                file = await context.bot.get_file(msg.document.file_id)
-                attachments.append(file.file_path)
-            if msg.video:
-                file = await context.bot.get_file(msg.video.file_id)
-                attachments.append(file.file_path)
-            if msg.audio:
-                file = await context.bot.get_file(msg.audio.file_id)
-                attachments.append(file.file_path)
-            if msg.voice:
-                file = await context.bot.get_file(msg.voice.file_id)
-                attachments.append(file.file_path)
-            if msg.video_note:
-                file = await context.bot.get_file(msg.video_note.file_id)
-                attachments.append(file.file_path)
-            group_title = get_telegram_group_title(msg)
-            reply_to = None
-            if getattr(msg, "reply_to_message", None):
-                    replied_msg = msg.reply_to_message
-                    replied_user = getattr(replied_msg, "from_user", None)
-                # Suppress "replied to" if reply is to topic starter in forum/topic chat
-                    suppress_reply = False
-                    # Check if this is a topic message (forum)
-                    if getattr(msg, "is_topic_message", False):
-                    # Suppress reply if replying to the topic starter
-                    # The topic starter's message_id == message_thread_id
-                        if getattr(msg, "message_thread_id", None) is not None and \
-                            getattr(replied_msg, "message_id", None) == msg.message_thread_id:
-                            suppress_reply = True
-                    if not suppress_reply and replied_user and replied_user.id != msg.from_user.id:
-                        if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
-                            extracted = extract_reply_text_from_bot_message(replied_msg.text)
-                            if extracted:
-                                reply_to = extracted
-                            else:
-                                reply_to = get_plain_telegram_name(replied_user)
-                        else:
-                            reply_to = get_plain_telegram_name(replied_user)
-            repost_text = None
-            if is_repost(msg):
-                print("DEBUG: msg type:", type(msg))
-                print("DEBUG: msg as dict:", msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else vars(msg)))
-                repost_text = get_repost_text(msg)
-            if text or attachments:
-                body = format_message(
-                    "Telegram",
-                    group_title,
-                    sender,
-                    text,
-                    reply_to=reply_to,
-                    repost=repost_text,
-                    attachments=attachments
+    rows = db.get_bridge_chats(bridge_id)
+    for c in rows:
+        if c["platform"] == "telegram" and c["chat_id"] == chat_id:
+            continue
+        target_lang = get_chat_lang(c["chat_id"])
+        notify = localized_bridge_join(channel_or_topic, server_name, target_lang)
+
+        if c["platform"] == "telegram":
+            # send to telegram chat
+            chat_id_str, th = c["chat_id"].split(":")
+            try:
+                await bot.send_message(
+                    chat_id=int(chat_id_str),
+                    message_thread_id=int(th) or None,
+                    text=notify
                 )
-                key = (chat_id, topic_id, msg_id)
-                iscord_mapping = mappings["telegram_to_discord_map"].get(key)
-                if discord_mapping:
-                    for chan_id, disc_msg_id in discord_mapping:
-                        channel = mappings["discord_bot"].get_channel(chan_id)
-                        if channel:
-                            try:
-                                discord_msg = await channel.fetch_message(disc_msg_id)
-                                await discord_msg.edit(content=body)
-                            except Exception as e:
-                                print(f"[TG->Discord Edit] {e}")
+            except Exception:
+                pass
+        elif c["platform"] == "discord":
+            # send to discord channel via discord bot
+            try:
+                from discord_bot import bot as dc_bot
+                chan_id = int(c["chat_id"].split(":")[1])
+                channel = dc_bot.get_channel(chan_id)
+                if channel:
+                    await channel.send(notify)
+            except Exception:
+                pass
 
-        # --- Bridge relay logic (additive, for each bridge) ---
-        for idx, bridge in enumerate(EXTRA_BRIDGES):
-            if chat_id == bridge["telegram_chat_id"] and (bridge.get("telegram_topic_id") is None or topic_id == bridge.get("telegram_topic_id")):
-                mapping = mappings["bridge_telegram_to_discord"].get((idx, msg_id))
-                if mapping:
-                    discord_channel_id, discord_msg_id = mapping
-                    discord_channel = mappings["discord_bot"].get_channel(discord_channel_id)
-                    if discord_channel:
-                        sender = get_plain_telegram_name(update.effective_user)
-                        text = msg.text or msg.caption or ""
-                        attachments = []
-                        if msg.photo:
-                            largest_photo = msg.photo[-1]
-                            file = await context.bot.get_file(largest_photo.file_id)
-                            attachments.append(file.file_path)
-                        if msg.document:
-                            file = await context.bot.get_file(msg.document.file_id)
-                            attachments.append(file.file_path)
-                        if msg.video:
-                            file = await context.bot.get_file(msg.video.file_id)
-                            attachments.append(file.file_path)
-                        if msg.audio:
-                            file = await context.bot.get_file(msg.audio.file_id)
-                            attachments.append(file.file_path)
-                        if msg.voice:
-                           file = await context.bot.get_file(msg.voice.file_id)
-                           attachments.append(file.file_path)
-                        if msg.video_note:
-                            file = await context.bot.get_file(msg.video_note.file_id)
-                            attachments.append(file.file_path)
-                        group_title = get_telegram_group_title(msg)
-                        reply_to = None
-                        if getattr(msg, "reply_to_message", None):
-                            replied_msg = msg.reply_to_message
-                            replied_user = getattr(replied_msg, "from_user", None)
-                        # Suppress "replied to" if reply is to topic starter in forum/topic chat
-                            suppress_reply = False
-                            # Check if this is a topic message (forum)
-                        if getattr(msg, "is_topic_message", False):
-                                # Suppress reply if replying to the topic starter
-                                # The topic starter's message_id == message_thread_id
-                            if getattr(msg, "message_thread_id", None) is not None and \
-                                getattr(replied_msg, "message_id", None) == msg.message_thread_id:
-                                suppress_reply = True
-                                # Optionally: suppress if replied message is the thread starter
-                                # (You can add more conditions here if needed)
-                            if not suppress_reply and replied_user and replied_user.id != msg.from_user.id:
-                                if getattr(replied_user, "is_bot", False) and getattr(replied_msg, "text", None):
-                                    extracted = extract_reply_text_from_bot_message(replied_msg.text)
-                                    if extracted:
-                                        reply_to = extracted
-                                    else:
-                                        reply_to = get_plain_telegram_name(replied_user)
-                                else:
-                                    reply_to = get_plain_telegram_name(replied_user)
-                        repost_text = None
-                        if is_repost(msg):
-                            print("DEBUG: msg type:", type(msg))
-                            print("DEBUG: msg as dict:", msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else vars(msg)))
-                            repost_text = get_repost_text(msg)
-                        if text or attachments:
-                            body = format_message(
-                                "Telegram",
-                                group_title,
-                                sender,
-                                text,
-                                reply_to=reply_to,
-                                repost=repost_text,
-                                attachments=attachments
-                            )
-                            try:
-                                discord_msg = await discord_channel.fetch_message(discord_msg_id)
-                                await discord_msg.edit(content=body)
-                            except Exception as e:
-                                print(f"[TG->Discord Bridge Edit] {e}")
+@router.message(Command("rfb"))
+async def rfb_handler(message: Message):
+    """
+    Удаление текущей темы/чата из моста. Удаление по ID в Telegram НЕ поддерживается —
+    команда должна запускаться в той теме/чате, который нужно удалить.
+    """
+    parts = message.text.split()
+    thread = message.message_thread_id or 0
+    current_chat_id = f"{message.chat.id}:{thread}"
 
-    async def telegram_delete_handler(update, context):
-        msg = update.effective_message
-        print("DEBUG: msg dict:", msg.to_dict() if hasattr(msg, "to_dict") else vars(msg))
-        chat_id = msg.chat_id
-        topic_id = getattr(msg, "message_thread_id", None)
-        msg_id = msg.message_id
+    # Если пользователь передал аргумент — запрещаем и объясняем.
+    if len(parts) > 1:
+        await message.reply("Удаление по ID в Telegram не поддерживается. Запустите /rfb в том чате/теме, который нужно удалить.")
+        return
 
-        # --- Main relay logic (untouched) ---
-        # No deletion for main relay here, handled elsewhere if needed
+    # permission checks: bot admins or chat admin for this chat
+    user_id = message.from_user.id
+    if is_admin("telegram", user_id) or is_chat_admin("telegram", current_chat_id, user_id):
+        allowed = True
+    else:
+        allowed = False
 
-        # --- Bridge relay logic (additive, for each bridge) ---
-        for idx, bridge in enumerate(EXTRA_BRIDGES):
-            if chat_id == bridge["telegram_chat_id"] and (bridge.get("telegram_topic_id") is None or topic_id == bridge.get("telegram_topic_id")):
-                mapping = mappings["bridge_telegram_to_discord"].get((idx, msg_id))
-                if mapping:
-                    discord_channel_id, discord_msg_id = mapping
-                    discord_channel = mappings["discord_bot"].get_channel(discord_channel_id)
-                    if discord_channel:
-                        try:
-                            discord_msg = await discord_channel.fetch_message(discord_msg_id)
-                            await discord_msg.delete()
-                        except Exception as e:
-                            print(f"[TG->Discord Bridge Delete] {e}")
+    if not allowed:
+        await message.reply("No permission")
+        return
 
-    app.add_handler(MessageHandler(filters.ALL & ~filters.UpdateType.EDITED, telegram_message_handler))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED, telegram_edit_handler))
-    # Telegram delete event: handled via update.message if available (may depend on library and bot permissions)
-    # For aiogram/pyTelegramBotAPI, etc., would need to add custom handler for deletes if possible
-    # For python-telegram-bot v20+, MessageHandler does not support message deletes directly.
-    # If you use a dispatcher that supports it, add here:
-    # app.add_handler(MessageHandler(filters.UpdateType.DELETED, telegram_delete_handler))
+    # find bridge for current chat
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (current_chat_id,)).fetchone()
+    if not row:
+        await message.reply("Chat is not attached to any bridge")
+        return
+
+    bridge_id = row["bridge_id"]
+
+    # build origin display names
+    channel_or_topic = f"topic {thread}" if thread else (message.chat.title or f"chat {message.chat.id}")
+    server_name = message.chat.title or "Private chat"
+
+    # remove chat from DB
+    db.cur.execute("DELETE FROM chats WHERE chat_id=?", (current_chat_id,))
+    # cleanup related settings/admins for this prefix? (optional; currently removing only chats)
+    db.conn.commit()
+
+    # notify other chats in bridge
+    rows = db.get_bridge_chats(bridge_id)
+    for c in rows:
+        target_lang = get_chat_lang(c["chat_id"])
+        notify = localized_bridge_leave(channel_or_topic, server_name, target_lang)
+
+        if c["platform"] == "telegram":
+            chat_id_str, th = c["chat_id"].split(":")
+            try:
+                await bot.send_message(
+                    chat_id=int(chat_id_str),
+                    message_thread_id=int(th) or None,
+                    text=notify
+                )
+            except Exception:
+                pass
+        elif c["platform"] == "discord":
+            try:
+                from discord_bot import bot as dc_bot
+                chan_id = int(c["chat_id"].split(":")[1])
+                channel = dc_bot.get_channel(chan_id)
+                if channel:
+                    await channel.send(notify)
+            except Exception:
+                pass
+
+    await message.reply("Chat removed from bridge")
+
+@router.message()
+async def relay_from_telegram(message: Message):
+    if message.from_user and message.from_user.is_bot:
+        return
+
+    is_sticker = getattr(message, "sticker", None) is not None
+
+    thread = message.message_thread_id or 0
+    origin_chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(origin_chat_id)
+
+    forward_line = None
+    if getattr(message, "forward_from_chat", None):
+        forward_line = localized_forward_from_chat(message.forward_from_chat.title or "unknown", lang)
+    elif getattr(message, "forward_from", None):
+        try:
+            name = message.forward_from.full_name
+        except Exception:
+            name = getattr(message.forward_from, "username", "unknown")
+        forward_line = localized_forward_from_user(name, lang)
+    elif getattr(message, "forward_sender_name", None):
+        forward_line = localized_forward_unknown(lang)
+
+    is_forward = forward_line is not None
+
+    chat_id = origin_chat_id
+
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?",
+        (chat_id,)
+    ).fetchone()
+    if not row:
+        return
+
+    bridge_id = row["bridge_id"]
+
+    reply_to_name = None
+    if (
+        not is_forward
+        and getattr(message, "reply_to_message", None)
+        and message.reply_to_message.message_id != message.message_thread_id
+    ):
+        if message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
+            reply_to_name = extract_username_from_bot_message(
+                getattr(message.reply_to_message, "text", "") or ""
+            )
+        else:
+            try:
+                reply_to_name = message.reply_to_message.from_user.full_name
+            except Exception:
+                reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
+
+    texts = []
+
+    if is_sticker:
+        texts = ["[Sticker]"]
+
+    elif is_forward:
+        base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+        texts = [f"{forward_line}\n{base_text}".strip()]
+
+    else:
+        base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+
+        files = []
+        if getattr(message, "document", None):
+            files.append(("document", message.document.file_id))
+        if getattr(message, "photo", None):
+            try:
+                files.append(("photo", message.photo[-1].file_id))
+            except Exception:
+                pass
+        if getattr(message, "video", None):
+            files.append(("video", message.video.file_id))
+
+        if files:
+            if getattr(message.chat, "username", None):
+                link = f"https://t.me/{message.chat.username}/{message.message_id}"
+                texts.append((base_text + "\n" if base_text else "") + link)
+                for _ in files[1:]:
+                    texts.append(link)
+            else:
+                n = len(files)
+                marker = localized_file_count_text(n, lang)
+                texts.append((base_text + "\n" if base_text else "") + f"[{marker}]")
+                for _ in files[1:]:
+                    texts.append(f"[{marker}]")
+        else:
+            texts = [base_text]
+
+    async def send_to_chat(chat, text):
+        if chat["platform"] == "telegram":
+            chat_id_str, thread = chat["chat_id"].split(":")
+            sent = await bot.send_message(
+                chat_id=int(chat_id_str),
+                message_thread_id=int(thread) or None,
+                text=text
+            )
+            return str(sent.message_id)
+
+        if chat["platform"] == "discord":
+            from discord_bot import bot as dc_bot
+            channel_id = int(chat["chat_id"].split(":")[1])
+            channel = dc_bot.get_channel(channel_id)
+            if not channel:
+                return None
+            sent = await channel.send(text)
+            return str(sent.id)
+
+    for text in texts:
+        await message_relay.relay_message(
+            bridge_id=bridge_id,
+            origin_platform="telegram",
+            origin_chat_id=chat_id,
+            origin_message_id=str(message.message_id),
+            messenger_name="Telegram",
+            place_name=message.chat.title or "Private chat",
+            sender_name=message.from_user.full_name if message.from_user else "Unknown",
+            text=text,
+            reply_to_name=reply_to_name,
+            send_to_chat_func=send_to_chat
+        )
+
+
+@router.message(Command("setadmin"))
+async def setadmin(message: Message):
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.reply("Usage: /setadmin <user_id>")
+        return
+
+    target_user_id = parts[1]
+
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+
+    if not (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_id, message.from_user.id)
+    ):
+        await message.reply("No permission")
+        return
+
+    db.cur.execute(
+        """
+        INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id)
+        VALUES (?,?,?)
+        """,
+        ("telegram", chat_id, target_user_id)
+    )
+    db.conn.commit()
+
+    await message.reply(
+        f"User `{target_user_id}` added as chat admin"
+    )
+
+@router.message(Command("lang"))
+async def set_lang_handler(message: Message):
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.reply("Usage: /lang <ru|en|uk|pl|es|pt>")
+        return
+
+    code = parts[1].strip().lower()
+
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+
+    if not (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_key, message.from_user.id)
+    ):
+        await message.reply("No permission")
+        return
+
+    try:
+        # используем utils.set_chat_lang — там есть проверка на поддерживаемый язык
+        set_chat_lang(chat_key, code)
+    except ValueError:
+        await message.reply("Unsupported language. Supported: ru, uk, pl, en, es, pt")
+        return
+    except Exception as e:
+        await message.reply(f"Error saving language: {e}")
+        return
+
+    await message.reply(f"Language for this topic/thread set to: {code}")
+
+@router.my_chat_member()
+async def my_chat_member_update(update: ChatMemberUpdated):
+    """
+    When bot is removed from a chat (left/kicked), clean up chat_settings for that chat.
+    """
+    try:
+        new_status = update.new_chat_member.status
+        me = await bot.get_me()
+        if update.new_chat_member.user.id == me.id and new_status in ("left", "kicked"):
+            db.cur.execute("DELETE FROM chat_settings WHERE chat_id LIKE ?", (f"{update.chat.id}:%",))
+            db.conn.commit()
+    except Exception:
+        pass
+
+@router.message(Command("remindrules"))
+async def remindrules(message: Message):
+    if not message.reply_to_message:
+        await message.reply("Command must be a reply to a message containing rules")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.reply("Usage: /remindrules <hours> [messages]")
+        return
+
+    try:
+        hours = int(parts[1])
+    except ValueError:
+        await message.reply("First parameter must be an integer (hours)")
+        return
+
+    messages = int(parts[2]) if len(parts) > 2 else None
+
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+
+    if not (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_id, message.from_user.id)
+    ):
+        await message.reply("No permission")
+        return
+
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?",
+        (chat_id,)
+    ).fetchone()
+    if not row:
+        await message.reply("Chat is not attached to any bridge")
+        return
+
+    bridge_id = row["bridge_id"]
+    ref = message.reply_to_message
+
+    db.cur.execute(
+        """
+        INSERT OR REPLACE INTO bridge_rules
+        (bridge_id, content, format, origin_platform, origin_chat_id,
+         origin_message_id, hours, messages, last_post_ts, message_counter)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            bridge_id,
+            getattr(ref, "text", "") or getattr(ref, "caption", "") or "",
+            "telegram",
+            "telegram",
+            chat_id,
+            str(ref.message_id),
+            hours,
+            messages,
+            int(time.time()),
+            0
+        )
+    )
+    db.conn.commit()
+
+    await message.reply("Rules saved and will be posted automatically")
+
+
+async def main():
+    db.init()
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
