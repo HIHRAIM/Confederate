@@ -1,13 +1,39 @@
 import discord
 from discord import app_commands
+from discord.utils import get
 import db, message_relay
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, set_chat_lang,
-    get_next_status_text, localized_bridge_join, localized_bridge_leave, localized_bot_joined, get_chat_lang
+    get_next_status_text, get_chat_lang,
+    localized_bridge_join, localized_bridge_leave, localized_bot_joined,
+    localized_consent_title, localized_consent_body, localized_consent_button
 )
 import time
 import asyncio
 import json
+
+async def resolve_discord_user(guild: discord.Guild, identifier: str):
+    identifier = identifier.strip()
+    if identifier.startswith("<@") and identifier.endswith(">"):
+        nums = ''.join(ch for ch in identifier if ch.isdigit())
+        if nums:
+            return int(nums)
+    if identifier.isdigit():
+        return int(identifier)
+    if "#" in identifier:
+        member = get(guild.members, name=identifier.split("#",1)[0], discriminator=identifier.split("#",1)[1])
+        if member:
+            return member.id
+    member = get(guild.members, name=identifier)
+    if member:
+        return member.id
+    try:
+        async for m in guild.fetch_members(limit=1000):
+            if m.name == identifier or m.display_name == identifier:
+                return m.id
+    except Exception:
+        pass
+    return None
 
 def replace_mentions(message: discord.Message, text: str) -> str:
     if not message.guild or not text:
@@ -100,7 +126,6 @@ async def atb(interaction: discord.Interaction, bridge_id: int):
 
     db.attach_chat("discord", chat_id, bridge_id)
 
-    # send message to this channel in its language
     lang = get_chat_lang(chat_id) or "en"
     try:
         await interaction.channel.send(localized_bot_joined(lang))
@@ -111,7 +136,6 @@ async def atb(interaction: discord.Interaction, bridge_id: int):
         f"Chat attached to bridge {bridge_id}",
     )
 
-    # notify other chats in the bridge
     channel_or_topic = interaction.channel.name or f"channel:{interaction.channel_id}"
     server_name = interaction.guild.name or f"server:{interaction.guild_id}"
 
@@ -146,28 +170,21 @@ async def atb(interaction: discord.Interaction, bridge_id: int):
 @bot.tree.command(name="rfb")
 async def rfb(interaction: discord.Interaction, target: str | None = None):
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
-    # determine target
-# --- replace target-detection block in rfb handler ---
-    # determine target
     if not target:
         target_chat_id = chat_key
         target_platform = "discord"
     else:
         raw = target.strip()
-        # support channel mention format <#1234567890>
         if raw.startswith("<#") and raw.endswith(">"):
             raw = raw[2:-1]
 
         if ":" in raw:
-            # already in guild:channel form
             target_chat_id = raw
             target_platform = "discord"
         elif raw.isdigit():
-            # single numeric id — assume channel in current guild
             target_chat_id = f"{interaction.guild_id}:{raw}"
             target_platform = "discord"
         else:
-            # ambiguous string — require bot admin (leave as-is)
             target_chat_id = raw
             target_platform = None
 
@@ -193,12 +210,10 @@ async def rfb(interaction: discord.Interaction, target: str | None = None):
 
     bridge_id = row["bridge_id"]
 
-    # build origin display names
     if target_chat_id == chat_key:
         channel_or_topic = interaction.channel.name or f"channel:{interaction.channel_id}"
         server_name = interaction.guild.name or f"server:{interaction.guild_id}"
     else:
-        # best-effort fallback
         try:
             guild_id, ch_id = target_chat_id.split(":")
             ch = bot.get_channel(int(ch_id))
@@ -209,11 +224,9 @@ async def rfb(interaction: discord.Interaction, target: str | None = None):
             channel_or_topic = target_chat_id
             server_name = target_chat_id
 
-    # remove chat
     db.cur.execute("DELETE FROM chats WHERE chat_id=?", (target_chat_id,))
     db.conn.commit()
 
-    # notify other chats
     rows = db.get_bridge_chats(bridge_id)
     for c in rows:
         target_lang = get_chat_lang(c["chat_id"]) or "en"
@@ -276,6 +289,58 @@ async def on_message(message: discord.Message):
 
     bridge_id = row["bridge_id"]
 
+    prefix = str(message.guild.id)
+    user_id_str = str(message.author.id)
+
+    if db.is_shadow_banned("discord", user_id_str):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+
+    if not db.is_user_verified("discord", user_id_str, prefix):
+        pend = db.get_pending_consent("discord", prefix, user_id_str)
+        if pend:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        else:
+            lang = get_chat_lang(chat_id) or "en"
+            from discord import ui, ButtonStyle
+
+            class _VerifyView(ui.View):
+                def __init__(self, prefix, user_id):
+                    super().__init__(timeout=None)
+                    self.prefix = str(prefix)
+                    self.user_id = str(user_id)
+
+                @ui.button(label=localized_consent_button(lang), style=ButtonStyle.primary)
+                async def accept(self, interaction: discord.Interaction, button: ui.Button):
+                    if str(interaction.user.id) != str(self.user_id):
+                        await interaction.response.send_message("This button is not for you", ephemeral=True)
+                        return
+                    db.add_verified_user("discord", self.user_id, "*", days_valid=365)
+                    db.remove_pending_consent("discord", self.prefix, self.user_id)
+                    try:
+                        await interaction.message.delete()
+                    except Exception:
+                        pass
+                    await interaction.response.send_message("Thanks — verified", ephemeral=True)
+
+            try:
+                mention = f"<@{message.author.id}>"
+                consent_text = f"{mention}\n**{localized_consent_title(lang)}**\n\n{localized_consent_body(lang)}"
+                sent = await message.channel.send(consent_text, view=_VerifyView(prefix, user_id_str))
+                bot_msg_id = str(sent.id)
+                chat_key = f"{message.guild.id}:{message.channel.id}"
+                db.add_pending_consent("discord", prefix, user_id_str, bot_msg_id, chat_key)
+            except Exception:
+                pass
+            return
+
     reply_to_name = None
     if message.reference and message.reference.resolved:
         replied = message.reference.resolved
@@ -323,15 +388,16 @@ async def on_message(message: discord.Message):
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
-            origin_chat_id=chat_id,
+            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
             origin_message_id=str(message.id),
+            origin_sender_id=str(message.author.id),
             messenger_name="Discord",
-            place_name=message.guild.name,
-            sender_name=message.author.display_name,
+            place_name=message.guild.name or message.channel.name,
+            sender_name=message.author.display_name or str(message.author),
             text=text,
             reply_to_name=reply_to_name,
             send_to_chat_func=send_to_chat
-        )
+    )
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
     row = db.cur.execute(
@@ -379,33 +445,31 @@ async def on_message_delete(message: discord.Message):
     )
 
 @bot.tree.command(name="setadmin")
-async def setadmin(interaction: discord.Interaction, user_id: str):
+async def setadmin(interaction: discord.Interaction, user: str):
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
-
-    if not (
-        is_admin("discord", interaction.user.id)
-        or is_chat_admin("discord", chat_id, interaction.user.id)
-    ):
-        await interaction.response.send_message(
-            "No permission to manage chat admins",
-            ephemeral=True
-        )
+    if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):
+        await interaction.response.send_message("No permission to manage chat admins", ephemeral=True)
         return
+
+    uid = None
+    if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
+        uid = await resolve_discord_user(interaction.guild, user)
+        if uid is None:
+            await interaction.response.send_message("Could not resolve user", ephemeral=True)
+            return
+    else:
+        uid = int(user)
 
     db.cur.execute(
         """
         INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id)
         VALUES (?,?,?)
         """,
-        ("discord", chat_id, user_id)
+        ("discord", chat_id, str(uid))
     )
     db.conn.commit()
 
-    await interaction.response.send_message(
-        f"User `{user_id}` added as chat admin",
-        ephemeral=True
-    )
-
+    await interaction.response.send_message(f"User `{uid}` added as chat admin", ephemeral=True)
 
 async def handle_delete_of_copy(platform, platform_message_id):
     row = db.cur.execute(
@@ -418,7 +482,6 @@ async def handle_delete_of_copy(platform, platform_message_id):
 
     if row:
         await delete_all_copies_and_origin(row["message_id"])
-
 
 async def delete_all_copies_and_origin(msg_id):
     msg = db.cur.execute(
@@ -720,14 +783,14 @@ async def remindrules(
         """,
         (
             bridge_id,
-            ref.content,
-            "discord",
-            "discord",
+            getattr(ref, "text", "") or getattr(ref, "caption", "") or "",
+            "telegram",
+            "telegram",
             chat_id,
-            str(ref.id),
+            str(ref.message_id) if hasattr(ref, "message_id") else str(ref.id),
             hours,
             messages,
-            int(time.time()),
+            int(time.time()) - (hours * 3600),
             0
         )
     )
@@ -771,12 +834,10 @@ async def list_chats(interaction: discord.Interaction):
         return
 
     lines = []
-    # Discord guilds
     lines.append("**Discord — серверы, где бот состоит:**")
     for g in bot.guilds:
         lines.append(f"- {g.name} — id: {g.id}")
 
-    # Telegram groups: собираем уникальные префиксы chat_id из таблицы chats
     rows = db.cur.execute("SELECT chat_id FROM chats WHERE platform='telegram'").fetchall()
     prefixes = {}
     for r in rows:
@@ -795,7 +856,6 @@ async def list_chats(interaction: discord.Interaction):
                     title = str(pid)
                 lines.append(f"- {title} — id: {pid}")
         except Exception:
-            # если получить названия не получилось — просто выводим id
             for pid in prefixes.keys():
                 lines.append(f"- id: {pid}")
     else:
@@ -803,7 +863,6 @@ async def list_chats(interaction: discord.Interaction):
 
     msg = "\n".join(lines)
 
-    # если сообщение длинное — отправляем как файл, иначе обычный ответ (ephemeral чтобы видели только админы)
     if len(msg) > 1900:
         import io
         bio = io.BytesIO(msg.encode("utf-8"))
@@ -842,13 +901,11 @@ async def force_leave(interaction: discord.Interaction, platform: str, target_id
             return
 
         try:
-            # leave guild
             await guild.leave()
         except Exception as e:
             await interaction.response.send_message(f"Failed to leave guild: {e}", ephemeral=True)
             return
 
-        # cleanup DB rows related to that guild
         db.cur.execute("DELETE FROM chat_admins WHERE platform='discord' AND chat_id LIKE ?", (f"{gid}:%",))
         db.cur.execute("DELETE FROM dead_chats WHERE chat_id LIKE ?", (f"{gid}:%",))
         db.cur.execute("DELETE FROM news_chats WHERE chat_id LIKE ?", (f"{gid}:%",))
@@ -871,8 +928,6 @@ async def force_leave(interaction: discord.Interaction, platform: str, target_id
             await tg_bot.leave_chat(tid)
         except Exception as e:
             await interaction.response.send_message(f"Failed to leave telegram chat (maybe bot isn't in it or lacks rights): {e}", ephemeral=True)
-            # всё равно попытаться почистить базу — в случае, если чат есть в БД
-        # cleanup DB
         db.cur.execute("DELETE FROM chat_admins WHERE platform='telegram' AND chat_id LIKE ?", (f"{tid}:%",))
         db.cur.execute("DELETE FROM dead_chats WHERE chat_id LIKE ?", (f"{tid}:%",))
         db.cur.execute("DELETE FROM news_chats WHERE chat_id LIKE ?", (f"{tid}:%",))
@@ -884,6 +939,152 @@ async def force_leave(interaction: discord.Interaction, platform: str, target_id
         return
 
     await interaction.response.send_message("Unsupported platform. Use 'discord' or 'telegram'.", ephemeral=True)
+
+@bot.tree.command(name="verify")
+async def verify_slash(interaction: discord.Interaction):
+    prefix = str(interaction.guild_id)
+    user_id_str = str(interaction.user.id)
+
+    if db.is_user_verified("discord", user_id_str, "*"):
+        await interaction.response.send_message("You are already verified", ephemeral=True)
+        return
+
+    prev = db.get_pending_consent("discord", prefix, user_id_str)
+    if prev:
+        try:
+            gid, cid = prev["chat_key"].split(":")
+            ch = bot.get_channel(int(cid))
+            if ch:
+                try:
+                    msg = await ch.fetch_message(int(prev["bot_message_id"]))
+                    await msg.delete()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        db.remove_pending_consent("discord", prefix, user_id_str)
+
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or "en"
+    from discord import ui, ButtonStyle
+
+    class _VerifyView(ui.View):
+        def __init__(self, prefix, user_id):
+            super().__init__(timeout=None)
+            self.prefix = str(prefix)
+            self.user_id = str(user_id)
+
+        @ui.button(label=localized_consent_button(lang), style=ButtonStyle.primary)
+        async def accept(self, interaction2: discord.Interaction, button: ui.Button):
+            if str(interaction2.user.id) != str(self.user_id):
+                await interaction2.response.send_message("This button is not for you", ephemeral=True)
+                return
+            db.add_verified_user("discord", self.user_id, "*", days_valid=365)
+            db.remove_pending_consent("discord", self.prefix, self.user_id)
+            try:
+                await interaction2.message.delete()
+            except Exception:
+                pass
+            await interaction2.response.send_message("Thanks — verified", ephemeral=True)
+
+    mention = f"<@{interaction.user.id}>"
+    consent_text = f"{mention}\n**{localized_consent_title(lang)}**\n\n{localized_consent_body(lang)}"
+    sent = await interaction.channel.send(consent_text, view=_VerifyView(prefix, user_id_str))
+    db.add_pending_consent("discord", prefix, user_id_str, str(sent.id), f"{interaction.guild_id}:{interaction.channel_id}")
+    await interaction.response.send_message("Verification message sent (check the channel)", ephemeral=True)
+
+@bot.tree.command(name="unverify")
+async def unverify(interaction: discord.Interaction, target: str):
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message("No permission", ephemeral=True)
+        return
+
+    uid = None
+    if target.startswith("<@") or not target.isdigit() or "#" in target:
+        uid = await resolve_discord_user(interaction.guild, target)
+        if uid is None:
+            await interaction.response.send_message("Could not resolve user", ephemeral=True)
+            return
+    else:
+        uid = int(target)
+
+    db.cur.execute("DELETE FROM verified_users WHERE platform='discord' AND user_id=?", (str(uid),))
+    db.conn.commit()
+    await interaction.response.send_message(f"User {uid} unverified.", ephemeral=True)
+
+@bot.tree.command(name="shadow-ban")
+async def shadow_ban(interaction: discord.Interaction, target: str):
+    chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
+    allowed = False
+    if is_admin("discord", interaction.user.id):
+        allowed = True
+    else:
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+        if row:
+            bridge_admins = db.get_bridge_admins(row["bridge_id"])
+            if str(interaction.user.id) in bridge_admins:
+                allowed = True
+    if not allowed:
+        await interaction.response.send_message("No permission", ephemeral=True)
+        return
+
+    uid = None
+    if target.startswith("<@") or not target.isdigit() or "#" in target:
+        uid = await resolve_discord_user(interaction.guild, target)
+        if uid is None:
+            await interaction.response.send_message("Could not resolve user", ephemeral=True)
+            return
+    else:
+        uid = int(target)
+
+    db.add_shadow_ban("discord", uid)
+    await interaction.response.send_message(f"User {uid} shadow-banned on Discord.", ephemeral=True)
+
+@bot.tree.command(name="whois")
+async def whois_command(interaction: discord.Interaction):
+    if not interaction.message or not interaction.message.reference:
+        await interaction.response.send_message("Use this command in reply to a bot-relay message", ephemeral=True)
+        return
+    replied = interaction.message.reference.resolved
+    if not replied:
+        await interaction.response.send_message("Could not resolve replied message", ephemeral=True)
+        return
+
+    chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
+    row = db.cur.execute(
+        "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
+        ("discord", chat_key, str(replied.id))
+    ).fetchone()
+    if not row:
+        await interaction.response.send_message("Origin not found", ephemeral=True)
+        return
+
+    msg_row = db.cur.execute("SELECT * FROM messages WHERE id=?", (row["message_id"],)).fetchone()
+    if not msg_row:
+        await interaction.response.send_message("Origin missing", ephemeral=True)
+        return
+
+    origin_platform = msg_row["origin_platform"]
+    origin_sender_id = msg_row.get("origin_sender_id") or ""
+
+    if origin_platform != "discord":
+        await interaction.response.send_message("Origin is not Discord; use the corresponding platform", ephemeral=True)
+        return
+
+    try:
+        guild_id, _ = msg_row["origin_chat_id"].split(":")
+        guild = bot.get_guild(int(guild_id))
+        member = guild.get_member(int(origin_sender_id)) if guild else None
+        if not member:
+            try:
+                member = await guild.fetch_member(int(origin_sender_id))
+            except Exception:
+                member = None
+        if member:
+            await interaction.response.send_message(f"Nickname: {member.display_name}\nUsername: {member.name}#{member.discriminator}\nID: {member.id}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"User ID: {origin_sender_id} (member info not accessible)", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Error fetching user data: {e}", ephemeral=True)
 
 async def status_loop():
     """Меняет статус бота раз в минуту, чередуя языки."""
