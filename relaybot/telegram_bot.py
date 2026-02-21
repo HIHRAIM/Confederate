@@ -1,11 +1,12 @@
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMemberUpdated
+from aiogram.types import Message, ChatMemberUpdated, CallbackQuery
 import db, message_relay
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
     localized_forward_from_chat, localized_forward_from_user, localized_forward_unknown,
     localized_file_count_text, localized_bridge_join, localized_bridge_leave, localized_bot_joined,
+    localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang
 )
 from config import TELEGRAM_TOKEN
@@ -16,6 +17,28 @@ dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
+async def resolve_telegram_user(identifier: str):
+    """
+    Принимает username (@name) или numeric id as string.
+    Возвращает user_id (int) или None.
+    """
+    identifier = identifier.strip()
+    if identifier.lstrip("-").isdigit():
+        try:
+            return int(identifier)
+        except Exception:
+            return None
+    if identifier.startswith("@"):
+        try:
+            ch = await bot.get_chat(identifier)
+            return ch.id
+        except Exception:
+            return None
+    try:
+        ch = await bot.get_chat(identifier)
+        return ch.id
+    except Exception:
+        return None
 
 @router.message(Command("atb"))
 async def atb(message: Message):
@@ -43,7 +66,6 @@ async def atb(message: Message):
 
     db.attach_chat("telegram", chat_id, bridge_id)
 
-    # send confirmation to this chat in its language
     lang = get_chat_lang(chat_id)
     try:
         await bot.send_message(
@@ -52,13 +74,10 @@ async def atb(message: Message):
             text=localized_bot_joined(lang)
         )
     except Exception:
-        # try to at least notify the command issuer
         await message.reply(f"Chat attached to bridge {bridge_id}")
     else:
         await message.reply(f"Chat attached to bridge {bridge_id}")
 
-    # notify other chats in this bridge
-    # prepare origin display names
     channel_or_topic = f"topic {thread}" if thread else (message.chat.title or f"chat {message.chat.id}")
     server_name = message.chat.title or "Private chat"
 
@@ -70,7 +89,6 @@ async def atb(message: Message):
         notify = localized_bridge_join(channel_or_topic, server_name, target_lang)
 
         if c["platform"] == "telegram":
-            # send to telegram chat
             chat_id_str, th = c["chat_id"].split(":")
             try:
                 await bot.send_message(
@@ -81,7 +99,6 @@ async def atb(message: Message):
             except Exception:
                 pass
         elif c["platform"] == "discord":
-            # send to discord channel via discord bot
             try:
                 from discord_bot import bot as dc_bot
                 chan_id = int(c["chat_id"].split(":")[1])
@@ -101,12 +118,10 @@ async def rfb_handler(message: Message):
     thread = message.message_thread_id or 0
     current_chat_id = f"{message.chat.id}:{thread}"
 
-    # Если пользователь передал аргумент — запрещаем и объясняем.
     if len(parts) > 1:
         await message.reply("Удаление по ID в Telegram не поддерживается. Запустите /rfb в том чате/теме, который нужно удалить.")
         return
 
-    # permission checks: bot admins or chat admin for this chat
     user_id = message.from_user.id
     if is_admin("telegram", user_id) or is_chat_admin("telegram", current_chat_id, user_id):
         allowed = True
@@ -117,7 +132,6 @@ async def rfb_handler(message: Message):
         await message.reply("No permission")
         return
 
-    # find bridge for current chat
     row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (current_chat_id,)).fetchone()
     if not row:
         await message.reply("Chat is not attached to any bridge")
@@ -125,16 +139,12 @@ async def rfb_handler(message: Message):
 
     bridge_id = row["bridge_id"]
 
-    # build origin display names
     channel_or_topic = f"topic {thread}" if thread else (message.chat.title or f"chat {message.chat.id}")
     server_name = message.chat.title or "Private chat"
 
-    # remove chat from DB
     db.cur.execute("DELETE FROM chats WHERE chat_id=?", (current_chat_id,))
-    # cleanup related settings/admins for this prefix? (optional; currently removing only chats)
     db.conn.commit()
 
-    # notify other chats in bridge
     rows = db.get_bridge_chats(bridge_id)
     for c in rows:
         target_lang = get_chat_lang(c["chat_id"])
@@ -198,6 +208,45 @@ async def relay_from_telegram(message: Message):
 
     bridge_id = row["bridge_id"]
 
+    prefix = str(message.chat.id)
+    user_id_str = str(message.from_user.id)
+
+    if db.is_shadow_banned("telegram", user_id_str):
+        try:
+            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+        except Exception:
+            pass
+        return
+
+    if not db.is_user_verified("telegram", user_id_str, prefix):
+        pend = db.get_pending_consent("telegram", prefix, user_id_str)
+        if pend:
+            try:
+                await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+            except Exception:
+                pass
+            return
+        else:
+            lang = get_chat_lang(f"{message.chat.id}:{thread}")
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            cbdata = f"verify:telegram|{prefix}|{user_id_str}"
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=localized_consent_button(lang), callback_data=cbdata)]
+            ])
+            try:
+                sent = await bot.send_message(
+                    chat_id=int(message.chat.id),
+                    message_thread_id=int(thread) or None,
+                    text=f"*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}",
+                    reply_markup=markup,
+                    parse_mode="Markdown"
+                )
+                chat_key = f"{message.chat.id}:{thread}"
+                db.add_pending_consent("telegram", prefix, user_id_str, str(sent.message_id), chat_key)
+            except Exception:
+                pass
+            return
+
     reply_to_name = None
     if (
         not is_forward
@@ -238,19 +287,18 @@ async def relay_from_telegram(message: Message):
             files.append(("video", message.video.file_id))
 
         if files:
-            if getattr(message.chat, "username", None):
-                link = f"https://t.me/{message.chat.username}/{message.message_id}"
-                texts.append((base_text + "\n" if base_text else "") + link)
-                for _ in files[1:]:
-                    texts.append(link)
+            username = getattr(message.chat, "username", None)
+            thread_id = thread
+            if username:
+                if thread_id:
+                    link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
+                else:
+                    link = f"https://t.me/{username}/{message.message_id}"
+                texts = [(base_text + "\n" if base_text else "") + link]
             else:
                 n = len(files)
                 marker = localized_file_count_text(n, lang)
-                texts.append((base_text + "\n" if base_text else "") + f"[{marker}]")
-                for _ in files[1:]:
-                    texts.append(f"[{marker}]")
-        else:
-            texts = [base_text]
+                texts = [(base_text + "\n" if base_text else "") + f"[{marker}]"]
 
     async def send_to_chat(chat, text):
         if chat["platform"] == "telegram":
@@ -277,6 +325,7 @@ async def relay_from_telegram(message: Message):
             origin_platform="telegram",
             origin_chat_id=chat_id,
             origin_message_id=str(message.message_id),
+            origin_sender_id=str(message.from_user.id) if message.from_user else "",
             messenger_name="Telegram",
             place_name=message.chat.title or "Private chat",
             sender_name=message.from_user.full_name if message.from_user else "Unknown",
@@ -285,38 +334,37 @@ async def relay_from_telegram(message: Message):
             send_to_chat_func=send_to_chat
         )
 
-
 @router.message(Command("setadmin"))
 async def setadmin(message: Message):
-    parts = message.text.split()
+    parts = message.text.split(maxsplit=1)
     if len(parts) != 2:
-        await message.reply("Usage: /setadmin <user_id>")
+        await message.reply("Usage: /setadmin <user_id_or_username>")
         return
-
-    target_user_id = parts[1]
 
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
-
-    if not (
-        is_admin("telegram", message.from_user.id)
-        or is_chat_admin("telegram", chat_id, message.from_user.id)
-    ):
+    if not (is_admin("telegram", message.from_user.id) or is_chat_admin("telegram", chat_id, message.from_user.id)):
         await message.reply("No permission")
         return
 
-    db.cur.execute(
-        """
-        INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id)
-        VALUES (?,?,?)
-        """,
-        ("telegram", chat_id, target_user_id)
-    )
-    db.conn.commit()
+    identifier = parts[1].strip()
+    uid = None
+    if identifier.startswith("@") or not identifier.isdigit():
+        uid = await resolve_telegram_user(identifier)
+        if uid is None:
+            await message.reply("Could not resolve username")
+            return
+    else:
+        uid = int(identifier)
 
-    await message.reply(
-        f"User `{target_user_id}` added as chat admin"
-    )
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+    if not row:
+        await message.reply("Chat is not attached to any bridge")
+        return
+
+    bridge_id = row["bridge_id"]
+    db.add_bridge_admin(bridge_id, uid)
+    await message.reply(f"User `{uid}` added as bridge admin")
 
 @router.message(Command("lang"))
 async def set_lang_handler(message: Message):
@@ -338,7 +386,6 @@ async def set_lang_handler(message: Message):
         return
 
     try:
-        # используем utils.set_chat_lang — там есть проверка на поддерживаемый язык
         set_chat_lang(chat_key, code)
     except ValueError:
         await message.reply("Unsupported language. Supported: ru, uk, pl, en, es, pt")
@@ -416,10 +463,10 @@ async def remindrules(message: Message):
             "telegram",
             "telegram",
             chat_id,
-            str(ref.message_id),
+            str(ref.message_id) if hasattr(ref, "message_id") else str(ref.id),
             hours,
             messages,
-            int(time.time()),
+            int(time.time()) - (hours * 3600),
             0
         )
     )
@@ -427,11 +474,182 @@ async def remindrules(message: Message):
 
     await message.reply("Rules saved and will be posted automatically")
 
+@router.callback_query(lambda c: c.data and c.data.startswith("verify:"))
+async def handle_verify_callback(query: CallbackQuery):
+    """
+    Expected callback_data: verify:telegram|<prefix>|<user_id>
+    Only the target user can confirm. On confirm — add verified and remove pending + bot message.
+    """
+    data = query.data
+    try:
+        _, payload = data.split(":", 1)
+        parts = payload.split("|")
+        platform = parts[0]
+        prefix = parts[1]
+        target_user_id = parts[2]
+    except Exception:
+        await query.answer("Invalid data", show_alert=True)
+        return
+
+    if str(query.from_user.id) != str(target_user_id):
+        await query.answer("This button is not for you", show_alert=True)
+        return
+
+    db.add_verified_user("telegram", target_user_id, "*", days_valid=365)
+
+    pend = db.get_pending_consent("telegram", prefix, target_user_id)
+    if pend:
+        chat_key = pend["chat_key"]
+        bot_msg_id = pend["bot_message_id"]
+        try:
+            chat_id_str, th = chat_key.split(":")
+            await bot.delete_message(chat_id=int(chat_id_str), message_id=int(bot_msg_id))
+        except Exception:
+            pass
+        db.remove_pending_consent("telegram", prefix, target_user_id)
+
+    await query.answer("Спасибо — вы подтверждены", show_alert=False)
+
+@router.message(Command("verify"))
+async def verify_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    prefix = str(message.chat.id)
+    user_id = str(message.from_user.id)
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    prev = db.get_pending_consent("telegram", prefix, user_id)
+    if prev:
+        try:
+            pid_chat, pid_thread = prev["chat_key"].split(":")
+            await bot.delete_message(chat_id=int(pid_chat), message_id=int(prev["bot_message_id"]))
+        except Exception:
+            pass
+        db.remove_pending_consent("telegram", prefix, user_id)
+
+    if getattr(message.from_user, "username", None):
+        mention = f"@{message.from_user.username}"
+    else:
+        mention = f"[{message.from_user.full_name}](tg://user?id={message.from_user.id})"
+
+    consent_text = f"{mention},\n*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}"
+    cbdata = f"verify:telegram|{prefix}|{user_id}"
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=localized_consent_button(lang), callback_data=cbdata)]])
+    try:
+        sent = await bot.send_message(chat_id=int(message.chat.id), message_thread_id=int(thread) or None,
+                                      text=consent_text, reply_markup=markup, parse_mode="Markdown")
+        db.add_pending_consent("telegram", prefix, user_id, str(sent.message_id), chat_key)
+    except Exception:
+        await message.reply("Could not send verification message. Bot may lack permissions.")
+
+@router.message(Command("unverify"))
+async def unverify_cmd(message: Message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply("Usage: /unverify <user_id_or_username>")
+        return
+
+    requester = message.from_user.id
+    if not is_admin("telegram", requester):
+        await message.reply("No permission")
+        return
+
+    identifier = parts[1].strip()
+    uid = None
+    if identifier.startswith("@") or not identifier.isdigit():
+        uid = await resolve_telegram_user(identifier)
+        if uid is None:
+            await message.reply("Could not resolve username to user id")
+            return
+    else:
+        uid = int(identifier)
+
+    db.cur.execute("DELETE FROM verified_users WHERE platform='telegram' AND user_id=?", (str(uid),))
+    db.conn.commit()
+    await message.reply(f"User {uid} unverified (removed from DB).")
+
+@router.message(Command("shadow-ban"))
+async def shadow_ban_cmd(message: Message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply("Usage: /shadow-ban <user_id_or_username>")
+        return
+
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    allowed = False
+    if is_admin("telegram", message.from_user.id):
+        allowed = True
+    else:
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+        if row:
+            bridge_id = row["bridge_id"]
+            bridge_admins = db.get_bridge_admins(bridge_id)
+            if str(message.from_user.id) in bridge_admins:
+                allowed = True
+    if not allowed:
+        await message.reply("No permission")
+        return
+
+    identifier = parts[1].strip()
+    uid = None
+    if identifier.startswith("@") or not identifier.isdigit():
+        uid = await resolve_telegram_user(identifier)
+        if uid is None:
+            await message.reply("Could not resolve username")
+            return
+    else:
+        uid = int(identifier)
+
+    db.add_shadow_ban("telegram", uid)
+    await message.reply(f"User {uid} shadow-banned on Telegram (messages will not be relayed).")
+
+@router.message(Command("whois"))
+async def whois_cmd(message: Message):
+    if not message.reply_to_message:
+        await message.reply("Use this command in reply to a bot-relay message.")
+        return
+
+    chat_key = f"{message.chat.id}:{message.message_thread_id or 0}"
+    replied_id = str(message.reply_to_message.message_id)
+
+    row = db.cur.execute(
+        "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
+        ("telegram", chat_key, replied_id)
+    ).fetchone()
+
+    if not row:
+        await message.reply("Could not find origin for that message.")
+        return
+
+    msg_row = db.cur.execute("SELECT * FROM messages WHERE id=?", (row["message_id"],)).fetchone()
+    if not msg_row:
+        await message.reply("Origin entry missing")
+        return
+
+    origin_platform = msg_row["origin_platform"]
+    origin_chat_id = msg_row["origin_chat_id"]
+    origin_sender_id = msg_row.get("origin_sender_id") or ""
+
+    if origin_platform != "telegram":
+        await message.reply("Origin is not Telegram; use /whois in corresponding platform or use Discord whois.")
+        return
+
+    try:
+        prefix = origin_chat_id.split(":",1)[0]
+        member = await bot.get_chat_member(int(prefix), int(origin_sender_id))
+        u = member.user
+        uname = f"@{u.username}" if u.username else "—"
+        full = u.full_name or (u.first_name or "")
+        await message.reply(f"Nickname: {full}\nUsername: {uname}\nID: {u.id}")
+    except Exception as e:
+        await message.reply(f"Could not fetch user data: {e}")
 
 async def main():
     db.init()
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     import asyncio
