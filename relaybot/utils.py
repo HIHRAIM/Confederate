@@ -47,39 +47,38 @@ async def log_error(text):
 
 STATUS_LANGUAGES = {
     'ru': {
-        'template': "Объединяет {members} {members_word} с {servers} {servers_word}",
+        'template': "Объединяет {members} {members_word} из {servers} {servers_word}",
         'members': ('участника', 'участника', 'участников'),
-        'servers': ('сервера', 'серверов', 'серверов')
+        'servers': ('сообщества', 'сообществ', 'сообществ')
     },
     'uk': {
-        'template': "Об'єднує {members} {members_word} з {servers} {servers_word}",
+        'template': "Об'єднує {members} {members_word} із {servers} {servers_word}",
         'members': ('учасника', 'учасника', 'учасників'),
-        'servers': ('сервера', 'серверів', 'серверів')
+        'servers': ('спільноти', 'спільнот', 'спільнот')
     },
     'pl': {
         'template': "Łączy {members} {members_word} z {servers} {servers_word}",
-        'members': ('użytkownika', 'użytkowników', 'użytkowników'),
-        'servers': ('serwera', 'serwerów', 'serwerów')
+        'members': ('uczestnika', 'uczestników', 'uczestników'),
+        'servers': ('społeczności', 'społeczności', 'społeczności')
     },
     'en': {
-        'template': "Connecting {members} {members_word} from {servers} {servers_word}",
+        'template': "Connects {members} {members_word} across {servers} {servers_word}",
         'members': ('member', 'members', 'members'),
-        'servers': ('server', 'servers', 'servers')
+        'servers': ('community', 'communities', 'communities')
     },
     'es': {
-        'template': "Uniendo a {members} {members_word} de {servers} {servers_word}",
+        'template': "Une a {members} {members_word} de {servers} {servers_word}",
         'members': ('miembro', 'miembros', 'miembros'),
-        'servers': ('servidor', 'servidores', 'servidores')
+        'servers': ('comunidad', 'comunidades', 'comunidades')
     },
     'pt': {
-        'template': "Conectando {members} {members_word} de {servers} {servers_word}",
+        'template': "Conecta {members} {members_word} de {servers} {servers_word}",
         'members': ('membro', 'membros', 'membros'),
-        'servers': ('servidor', 'servidores', 'servidores')
+        'servers': ('comunidade', 'comunidades', 'comunidades')
     }
 }
 
 _status_lang_cycle = itertools.cycle(['ru', 'uk', 'pl', 'en', 'es', 'pt'])
-
 
 def get_next_status_text(total_members, total_servers):
     """
@@ -149,21 +148,29 @@ _LOCALE = {
         "es": "{count} {files} de Telegram",
         "pt": "{count} {files} do Telegram",
     },
+    "file_forms": {
+        "ru": ["файл", "файла", "файлов"],
+        "uk": ["файл", "файли", "файлів"],
+        "pl": ["plik", "pliki", "plików"],
+        "en": ["file", "files"],
+        "es": ["archivo", "archivos"],
+        "pt": ["arquivo", "arquivos"],
+    },
     "bridge_join": {
-        "ru": "{channel} из {server} присоединился(ась) к мосту.",
-        "uk": "{channel} з {server} приєднався(лася) до мосту.",
-        "pl": "{channel} z {server} dołączył(a) do mostu.",
-        "en": "{channel} from {server} joined the bridge.",
-        "es": "{channel} de {server} se unió al puente.",
-        "pt": "{channel} de {server} entrou na ponte."
+        "ru": "Чат {channel} из {server} присоединился к мосту.",
+        "uk": "Чат {channel} з {server} приєднався до мосту.",
+        "pl": "Czat {channel} z {server} został podłączony do mostu.",
+        "en": "Chat {channel} from {server} was connected to the bridge.",
+        "es": "El chat {channel} de {server} fue conectado al puente.",
+        "pt": "O chat {channel} de {server} foi conectado à ponte."
     },
     "bridge_leave": {
-        "ru": "{channel} из {server} исключён(а) из моста.",
-        "uk": "{channel} з {server} виключено з мосту.",
-        "pl": "{channel} z {server} został(a) usunięty(a) z mostu.",
-        "en": "{channel} from {server} was removed from the bridge.",
-        "es": "{channel} de {server} fue eliminado(a) del puente.",
-        "pt": "{channel} de {server} foi removido(a) da ponte."
+        "ru": "Чат {channel} из {server} исключён из моста.",
+        "uk": "Чат {channel} з {server} виключено з мосту.",
+        "pl": "Czat {channel} z {server} został odłączony od mostu.",
+        "en": "Chat {channel} from {server} was disconnected from the bridge.",
+        "es": "El chat {channel} de {server} fue desconectado del puente.",
+        "pt": "O chat {channel} de {server} foi desconectado da ponte."
     },
     "bot_joined": {
         "ru": "Бот присоединился к мосту.",
@@ -182,12 +189,12 @@ _LOCALE = {
         "pt": "Aviso — ponte de mensagens"
     },
     "consent_body": {
-        "ru": "Привет! Этот чат связан с другими чатами трансляцией сообщений. Твои сообщения будут дублироваться в другие чаты, но ты можешь их редактировать/удалять через оригинальное сообщение в течение месяца после отправки. Подробнее: Заготовка для ссылки",
-        "uk": "Привіт! Цей чат пов'язаний з іншими чатами трансляцією повідомлень. Твої повідомлення будуть дублюватись в інші чати, але ти можеш редагувати/видаляти їх через оригінал протягом місяця після відправки. Деталі: Заготовка для ссылки",
-        "pl": "Cześć! Ten czat jest powiązany z innymi czatami poprzez transmisję wiadomości. Twoje wiadomości będą powielane w innych czatach, ale możesz je edytować/usunąć przez oryginał w ciągu miesiąca od wysłania. Szczegóły: Заготовка для ссылки",
-        "en": "Hello! This chat is bridged with other chats. Your messages will be duplicated to other chats, but you can edit/delete them from the original message for one month after sending. Details: Заготовка для ссылки",
-        "es": "¡Hola! Este chat está conectado con otros a través de un puente de mensajes. Tus mensajes se duplicarán en otros chats, pero puedes editarlos/eliminarlos desde el mensaje original durante un mes. Detalles: Заготовка для ссылки",
-        "pt": "Olá! Este chat está ligado a outros chats por um ponte de mensagens. As suas mensagens serão duplicadas para outros chats, mas pode editá-las/eliminá-las a partir da mensagem original durante um mês. Detalhes: Заготовка для ссылки"
+        "ru": "Этот чат связан с другими. Все твои сообщения будут автоматически пересылаться в связанные чаты. Ты можешь изменить или удалить любое своё сообщение через оригинал в течение 30 дней после отправки. Нажми «Принимаю», чтобы согласиться с пересылкой и продолжить общение. Подробнее — в описании чата или закреплённом сообщении.",
+        "uk": "Цей чат пов’язано з іншими. Усі твої повідомлення будуть автоматично пересилатися до пов’язаних чатів. Ти можеш змінити або видалити будь-яке своє повідомлення через оригінал протягом 30 днів після відправлення. Натисни «Приймаю», щоб погодитися з пересиланням і продовжити спілкування. Деталі — в описі чату або закріпленому повідомленні.",
+        "pl": "Ten czat jest połączony z innymi. Wszystkie Twoje wiadomości będą automatycznie przesyłane do powiązanych czatów. Możesz zmienić lub usunąć dowolną swoją wiadomość poprzez oryginał w ciągu 30 dni od wysłania. Kliknij „Akceptuję”, aby zgodzić się na przesyłanie i dalej rozmawiać. Szczegóły w opisie czatu lub w przypiętej wiadomości.",
+        "en": "This chat is linked with other chats. All your messages will be automatically forwarded to linked chats. You can edit or delete any of your messages through the original message within 30 days after sending. Tap “I accept” to agree to forwarding and continue chatting. More details are in the chat description or the pinned message.",
+        "es": "Este chat está vinculado con otros. Todos tus mensajes serán reenviados automáticamente a los chats vinculados. Puedes editar o eliminar cualquiera de tus mensajes desde el mensaje original durante 30 días después del envío. Pulsa «Acepto» para aceptar el reenvío y seguir conversando. Más información en la descripción del chat o en el mensaje fijado.",
+        "pt": "Este chat está ligado a outros. Todas as suas mensagens serão encaminhadas automaticamente para os chats ligados. Pode editar ou apagar qualquer uma das suas mensagens através da mensagem original durante 30 dias após o envio. Toque em «Aceito» para concordar com o encaminhamento e continuar a conversar. Mais detalhes na descrição do chat ou na mensagem fixada."
     },
     "consent_button": {
         "ru": "Принимаю",
@@ -197,15 +204,6 @@ _LOCALE = {
         "es": "Acepto",
         "pt": "Aceito"
     },
-}
-
-_PLURALS = {
-    "ru": ["файл", "файла", "файлов"],
-    "uk": ["файл", "файли", "файлів"],
-    "pl": ["plik", "pliki", "plików"],
-    "en": ["file", "files"],
-    "es": ["archivo", "archivos"],
-    "pt": ["arquivo", "arquivos"],
 }
 
 def get_chat_lang(chat_id):
@@ -239,15 +237,16 @@ def plural_pl(n, forms):
     return forms[2]
 
 def plural_for(lang, n):
+    file_forms = _LOCALE["file_forms"]
     if lang == "ru":
-        return plural_ru(n, _PLURALS["ru"])
+        return plural_ru(n, file_forms["ru"])
     if lang == "uk":
-        return plural_ru(n, _PLURALS["uk"])
+        return plural_ru(n, file_forms["uk"])
     if lang == "pl":
-        return plural_pl(n, _PLURALS["pl"])
+        return plural_pl(n, file_forms["pl"])
     if lang in ("es", "pt"):
-        return plural_en(n, _PLURALS[lang])
-    return plural_en(n, _PLURALS["en"])
+        return plural_en(n, file_forms[lang])
+    return plural_en(n, file_forms["en"])
 
 def localized_file_count_text(n, lang):
     template = _LOCALE["file_count"].get(lang, _LOCALE["file_count"][DEFAULT_LANG])
