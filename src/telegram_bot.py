@@ -5,8 +5,7 @@ import db, message_relay
 from message_relay import telegram_entities_to_discord, escape_html
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
-    localized_forward_from_chat, localized_forward_from_user, localized_forward_unknown,
-    localized_file_count_text, localized_bridge_join, localized_bridge_leave, localized_bot_joined,
+    localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang
 )
@@ -36,7 +35,6 @@ def _count_telegram_files(message: Message) -> int:
     if getattr(message, "animation", None):
         count += 1
     return count
-
 
 async def _flush_media_group(buffer_key):
     await asyncio.sleep(1.0)
@@ -243,19 +241,21 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     origin_chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(origin_chat_id)
 
-    forward_line = None
+    forward_type = None
+    forward_name = None
     if getattr(message, "forward_from_chat", None):
-        forward_line = localized_forward_from_chat(message.forward_from_chat.title or "unknown", lang)
+        forward_type = "chat"
+        forward_name = message.forward_from_chat.title or "unknown"
     elif getattr(message, "forward_from", None):
+        forward_type = "user"
         try:
-            name = message.forward_from.full_name
+            forward_name = message.forward_from.full_name
         except Exception:
-            name = getattr(message.forward_from, "username", "unknown")
-        forward_line = localized_forward_from_user(name, lang)
+            forward_name = getattr(message.forward_from, "username", "unknown")
     elif getattr(message, "forward_sender_name", None):
-        forward_line = localized_forward_unknown(lang)
+        forward_type = "unknown"
 
-    is_forward = forward_line is not None
+    is_forward = forward_type is not None
 
     chat_id = origin_chat_id
 
@@ -294,10 +294,17 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 [InlineKeyboardButton(text=localized_consent_button(lang), callback_data=cbdata)]
             ])
             try:
+                if getattr(message.from_user, "username", None):
+                    mention = f"@{message.from_user.username}"
+                else:
+                    mention = f"[{message.from_user.full_name}](tg://user?id={message.from_user.id})"
+
+                consent_text = f"{mention},\n*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}"
+
                 sent = await bot.send_message(
                     chat_id=int(message.chat.id),
                     message_thread_id=int(thread) or None,
-                    text=f"*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}",
+                    text=consent_text,
                     reply_markup=markup,
                     parse_mode="Markdown"
                 )
@@ -324,14 +331,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
 
     texts = []
+    relay_file_count = None
 
     if is_sticker:
         texts = ["[Sticker]"]
-
-    elif is_forward:
-        base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
-        texts = [f"{forward_line}\n{base_text}".strip()]
-
     else:
         base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
 
@@ -341,14 +344,22 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             username = getattr(message.chat, "username", None)
             thread_id = thread
             if username:
-                if thread_id:
-                    link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
+                if total_files > 1:
+                    relay_file_count = total_files
+                    if thread_id:
+                        link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
+                    else:
+                        link = f"https://t.me/{username}/{message.message_id}"
+                    texts = [(base_text + "\n" if base_text else "") + f"{link} (__TG_FILES_{total_files}__)"]
                 else:
-                    link = f"https://t.me/{username}/{message.message_id}"
-                texts = [(base_text + "\n" if base_text else "") + link]
+                    if thread_id:
+                        link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
+                    else:
+                        link = f"https://t.me/{username}/{message.message_id}"
+                    texts = [(base_text + "\n" if base_text else "") + link]
             else:
-                marker = localized_file_count_text(total_files, lang)
-                texts = [(base_text + "\n" if base_text else "") + f"[{marker}]"]
+                relay_file_count = total_files
+                texts = [(base_text + "\n" if base_text else "") + f"[__TG_FILES_{total_files}__]"]
         else:
             texts = [base_text]
 
@@ -412,7 +423,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
             reply_to_name=reply_to_name,
-            send_to_chat_func=send_to_chat
+            send_to_chat_func=send_to_chat,
+            telegram_file_count=relay_file_count,
+            forward_type=forward_type,
+            forward_name=forward_name,
         )
 
 @router.message(Command("setadmin"))
