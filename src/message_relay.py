@@ -53,6 +53,11 @@ def telegram_entities_to_discord(text: str, entities):
             add_open(start, f"```{lang}\n"); add_close(end, "\n```")
         elif et == "spoiler":
             add_open(start, "||"); add_close(end, "||")
+        elif et == "text_link":
+            url = getattr(e, "url", "") or ""
+            if url:
+                add_open(start, "[")
+                add_close(end, f"]({url})")
         elif et == "blockquote":
             seg = _wrap_blockquote(text[start:end])
             text = text[:start] + seg + text[end:]
@@ -75,6 +80,18 @@ def discord_to_telegram_html(text: str):
         return ""
 
     escaped = html.escape(text)
+
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+        r'<a href="\2">\1</a>',
+        escaped,
+    )
+
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+        r'<a href="\2">\1</a>',
+        escaped,
+    )
 
     escaped = re.sub(
         r"```([a-zA-Z0-9_-]*)\n([\s\S]*?)```",
@@ -100,7 +117,14 @@ def discord_to_telegram_html(text: str):
 def escape_html(text: str):
     return html.escape(text or "")
 
-from utils import get_chat_lang, localized_replying
+from utils import (
+    get_chat_lang,
+    localized_replying,
+    localized_file_count_text,
+    localized_forward_from_chat,
+    localized_forward_from_user,
+    localized_forward_unknown,
+)
 
 async def relay_message(
     *,
@@ -117,6 +141,9 @@ async def relay_message(
     telegram_html=None,
     reply_to_name=None,
     send_to_chat_func,
+    telegram_file_count=None,
+    forward_type=None,
+    forward_name=None,
 ):
     db.cur.execute(
         """
@@ -151,11 +178,37 @@ async def relay_message(
 
         reply_line = localized_replying(reply_to_name, lang) if reply_to_name else None
 
+        current_text = text
+        current_discord_text = discord_text or current_text
+
+        if forward_type == "chat":
+            fwd_line = localized_forward_from_chat(forward_name or "unknown", lang)
+            current_text = f"{fwd_line}\n{current_text}".strip()
+            current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+        elif forward_type == "user":
+            fwd_line = localized_forward_from_user(forward_name or "unknown", lang)
+            current_text = f"{fwd_line}\n{current_text}".strip()
+            current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+        elif forward_type == "unknown":
+            fwd_line = localized_forward_unknown(lang)
+            current_text = f"{fwd_line}\n{current_text}".strip()
+            current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+        if telegram_file_count is not None:
+            marker = localized_file_count_text(telegram_file_count, lang)
+            current_text = current_text.replace(
+                f"__TG_FILES_{telegram_file_count}__",
+                marker
+            )
+            current_discord_text = current_discord_text.replace(
+                f"__TG_FILES_{telegram_file_count}__",
+                marker
+            )
+
         sent_id = await send_to_chat_func(
             chat,
             header=header,
-            body_plain=text,
-            body_discord=discord_text or text,
+            body_plain=current_text,
+            body_discord=current_discord_text,
             body_telegram_html=telegram_html,
             reply_line=reply_line,
         )

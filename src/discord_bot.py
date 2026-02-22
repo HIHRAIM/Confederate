@@ -1101,18 +1101,63 @@ async def shadow_ban(interaction: discord.Interaction, target: str):
 
 @bot.tree.command(name="whois")
 async def whois_command(interaction: discord.Interaction):
-    if not interaction.message or not interaction.message.reference:
+    def _extract_message_id_from_data(payload):
+        if isinstance(payload, dict):
+            for key in ("target_id", "message_id"):
+                value = payload.get(key)
+                if value:
+                    return str(value)
+
+            resolved = payload.get("resolved")
+            if isinstance(resolved, dict):
+                messages = resolved.get("messages")
+                if isinstance(messages, dict) and messages:
+                    return str(next(iter(messages.keys())))
+
+            options = payload.get("options")
+            if isinstance(options, list):
+                for opt in options:
+                    found = _extract_message_id_from_data(opt)
+                    if found:
+                        return found
+
+        elif isinstance(payload, list):
+            for item in payload:
+                found = _extract_message_id_from_data(item)
+                if found:
+                    return found
+
+        return None
+
+    replied_id = None
+
+    if interaction.message and interaction.message.reference:
+        replied = interaction.message.reference.resolved
+        if replied:
+            replied_id = str(replied.id)
+
+    if not replied_id:
+        replied_id = _extract_message_id_from_data(interaction.data or {})
+
+    if not replied_id:
+        try:
+            relay_bot_ids = {int(bot.user.id)} if bot.user else set()
+            relay_bot_ids.update({1295454829883298023, 888314689824636998})
+            async for m in interaction.channel.history(limit=30):
+                if m.author and m.author.id in relay_bot_ids:
+                    replied_id = str(m.id)
+                    break
+        except Exception:
+            pass
+
+    if not replied_id:
         await interaction.response.send_message("Use this command in reply to a bot-relay message", ephemeral=True)
-        return
-    replied = interaction.message.reference.resolved
-    if not replied:
-        await interaction.response.send_message("Could not resolve replied message", ephemeral=True)
         return
 
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
     row = db.cur.execute(
         "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
-        ("discord", chat_key, str(replied.id))
+        ("discord", chat_key, replied_id)
     ).fetchone()
     if not row:
         await interaction.response.send_message("Origin not found", ephemeral=True)
@@ -1124,25 +1169,39 @@ async def whois_command(interaction: discord.Interaction):
         return
 
     origin_platform = msg_row["origin_platform"]
-    origin_sender_id = msg_row.get("origin_sender_id") or ""
-
-    if origin_platform != "discord":
-        await interaction.response.send_message("Origin is not Discord; use the corresponding platform", ephemeral=True)
-        return
+    origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
 
     try:
-        guild_id, _ = msg_row["origin_chat_id"].split(":")
-        guild = bot.get_guild(int(guild_id))
-        member = guild.get_member(int(origin_sender_id)) if guild else None
-        if not member:
+        nick = "—"
+        username = "—"
+
+        if origin_platform == "discord":
+            guild_id, _ = msg_row["origin_chat_id"].split(":")
+            guild = bot.get_guild(int(guild_id))
+            member = guild.get_member(int(origin_sender_id)) if guild else None
+            if not member and guild:
+                try:
+                    member = await guild.fetch_member(int(origin_sender_id))
+                except Exception:
+                    member = None
+            if member:
+                nick = member.display_name or "—"
+                username = f"{member.name}#{member.discriminator}"
+        elif origin_platform == "telegram":
+            from telegram_bot import bot as tg_bot
+            prefix = msg_row["origin_chat_id"].split(":", 1)[0]
             try:
-                member = await guild.fetch_member(int(origin_sender_id))
+                member = await tg_bot.get_chat_member(int(prefix), int(origin_sender_id))
+                u = member.user
+                nick = u.full_name or (u.first_name or "—")
+                username = f"@{u.username}" if u.username else "—"
             except Exception:
-                member = None
-        if member:
-            await interaction.response.send_message(f"Nickname: {member.display_name}\nUsername: {member.name}#{member.discriminator}\nID: {member.id}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"User ID: {origin_sender_id} (member info not accessible)", ephemeral=True)
+                pass
+
+        await interaction.response.send_message(
+            f"Nickname: {nick}\nUsername: {username}\nID: {origin_sender_id}",
+            ephemeral=True
+        )
     except Exception as e:
         await interaction.response.send_message(f"Error fetching user data: {e}", ephemeral=True)
 
