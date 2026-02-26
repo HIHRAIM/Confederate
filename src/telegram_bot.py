@@ -20,6 +20,12 @@ dp.include_router(router)
 
 _media_group_buffer = {}
 
+def _telegram_html_mention(user) -> str:
+    if getattr(user, "username", None):
+        return f"@{escape_html(user.username)}"
+    full_name = escape_html(getattr(user, "full_name", "User"))
+    return f'<a href="tg://user?id={user.id}">{full_name}</a>'
+
 def _count_telegram_files(message: Message) -> int:
     count = 0
     if getattr(message, "document", None):
@@ -294,19 +300,19 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 [InlineKeyboardButton(text=localized_consent_button(lang), callback_data=cbdata)]
             ])
             try:
-                if getattr(message.from_user, "username", None):
-                    mention = f"@{message.from_user.username}"
-                else:
-                    mention = f"[{message.from_user.full_name}](tg://user?id={message.from_user.id})"
-
-                consent_text = f"{mention},\n*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}"
+                mention = _telegram_html_mention(message.from_user)
+                consent_text = (
+                    f"{mention},\n"
+                    f"<b>{escape_html(localized_consent_title(lang))}</b>\n\n"
+                    f"{escape_html(localized_consent_body(lang))}"
+                )
 
                 sent = await bot.send_message(
                     chat_id=int(message.chat.id),
                     message_thread_id=int(thread) or None,
                     text=consent_text,
                     reply_markup=markup,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
                 chat_key = f"{message.chat.id}:{thread}"
                 db.add_pending_consent("telegram", prefix, user_id_str, str(sent.message_id), chat_key)
@@ -334,7 +340,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     relay_file_count = None
 
     if is_sticker:
-        texts = ["[Sticker]"]
+        texts = ["__TG_STICKER__"]
     else:
         base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
 
@@ -624,19 +630,19 @@ async def verify_cmd(message: Message):
             pass
         db.remove_pending_consent("telegram", prefix, user_id)
 
-    if getattr(message.from_user, "username", None):
-        mention = f"@{message.from_user.username}"
-    else:
-        mention = f"[{message.from_user.full_name}](tg://user?id={message.from_user.id})"
-
-    consent_text = f"{mention},\n*{localized_consent_title(lang)}*\n\n{localized_consent_body(lang)}"
+    mention = _telegram_html_mention(message.from_user)
+    consent_text = (
+        f"{mention},\n"
+        f"<b>{escape_html(localized_consent_title(lang))}</b>\n\n"
+        f"{escape_html(localized_consent_body(lang))}"
+    )
     cbdata = f"verify:telegram|{prefix}|{user_id}"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=localized_consent_button(lang), callback_data=cbdata)]])
     try:
         sent = await bot.send_message(chat_id=int(message.chat.id), message_thread_id=int(thread) or None,
-                                      text=consent_text, reply_markup=markup, parse_mode="Markdown")
+                                      text=consent_text, reply_markup=markup, parse_mode="HTML")
         db.add_pending_consent("telegram", prefix, user_id, str(sent.message_id), chat_key)
     except Exception:
         await message.reply("Could not send verification message. Bot may lack permissions.")
