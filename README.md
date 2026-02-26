@@ -36,7 +36,8 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
    - Set:
      - `YOUR_DISCORD_BOT_TOKEN`
      - `YOUR_TELEGRAM_BOT_TOKEN`
-     - `ADMINS["discord"]` and `ADMINS["telegram"]` with bot-admin user IDs.
+     - `ADMINS={"discord"}` and `ADMINS={"telegram"}` with bot-admin user IDs.
+     - `SERVICE_CHATS={"discord"}` and `SERVICE_CHATS={"telegram"}` with chat IDs.
 
 5. **Run the bot**
    ```bash
