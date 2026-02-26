@@ -5,3 +5,14 @@ ADMINS = {
     "discord": {ADMINISTRATOR_ID, ADMINISTRATOR_ID},
     "telegram": {ADMINISTRATOR_ID, ADMINISTRATOR_ID}
 }
+
+SERVICE_CHATS = {
+    "discord": {
+        CHAT_ID,
+        CHAT_ID,
+    },
+    "telegram": {
+        "CHAT_ID", # Example: -1000000000000:00000
+        "CHAT_ID",
+    },
+}
