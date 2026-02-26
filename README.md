@@ -16,7 +16,7 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 
 1. **Clone the repository**
    ```bash
-   git clone <your-fork-or-repo-url>
+   git clone https://github.com/HIHRAIM/Confederate
    cd Confederate
    ```
 
@@ -34,8 +34,8 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 4. **Create config file**
    - Copy `config.example.py` to `config.py`.
    - Set:
-     - `DISCORD_TOKEN`
-     - `TELEGRAM_TOKEN`
+     - `YOUR_DISCORD_BOT_TOKEN`
+     - `YOUR_TELEGRAM_BOT_TOKEN`
      - `ADMINS["discord"]` and `ADMINS["telegram"]` with bot-admin user IDs.
 
 5. **Run the bot**
