@@ -1,4 +1,4 @@
-from config import ADMINS
+from config import ADMINS, SERVICE_CHATS
 import db
 import itertools
 
@@ -39,10 +39,29 @@ def is_chat_admin(platform, chat_id, user_id):
 async def log_error(text):
     try:
         from discord_bot import bot
-        channel = bot.get_channel(1365305667992420362)
-        if channel:
-            await channel.send(f"⚠️ {text}")
-    except:
+        for chat_key in SERVICE_CHATS.get("discord", set()):
+            try:
+                key = str(chat_key)
+                guild_id = None
+                channel_id = int(key.split(":", 1)[1]) if ":" in key else int(key)
+                if ":" in key:
+                    try:
+                        guild_id = int(key.split(":", 1)[0])
+                    except Exception:
+                        guild_id = None
+                channel = bot.get_channel(channel_id)
+                if not channel:
+                    channel = await bot.fetch_channel(channel_id)
+                if guild_id is None and channel and getattr(channel, "guild", None):
+                    guild_id = channel.guild.id
+                lang_key = f"{guild_id}:{channel_id}" if guild_id is not None else str(channel_id)
+                lang = get_chat_lang(lang_key)
+                localized_text = localized_service_event("daily_loop_error", lang, error=text)
+                if channel:
+                    await channel.send(f"⚠️ {localized_text}")
+            except Exception:
+                pass
+    except Exception:
         pass
 
 STATUS_LANGUAGES = {
@@ -204,6 +223,122 @@ _LOCALE = {
         "es": "Acepto",
         "pt": "Aceito"
     },
+    "sticker": {
+        "ru": "[Стикер]",
+        "uk": "[Стікер]",
+        "pl": "[Naklejka]",
+        "en": "[Sticker]",
+        "es": "[Sticker]",
+        "pt": "[Sticker]"
+    },
+    "discord_system_event": {
+        "ru": "{name} {action}",
+        "uk": "{name} {action}",
+        "pl": "{name} {action}",
+        "en": "{name} {action}",
+        "es": "{name} {action}",
+        "pt": "{name} {action}",
+    },
+    "discord_system_event_action": {
+        "boosted_server": {
+            "ru": "дал буст серверу",
+            "uk": "дав буст серверу",
+            "pl": "dał boost serwerowi",
+            "en": "boosted the server",
+            "es": "dio un impulso al servidor",
+            "pt": "deu boost no servidor"
+        },
+        "created_thread": {
+            "ru": "создал ветку",
+            "uk": "створив гілку",
+            "pl": "utworzył wątek",
+            "en": "created a thread",
+            "es": "creó un hilo",
+            "pt": "criou uma thread"
+        },
+        "pinned_message": {
+            "ru": "закрепил сообщение",
+            "uk": "закріпив повідомлення",
+            "pl": "przypiął wiadomość",
+            "en": "pinned a message",
+            "es": "fijó un mensaje",
+            "pt": "fixou uma mensagem"
+        },
+        "joined_server": {
+            "ru": "присоединился к серверу",
+            "uk": "приєднався до сервера",
+            "pl": "dołączył do serwera",
+            "en": "joined the server",
+            "es": "se unió al servidor",
+            "pt": "entrou no servidor"
+        }
+    },
+    "service_event": {
+        "bot_started": {
+            "ru": "🤖 Бот запущен.",
+            "uk": "🤖 Бота запущено.",
+            "pl": "🤖 Bot uruchomiony.",
+            "en": "🤖 Bot started.",
+            "es": "🤖 Bot iniciado.",
+            "pt": "🤖 Bot iniciado."
+        },
+        "bot_stopped": {
+            "ru": "🛑 Бот остановлен.",
+            "uk": "🛑 Бота зупинено.",
+            "pl": "🛑 Bot zatrzymany.",
+            "en": "🛑 Bot stopped.",
+            "es": "🛑 Bot detenido.",
+            "pt": "🛑 Bot parado."
+        },
+        "daily_missing_tg_chat": {
+            "ru": "Не вижу чат Telegram {chat_key}.",
+            "uk": "Не бачу чат Telegram {chat_key}.",
+            "pl": "Nie widzę czatu Telegram {chat_key}.",
+            "en": "Cannot access Telegram chat {chat_key}.",
+            "es": "No puedo acceder al chat de Telegram {chat_key}.",
+            "pt": "Não consigo acessar o chat do Telegram {chat_key}."
+        },
+        "daily_no_tg_delete_perm": {
+            "ru": "Недостаточно прав удалять сообщения в Telegram чате {chat_key}.",
+            "uk": "Недостатньо прав видаляти повідомлення в Telegram-чаті {chat_key}.",
+            "pl": "Brak uprawnień do usuwania wiadomości w czacie Telegram {chat_key}.",
+            "en": "Missing permission to delete messages in Telegram chat {chat_key}.",
+            "es": "Faltan permisos para eliminar mensajes en el chat de Telegram {chat_key}.",
+            "pt": "Permissão ausente para apagar mensagens no chat do Telegram {chat_key}."
+        },
+        "daily_tg_perm_check_error": {
+            "ru": "Ошибка проверки прав в Telegram чате {chat_key}: {error}",
+            "uk": "Помилка перевірки прав у Telegram-чаті {chat_key}: {error}",
+            "pl": "Błąd sprawdzania uprawnień w czacie Telegram {chat_key}: {error}",
+            "en": "Error checking permissions in Telegram chat {chat_key}: {error}",
+            "es": "Error al comprobar permisos en el chat de Telegram {chat_key}: {error}",
+            "pt": "Erro ao verificar permissões no chat do Telegram {chat_key}: {error}"
+        },
+        "daily_missing_dc_channel": {
+            "ru": "Не вижу Discord-канал {chat_key}.",
+            "uk": "Не бачу Discord-канал {chat_key}.",
+            "pl": "Nie widzę kanału Discord {chat_key}.",
+            "en": "Cannot access Discord channel {chat_key}.",
+            "es": "No puedo acceder al canal de Discord {chat_key}.",
+            "pt": "Não consigo acessar o canal do Discord {chat_key}."
+        },
+        "daily_no_dc_manage_perm": {
+            "ru": "Недостаточно прав manage_messages в Discord чате {chat_key}.",
+            "uk": "Недостатньо прав manage_messages у Discord-чаті {chat_key}.",
+            "pl": "Brak uprawnień manage_messages na czacie Discord {chat_key}.",
+            "en": "Missing manage_messages permission in Discord chat {chat_key}.",
+            "es": "Falta el permiso manage_messages en el chat de Discord {chat_key}.",
+            "pt": "Permissão manage_messages ausente no chat do Discord {chat_key}."
+        },
+        "daily_loop_error": {
+            "ru": "Ошибка цикла daily_check_loop: {error}",
+            "uk": "Помилка циклу daily_check_loop: {error}",
+            "pl": "Błąd pętli daily_check_loop: {error}",
+            "en": "daily_check_loop error: {error}",
+            "es": "Error de daily_check_loop: {error}",
+            "pt": "Erro no daily_check_loop: {error}"
+        }
+    },
 }
 
 def get_chat_lang(chat_id):
@@ -284,3 +419,20 @@ def localized_consent_body(lang):
 
 def localized_consent_button(lang):
     return _LOCALE["consent_button"].get(lang, _LOCALE["consent_button"][DEFAULT_LANG])
+
+def localized_sticker(lang):
+    return _LOCALE["sticker"].get(lang, _LOCALE["sticker"][DEFAULT_LANG])
+
+def localized_discord_system_event(name, event_key, lang):
+    action_table = _LOCALE.get("discord_system_event_action", {}).get(event_key, {})
+    action = action_table.get(lang, action_table.get(DEFAULT_LANG, event_key))
+    template = _LOCALE.get("discord_system_event", {}).get(lang, _LOCALE["discord_system_event"][DEFAULT_LANG])
+    return template.format(name=name, action=action)
+
+def localized_service_event(event_key, lang, **kwargs):
+    table = _LOCALE.get("service_event", {}).get(event_key, {})
+    template = table.get(lang, table.get(DEFAULT_LANG, event_key))
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template

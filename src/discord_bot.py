@@ -6,7 +6,8 @@ from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, set_chat_lang,
     get_next_status_text, get_chat_lang,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
-    localized_consent_title, localized_consent_body, localized_consent_button
+    localized_consent_title, localized_consent_body, localized_consent_button,
+    localized_sticker, localized_discord_system_event
 )
 import time
 import asyncio
@@ -49,6 +50,87 @@ def replace_mentions(message: discord.Message, text: str) -> str:
 
     return text
 
+def _discord_embed_texts(message: discord.Message):
+    texts = []
+    for e in getattr(message, "embeds", []) or []:
+        parts = []
+        title = getattr(e, "title", None)
+        description = getattr(e, "description", None)
+        if title:
+            parts.append(str(title))
+        if description:
+            parts.append(str(description))
+        if parts:
+            texts.append("\n".join(parts))
+    return texts
+
+def _discord_system_event_key(message: discord.Message):
+    mt = getattr(message, "type", None)
+    mapping = {
+        discord.MessageType.premium_guild_subscription: "boosted_server",
+        discord.MessageType.premium_guild_tier_1: "boosted_server",
+        discord.MessageType.premium_guild_tier_2: "boosted_server",
+        discord.MessageType.premium_guild_tier_3: "boosted_server",
+        discord.MessageType.thread_created: "created_thread",
+        discord.MessageType.pins_add: "pinned_message",
+        discord.MessageType.new_member: "joined_server",
+    }
+    return mapping.get(mt)
+
+def extract_discord_forward_payload(message: discord.Message):
+    forward_type = None
+    forward_name = None
+    forward_text = ""
+
+    snapshots = getattr(message, "message_snapshots", None) or []
+    if snapshots:
+        snap = snapshots[0]
+        body = (getattr(snap, "content", "") or "").strip()
+        snap_attachments = []
+        for a in getattr(snap, "attachments", []) or []:
+            url = getattr(a, "url", None)
+            if url:
+                snap_attachments.append(url)
+        if snap_attachments:
+            body = "\n".join([body] + snap_attachments) if body else "\n".join(snap_attachments)
+
+        snap_channel = getattr(snap, "channel", None)
+        snap_author = getattr(snap, "author", None)
+        if snap_channel and getattr(snap_channel, "name", None):
+            forward_type = "chat"
+            forward_name = snap_channel.name
+        elif snap_author:
+            forward_type = "user"
+            forward_name = getattr(snap_author, "display_name", None) or getattr(snap_author, "name", None)
+        else:
+            forward_type = "unknown"
+
+        return forward_type, forward_name, body
+
+    if getattr(message, "type", None) == discord.MessageType.reply:
+        return None, None, ""
+
+    ref = getattr(message, "reference", None)
+    resolved = getattr(ref, "resolved", None)
+    if resolved and isinstance(resolved, discord.Message):
+        body = replace_mentions(resolved, resolved.content or "").strip()
+        ref_attachments = [a.url for a in getattr(resolved, "attachments", []) if getattr(a, "url", None)]
+        if ref_attachments:
+            body = "\n".join([body] + ref_attachments) if body else "\n".join(ref_attachments)
+        if resolved.channel and getattr(resolved.channel, "name", None):
+            forward_type = "chat"
+            forward_name = resolved.channel.name
+        elif resolved.author:
+            forward_type = "user"
+            forward_name = resolved.author.display_name or str(resolved.author)
+        else:
+            forward_type = "unknown"
+        return forward_type, forward_name, body
+
+    if ref and not resolved:
+        return "unknown", None, ""
+
+    return None, None, ""
 class DiscordBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -289,6 +371,8 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
+    system_event_key = _discord_system_event_key(message)
+
     row = db.cur.execute(
         "SELECT bridge_id FROM chats WHERE chat_id=?",
         (chat_id,)
@@ -351,6 +435,10 @@ async def on_message(message: discord.Message):
             return
 
     reply_to_name = None
+    forward_type = None
+    forward_name = None
+    forward_text = ""
+
     if message.reference and message.reference.resolved:
         replied = message.reference.resolved
         
@@ -361,10 +449,12 @@ async def on_message(message: discord.Message):
         else:
             reply_to_name = replied.author.display_name
 
+    forward_type, forward_name, forward_text = extract_discord_forward_payload(message)
+
     content = replace_mentions(message, message.content or "")
 
     if message.stickers:
-        texts = ["[Sticker]"]
+        texts = ["__DC_STICKER__"]
     else:
         attachments = [a.url for a in message.attachments]
         if attachments:
@@ -373,6 +463,14 @@ async def on_message(message: discord.Message):
                 texts.append(a)
         else:
             texts = [content]
+
+    if (not any((t or "").strip() for t in texts)):
+        embed_texts = _discord_embed_texts(message)
+        if embed_texts:
+            texts = ["\n\n".join(embed_texts)]
+
+    if forward_type and not any((t or "").strip() for t in texts):
+        texts = [forward_text or ""]
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
         if chat["platform"] == "discord":
@@ -401,7 +499,13 @@ async def on_message(message: discord.Message):
             )
             return str(sent.message_id)
 
-    for text in texts:
+    if system_event_key:
+        origin_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        event_text = localized_discord_system_event(
+            message.author.display_name or str(message.author),
+            system_event_key,
+            origin_lang,
+        )
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
@@ -411,30 +515,63 @@ async def on_message(message: discord.Message):
             messenger_name="Discord",
             place_name=message.guild.name or message.channel.name,
             sender_name=message.author.display_name or str(message.author),
-            text=text,
-            discord_text=text,
-            telegram_html=discord_to_telegram_html(text),
+            text=event_text,
+            discord_text=event_text,
+            telegram_html=discord_to_telegram_html(event_text),
+            reply_to_name=None,
+            send_to_chat_func=send_to_chat,
+        )
+        return
+
+    for text in texts:
+        target_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
+        await message_relay.relay_message(
+            bridge_id=bridge_id,
+            origin_platform="discord",
+            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
+            origin_message_id=str(message.id),
+            origin_sender_id=str(message.author.id),
+            messenger_name="Discord",
+            place_name=message.guild.name or message.channel.name,
+            sender_name=message.author.display_name or str(message.author),
+            text=localized_text,
+            discord_text=localized_text,
+            telegram_html=discord_to_telegram_html(localized_text),
             reply_to_name=reply_to_name,
-            send_to_chat_func=send_to_chat
+            send_to_chat_func=send_to_chat,
+            forward_type=forward_type,
+            forward_name=forward_name,
     )
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     if after.author.bot:
         return
+    await process_discord_message_edit(
+        guild=after.guild,
+        channel=after.channel,
+        message_id=after.id,
+        author_display_name=after.author.display_name or str(after.author),
+        text=replace_mentions(after, after.content or ""),
+    )
+
+async def process_discord_message_edit(*, guild, channel, message_id, author_display_name, text):
+    if not guild or not channel:
+        return
+
     row = db.cur.execute(
         """
         SELECT id FROM messages
         WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?
         ORDER BY id DESC LIMIT 1
         """,
-        (f"{after.guild.id}:{after.channel.id}", str(after.id))
+        (f"{guild.id}:{channel.id}", str(message_id))
     ).fetchone()
     if not row:
         return
 
-    header = f"[Discord | {after.guild.name or after.channel.name}] {after.author.display_name or str(after.author)}:"
-    text = replace_mentions(after, after.content or "")
+    header = f"[Discord | {guild.name or channel.name}] {author_display_name}:"
     text_html = discord_to_telegram_html(text)
 
     copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
@@ -444,7 +581,10 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
                 channel_id = int(c["chat_id"].split(":")[1])
                 ch = bot.get_channel(channel_id)
                 if not ch:
-                    continue
+                    try:
+                        ch = await bot.fetch_channel(channel_id)
+                    except Exception:
+                        continue
                 m = await ch.fetch_message(int(c["message_id_platform"]))
                 await m.edit(content=f"{header}\n{text}".strip())
             elif c["platform"] == "telegram":
@@ -458,6 +598,51 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
                 )
         except Exception:
             pass
+
+@bot.event
+async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
+    data = payload.data or {}
+    if str(data.get("author", {}).get("bot", "")).lower() == "true":
+        return
+
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    channel = bot.get_channel(payload.channel_id)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(payload.channel_id)
+        except Exception:
+            channel = None
+
+    if not guild and channel and getattr(channel, "guild", None):
+        guild = channel.guild
+
+    if not guild or not channel:
+        return
+
+    author_display_name = None
+    content = data.get("content")
+    try:
+        msg = await channel.fetch_message(payload.message_id)
+        if msg.author.bot:
+            return
+        author_display_name = msg.author.display_name or str(msg.author)
+        content = msg.content
+        content = replace_mentions(msg, content or "")
+    except Exception:
+        pass
+
+    if author_display_name is None:
+        author_data = data.get("author") or {}
+        author_display_name = author_data.get("global_name") or author_data.get("username") or "Unknown"
+        content = content or ""
+
+    await process_discord_message_edit(
+        guild=guild,
+        channel=channel,
+        message_id=payload.message_id,
+        author_display_name=author_display_name,
+        text=content,
+    )
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
     row = db.cur.execute(
@@ -483,25 +668,40 @@ def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
 
 @bot.event
 async def on_message_delete(message: discord.Message):
+    await process_discord_message_delete(
+        guild_id=message.guild.id if message.guild else None,
+        channel_id=message.channel.id if message.channel else None,
+        message_id=message.id,
+    )
+
+async def process_discord_message_delete(*, guild_id, channel_id, message_id):
     row = db.cur.execute(
         """
         SELECT id FROM messages
         WHERE origin_platform='discord'
           AND origin_message_id=?
         """,
-        (str(message.id),)
+        (str(message_id),)
     ).fetchone()
 
     if not row:
-        await handle_delete_of_copy("discord", str(message.id))
+        await handle_delete_of_copy("discord", str(message_id))
         return
 
     await delete_all_copies_and_origin(row["id"])
 
     try_remove_bridge_rule(
         "discord",
-        f"{message.guild.id}:{message.channel.id}",
-        str(message.id)
+        f"{guild_id}:{channel_id}",
+        str(message_id)
+    )
+
+@bot.event
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+    await process_discord_message_delete(
+        guild_id=payload.guild_id,
+        channel_id=payload.channel_id,
+        message_id=payload.message_id,
     )
 
 @bot.tree.command(name="setadmin")
@@ -560,6 +760,11 @@ async def delete_all_copies_and_origin(msg_id):
         if c["platform"] == "discord":
             channel_id = int(c["chat_id"].split(":")[1])
             channel = bot.get_channel(channel_id)
+            if not channel:
+                try:
+                    channel = await bot.fetch_channel(channel_id)
+                except Exception:
+                    channel = None
             if channel:
                 try:
                     m = await channel.fetch_message(int(c["message_id_platform"]))
@@ -581,6 +786,11 @@ async def delete_all_copies_and_origin(msg_id):
     if msg["origin_platform"] == "discord":
         channel_id = int(msg["origin_chat_id"].split(":")[1])
         channel = bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except Exception:
+                channel = None
         if channel:
             try:
                 m = await channel.fetch_message(int(msg["origin_message_id"]))
@@ -796,20 +1006,11 @@ async def newschat(
 @bot.tree.command(name="remindrules")
 async def remindrules(
     interaction: discord.Interaction,
-    hours: int,
-    messages: int | None = None
+    hours_or_disable: str,
+    messages: int | None = None,
+    message_id: str | None = None,
+    text: str | None = None,
 ):
-    ref = None
-    if interaction.message and interaction.message.reference:
-        ref = interaction.message.reference.resolved
-
-    if not ref:
-        await interaction.response.send_message(
-            "Command must be a reply to a message with rules",
-            ephemeral=True
-        )
-        return
-
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
 
     if not (
@@ -817,11 +1018,6 @@ async def remindrules(
         or is_chat_admin("discord", chat_id, interaction.user.id)
     ):
         await interaction.response.send_message("No permission", ephemeral=True)
-        return
-
-    ref = interaction.message.reference.resolved
-    if not ref:
-        await interaction.response.send_message("Could not resolve referenced message", ephemeral=True)
         return
 
     row = db.cur.execute(
@@ -834,6 +1030,42 @@ async def remindrules(
 
     bridge_id = row["bridge_id"]
 
+    if hours_or_disable.strip().lower() == "disable":
+        db.cur.execute("DELETE FROM bridge_rules WHERE bridge_id=?", (bridge_id,))
+        db.conn.commit()
+        await interaction.response.send_message("Rules reminder disabled for this bridge", ephemeral=True)
+        return
+
+    try:
+        hours = int(hours_or_disable)
+        if hours <= 0:
+            raise ValueError
+    except ValueError:
+        await interaction.response.send_message(
+            "Usage: /remindrules <hours|disable> [messages] [message_id] [text]",
+            ephemeral=True,
+        )
+        return
+
+    content = (text or "").strip()
+    source_message_id = ""
+
+    if not content and message_id:
+        try:
+            ref_msg = await interaction.channel.fetch_message(int(message_id))
+            content = (getattr(ref_msg, "content", "") or "").strip()
+            source_message_id = str(ref_msg.id)
+        except Exception:
+            await interaction.response.send_message("Could not fetch message by message_id", ephemeral=True)
+            return
+
+    if not content:
+        await interaction.response.send_message(
+            "Provide rules text via `text` or pass `message_id` of a message in this channel.",
+            ephemeral=True,
+        )
+        return
+
     db.cur.execute(
         """
         INSERT OR REPLACE INTO bridge_rules
@@ -843,11 +1075,11 @@ async def remindrules(
         """,
         (
             bridge_id,
-            getattr(ref, "text", "") or getattr(ref, "caption", "") or "",
-            "telegram",
-            "telegram",
+            content,
+            "discord",
+            "discord",
             chat_id,
-            str(ref.message_id) if hasattr(ref, "message_id") else str(ref.id),
+            source_message_id,
             hours,
             messages,
             int(time.time()) - (hours * 3600),
@@ -857,7 +1089,7 @@ async def remindrules(
     db.conn.commit()
 
     await interaction.response.send_message(
-        "Rules saved and will be posted automatically",
+        "Rules saved and will be posted across the whole bridge",
         ephemeral=True
     )
 

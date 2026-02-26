@@ -124,6 +124,7 @@ from utils import (
     localized_forward_from_chat,
     localized_forward_from_user,
     localized_forward_unknown,
+    localized_sticker,
 )
 
 async def relay_message(
@@ -180,19 +181,26 @@ async def relay_message(
 
         current_text = text
         current_discord_text = discord_text or current_text
+        current_telegram_html = telegram_html
 
         if forward_type == "chat":
             fwd_line = localized_forward_from_chat(forward_name or "unknown", lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+            if current_telegram_html is not None:
+                current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
         elif forward_type == "user":
             fwd_line = localized_forward_from_user(forward_name or "unknown", lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+            if current_telegram_html is not None:
+                current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
         elif forward_type == "unknown":
             fwd_line = localized_forward_unknown(lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
+            if current_telegram_html is not None:
+                current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
         if telegram_file_count is not None:
             marker = localized_file_count_text(telegram_file_count, lang)
             current_text = current_text.replace(
@@ -203,13 +211,25 @@ async def relay_message(
                 f"__TG_FILES_{telegram_file_count}__",
                 marker
             )
+            if current_telegram_html is not None:
+                current_telegram_html = current_telegram_html.replace(
+                    f"__TG_FILES_{telegram_file_count}__",
+                    escape_html(marker)
+                )
+
+        if "__TG_STICKER__" in current_text:
+            sticker_marker = localized_sticker(lang)
+            current_text = current_text.replace("__TG_STICKER__", sticker_marker)
+            current_discord_text = current_discord_text.replace("__TG_STICKER__", sticker_marker)
+            if current_telegram_html is not None:
+                current_telegram_html = current_telegram_html.replace("__TG_STICKER__", escape_html(sticker_marker))
 
         sent_id = await send_to_chat_func(
             chat,
             header=header,
             body_plain=current_text,
             body_discord=current_discord_text,
-            body_telegram_html=telegram_html,
+            body_telegram_html=current_telegram_html,
             reply_line=reply_line,
         )
         if not sent_id:
