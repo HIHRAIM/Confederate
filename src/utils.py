@@ -1,3 +1,4 @@
+import re
 from config import ADMINS, SERVICE_CHATS
 import db
 import itertools
@@ -6,7 +7,20 @@ def is_admin(platform, user_id):
     return user_id in ADMINS.get(platform, set())
 
 def extract_username_from_bot_message(text: str):
+    if not text:
+        return None
+
     try:
+        for raw_line in str(text).splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            m = re.match(r"^\[[^\]]+\]\s*(.+?)\s*:\s*$", line)
+            if m:
+                name = m.group(1).strip()
+                return name or None
+
         return text.split("]", 1)[1].split(":", 1)[0].strip()
     except Exception:
         return None
