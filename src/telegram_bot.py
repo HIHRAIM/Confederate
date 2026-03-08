@@ -327,9 +327,14 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         and message.reply_to_message.message_id != message.message_thread_id
     ):
         if message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
-            reply_to_name = extract_username_from_bot_message(
-                getattr(message.reply_to_message, "text", "") or ""
+            reply_source = (
+                getattr(message.reply_to_message, "text", "")
+                or getattr(message.reply_to_message, "caption", "")
+                or getattr(message.reply_to_message, "html_text", "")
+                or getattr(message.reply_to_message, "html_caption", "")
+                or ""
             )
+            reply_to_name = extract_username_from_bot_message(reply_source)
         else:
             try:
                 reply_to_name = message.reply_to_message.from_user.full_name
