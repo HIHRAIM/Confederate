@@ -439,15 +439,19 @@ async def on_message(message: discord.Message):
     forward_name = None
     forward_text = ""
 
-    if message.reference and message.reference.resolved:
+    if message.reference:
         replied = message.reference.resolved
-        
-        relay_bot_ids = (1295454829883298023, 888314689824636998)
+        if not replied and getattr(message.reference, "message_id", None):
+            try:
+                replied = await message.channel.fetch_message(message.reference.message_id)
+            except Exception:
+                replied = None
 
-        if replied.author.id in relay_bot_ids:
-            reply_to_name = extract_username_from_bot_message(replied.content)
-        else:
-            reply_to_name = replied.author.display_name
+        if replied and getattr(replied, "author", None):
+            if replied.author.bot:
+                reply_to_name = extract_username_from_bot_message(getattr(replied, "content", "") or "")
+            if not reply_to_name:
+                reply_to_name = replied.author.display_name
 
     forward_type, forward_name, forward_text = extract_discord_forward_payload(message)
 
