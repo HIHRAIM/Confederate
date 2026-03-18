@@ -7,7 +7,7 @@ from utils import (
     get_next_status_text, get_chat_lang,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
-    localized_sticker, localized_discord_system_event
+    localized_sticker, localized_discord_system_event, localized_whois
 )
 import time
 import asyncio
@@ -131,6 +131,143 @@ def extract_discord_forward_payload(message: discord.Message):
         return "unknown", None, ""
 
     return None, None, ""
+
+async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None):
+    reply_to_name = None
+    forward_type = None
+    forward_name = None
+    forward_text = ""
+
+    if message.reference:
+        replied = message.reference.resolved
+        if not replied and getattr(message.reference, "message_id", None):
+            try:
+                replied = await message.channel.fetch_message(message.reference.message_id)
+            except Exception:
+                replied = None
+
+        if replied and getattr(replied, "author", None):
+            if replied.author.bot:
+                reply_to_name = extract_username_from_bot_message(getattr(replied, "content", "") or "")
+            if not reply_to_name:
+                reply_to_name = replied.author.display_name
+
+    forward_type, forward_name, forward_text = extract_discord_forward_payload(message)
+    content = replace_mentions(message, message.content or "")
+
+    if message.stickers:
+        texts = ["__DC_STICKER__"]
+    else:
+        attachments = [a.url for a in message.attachments]
+        if attachments:
+            texts = [content + "\n" + attachments[0] if content else attachments[0]]
+            for a in attachments[1:]:
+                texts.append(a)
+        else:
+            texts = [content]
+
+    if (not any((t or "").strip() for t in texts)):
+        embed_texts = _discord_embed_texts(message)
+        if embed_texts:
+            texts = ["\n\n".join(embed_texts)]
+
+    if forward_type and not any((t or "").strip() for t in texts):
+        texts = [forward_text or ""]
+
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
+        if chat["platform"] == "discord":
+            channel_id = int(chat["chat_id"].split(":")[1])
+            channel = bot.get_channel(channel_id)
+            if not channel:
+                return None
+            body = body_discord
+            if reply_line:
+                body = f"{reply_line}\n{body}"
+            sent = await channel.send(f"{header}\n{body}".strip())
+            return str(sent.id)
+
+        if chat["platform"] == "telegram":
+            from telegram_bot import bot as tg_bot
+            chat_id_str, thread = chat["chat_id"].split(":")
+            body_html = body_telegram_html or escape_html(body_plain)
+            if reply_line:
+                body_html = f"{escape_html(reply_line)}\n{body_html}"
+            text_html = f"{escape_html(header)}\n{body_html}".strip()
+            sent = await tg_bot.send_message(
+                chat_id=int(chat_id_str),
+                message_thread_id=int(thread) or None,
+                text=text_html,
+                parse_mode="HTML"
+            )
+            return str(sent.message_id)
+
+    if system_event_key:
+        origin_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        event_text = localized_discord_system_event(
+            message.author.display_name or str(message.author),
+            system_event_key,
+            origin_lang,
+        )
+        await message_relay.relay_message(
+            bridge_id=bridge_id,
+            origin_platform="discord",
+            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
+            origin_message_id=str(message.id),
+            origin_sender_id=str(message.author.id),
+            messenger_name="Discord",
+            place_name=message.guild.name or message.channel.name,
+            sender_name=message.author.display_name or str(message.author),
+            text=event_text,
+            discord_text=event_text,
+            telegram_html=discord_to_telegram_html(event_text),
+            reply_to_name=None,
+            send_to_chat_func=send_to_chat,
+        )
+        return
+
+    for text in texts:
+        target_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
+        await message_relay.relay_message(
+            bridge_id=bridge_id,
+            origin_platform="discord",
+            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
+            origin_message_id=str(message.id),
+            origin_sender_id=str(message.author.id),
+            messenger_name="Discord",
+            place_name=message.guild.name or message.channel.name,
+            sender_name=message.author.display_name or str(message.author),
+            text=localized_text,
+            discord_text=localized_text,
+            telegram_html=discord_to_telegram_html(localized_text),
+            reply_to_name=reply_to_name,
+            send_to_chat_func=send_to_chat,
+            forward_type=forward_type,
+            forward_name=forward_name,
+        )
+
+async def _relay_pending_discord_first_message(pend_row):
+    try:
+        chat_key = pend_row["chat_key"]
+        first_message_id = pend_row["first_message_id"]
+    except Exception:
+        return
+    if not chat_key or not first_message_id:
+        return
+    try:
+        _, channel_id = chat_key.split(":")
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            channel = await bot.fetch_channel(int(channel_id))
+        first_message = await channel.fetch_message(int(first_message_id))
+    except Exception:
+        return
+    if not first_message or first_message.author.bot:
+        return
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+    if not row:
+        return
+    await _relay_verified_discord_message(first_message, row["bridge_id"], _discord_system_event_key(first_message))
 class DiscordBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -392,6 +529,10 @@ async def on_message(message: discord.Message):
             pass
         return
 
+    if system_event_key and not db.is_user_verified("discord", user_id_str, prefix):
+        await _relay_verified_discord_message(message, bridge_id, system_event_key)
+        return
+
     if not db.is_user_verified("discord", user_id_str, prefix):
         pend = db.get_pending_consent("discord", prefix, user_id_str)
         if pend:
@@ -416,12 +557,15 @@ async def on_message(message: discord.Message):
                         await interaction.response.send_message("This button is not for you", ephemeral=True)
                         return
                     db.add_verified_user("discord", self.user_id, "*", days_valid=365)
+                    pend_row = db.get_pending_consent("discord", self.prefix, self.user_id)
                     db.remove_pending_consent("discord", self.prefix, self.user_id)
                     try:
                         await interaction.message.delete()
                     except Exception:
                         pass
                     await interaction.response.send_message("Thanks — verified", ephemeral=True)
+                    if pend_row:
+                        await _relay_pending_discord_first_message(pend_row)
 
             try:
                 mention = f"<@{message.author.id}>"
@@ -429,124 +573,27 @@ async def on_message(message: discord.Message):
                 sent = await message.channel.send(consent_text, view=_VerifyView(prefix, user_id_str))
                 bot_msg_id = str(sent.id)
                 chat_key = f"{message.guild.id}:{message.channel.id}"
-                db.add_pending_consent("discord", prefix, user_id_str, bot_msg_id, chat_key)
+                db.add_pending_consent(
+                    "discord",
+                    prefix,
+                    user_id_str,
+                    bot_msg_id,
+                    chat_key,
+                    first_message_id=str(message.id)
+                )
             except Exception:
-                pass
+                chat_key = f"{message.guild.id}:{message.channel.id}"
+                db.add_pending_consent(
+                    "discord",
+                    prefix,
+                    user_id_str,
+                    "",
+                    chat_key,
+                    first_message_id=str(message.id)
+                )
             return
 
-    reply_to_name = None
-    forward_type = None
-    forward_name = None
-    forward_text = ""
-
-    if message.reference:
-        replied = message.reference.resolved
-        if not replied and getattr(message.reference, "message_id", None):
-            try:
-                replied = await message.channel.fetch_message(message.reference.message_id)
-            except Exception:
-                replied = None
-
-        if replied and getattr(replied, "author", None):
-            if replied.author.bot:
-                reply_to_name = extract_username_from_bot_message(getattr(replied, "content", "") or "")
-            if not reply_to_name:
-                reply_to_name = replied.author.display_name
-
-    forward_type, forward_name, forward_text = extract_discord_forward_payload(message)
-
-    content = replace_mentions(message, message.content or "")
-
-    if message.stickers:
-        texts = ["__DC_STICKER__"]
-    else:
-        attachments = [a.url for a in message.attachments]
-        if attachments:
-            texts = [content + "\n" + attachments[0] if content else attachments[0]]
-            for a in attachments[1:]:
-                texts.append(a)
-        else:
-            texts = [content]
-
-    if (not any((t or "").strip() for t in texts)):
-        embed_texts = _discord_embed_texts(message)
-        if embed_texts:
-            texts = ["\n\n".join(embed_texts)]
-
-    if forward_type and not any((t or "").strip() for t in texts):
-        texts = [forward_text or ""]
-
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
-        if chat["platform"] == "discord":
-            channel_id = int(chat["chat_id"].split(":")[1])
-            channel = bot.get_channel(channel_id)
-            if not channel:
-                return None
-            body = body_discord
-            if reply_line:
-                body = f"{reply_line}\n{body}"
-            sent = await channel.send(f"{header}\n{body}".strip())
-            return str(sent.id)
-
-        if chat["platform"] == "telegram":
-            from telegram_bot import bot as tg_bot
-            chat_id_str, thread = chat["chat_id"].split(":")
-            body_html = body_telegram_html or escape_html(body_plain)
-            if reply_line:
-                body_html = f"{escape_html(reply_line)}\n{body_html}"
-            text_html = f"{escape_html(header)}\n{body_html}".strip()
-            sent = await tg_bot.send_message(
-                chat_id=int(chat_id_str),
-                message_thread_id=int(thread) or None,
-                text=text_html,
-                parse_mode="HTML"
-            )
-            return str(sent.message_id)
-
-    if system_event_key:
-        origin_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
-        event_text = localized_discord_system_event(
-            message.author.display_name or str(message.author),
-            system_event_key,
-            origin_lang,
-        )
-        await message_relay.relay_message(
-            bridge_id=bridge_id,
-            origin_platform="discord",
-            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
-            origin_message_id=str(message.id),
-            origin_sender_id=str(message.author.id),
-            messenger_name="Discord",
-            place_name=message.guild.name or message.channel.name,
-            sender_name=message.author.display_name or str(message.author),
-            text=event_text,
-            discord_text=event_text,
-            telegram_html=discord_to_telegram_html(event_text),
-            reply_to_name=None,
-            send_to_chat_func=send_to_chat,
-        )
-        return
-
-    for text in texts:
-        target_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
-        localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
-        await message_relay.relay_message(
-            bridge_id=bridge_id,
-            origin_platform="discord",
-            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
-            origin_message_id=str(message.id),
-            origin_sender_id=str(message.author.id),
-            messenger_name="Discord",
-            place_name=message.guild.name or message.channel.name,
-            sender_name=message.author.display_name or str(message.author),
-            text=localized_text,
-            discord_text=localized_text,
-            telegram_html=discord_to_telegram_html(localized_text),
-            reply_to_name=reply_to_name,
-            send_to_chat_func=send_to_chat,
-            forward_type=forward_type,
-            forward_name=forward_name,
-    )
+    await _relay_verified_discord_message(message, bridge_id, system_event_key)
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
@@ -1275,17 +1322,26 @@ async def verify_slash(interaction: discord.Interaction):
                 await interaction2.response.send_message("This button is not for you", ephemeral=True)
                 return
             db.add_verified_user("discord", self.user_id, "*", days_valid=365)
+            pend_row = db.get_pending_consent("discord", self.prefix, self.user_id)
             db.remove_pending_consent("discord", self.prefix, self.user_id)
             try:
                 await interaction2.message.delete()
             except Exception:
                 pass
             await interaction2.response.send_message("Thanks — verified", ephemeral=True)
+            if pend_row:
+                await _relay_pending_discord_first_message(pend_row)
 
     mention = f"<@{interaction.user.id}>"
     consent_text = f"{mention}\n**{localized_consent_title(lang)}**\n\n{localized_consent_body(lang)}"
     sent = await interaction.channel.send(consent_text, view=_VerifyView(prefix, user_id_str))
-    db.add_pending_consent("discord", prefix, user_id_str, str(sent.id), f"{interaction.guild_id}:{interaction.channel_id}")
+    db.add_pending_consent(
+        "discord",
+        prefix,
+        user_id_str,
+        str(sent.id),
+        f"{interaction.guild_id}:{interaction.channel_id}"
+    )
     await interaction.response.send_message("Verification message sent (check the channel)", ephemeral=True)
 
 @bot.tree.command(name="unverify")
@@ -1366,6 +1422,7 @@ async def whois_command(interaction: discord.Interaction):
         return None
 
     replied_id = None
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
 
     if interaction.message and interaction.message.reference:
         replied = interaction.message.reference.resolved
@@ -1375,7 +1432,19 @@ async def whois_command(interaction: discord.Interaction):
     if not replied_id:
         replied_id = _extract_message_id_from_data(interaction.data or {})
 
-    if not replied_id:
+    if not replied_id and interaction.channel:
+        try:
+            async for m in interaction.channel.history(limit=50):
+                if getattr(m, "author", None) and m.author.id != interaction.user.id:
+                    continue
+                ref = getattr(m, "reference", None)
+                if ref and getattr(ref, "message_id", None):
+                    replied_id = str(ref.message_id)
+                    break
+        except Exception:
+            pass
+
+    if not replied_id and interaction.channel:
         try:
             relay_bot_ids = {int(bot.user.id)} if bot.user else set()
             relay_bot_ids.update({1295454829883298023, 888314689824636998})
@@ -1387,30 +1456,46 @@ async def whois_command(interaction: discord.Interaction):
             pass
 
     if not replied_id:
-        await interaction.response.send_message("Use this command in reply to a bot-relay message", ephemeral=True)
+        await interaction.response.send_message(localized_whois("use_reply", lang), ephemeral=True)
         return
 
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
-    row = db.cur.execute(
-        "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
-        ("discord", chat_key, replied_id)
-    ).fetchone()
+
+    def _find_origin_row(message_id_platform: str | None):
+        if not message_id_platform:
+            return None
+        return db.cur.execute(
+            "SELECT message_id FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=? LIMIT 1",
+            ("discord", chat_key, str(message_id_platform))
+        ).fetchone()
+
+    row = _find_origin_row(replied_id)
+    if not row and interaction.channel:
+        try:
+            relay_bot_ids = {int(bot.user.id)} if bot.user else set()
+            relay_bot_ids.update({1295454829883298023, 888314689824636998})
+            async for m in interaction.channel.history(limit=40):
+                if not m.author or m.author.id not in relay_bot_ids:
+                    continue
+                row = _find_origin_row(str(m.id))
+                if row:
+                    break
+        except Exception:
+            pass
+
     if not row:
-        await interaction.response.send_message("Origin not found", ephemeral=True)
+        await interaction.response.send_message(localized_whois("origin_not_found", lang), ephemeral=True)
         return
 
     msg_row = db.cur.execute("SELECT * FROM messages WHERE id=?", (row["message_id"],)).fetchone()
     if not msg_row:
-        await interaction.response.send_message("Origin missing", ephemeral=True)
+        await interaction.response.send_message(localized_whois("origin_missing", lang), ephemeral=True)
         return
 
     origin_platform = msg_row["origin_platform"]
     origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
 
     try:
-        nick = "—"
-        username = "—"
-
         if origin_platform == "discord":
             guild_id, _ = msg_row["origin_chat_id"].split(":")
             guild = bot.get_guild(int(guild_id))
@@ -1420,9 +1505,62 @@ async def whois_command(interaction: discord.Interaction):
                     member = await guild.fetch_member(int(origin_sender_id))
                 except Exception:
                     member = None
+
+            user_obj = None
+            try:
+                user_obj = await bot.fetch_user(int(origin_sender_id))
+            except Exception:
+                user_obj = getattr(member, "user", None)
+
+            nick = member.display_name if member else "—"
+            user_name = "—"
+            if user_obj:
+                user_name = f"{user_obj.name}#{user_obj.discriminator}"
+            elif member:
+                user_name = f"{member.name}#{member.discriminator}"
+
+            mode_key = str(getattr(member, "status", "offline"))
+            if mode_key not in ("online", "idle", "dnd", "offline", "invisible"):
+                mode_key = "offline"
+            if mode_key == "invisible":
+                mode_key = "offline"
+            mode = localized_whois(f"mode_{mode_key}", lang)
+
+            custom_status = "—"
             if member:
-                nick = member.display_name or "—"
-                username = f"{member.name}#{member.discriminator}"
+                try:
+                    custom = discord.utils.find(lambda a: isinstance(a, discord.CustomActivity), member.activities or [])
+                    if custom and getattr(custom, "name", None):
+                        custom_status = custom.name
+                except Exception:
+                    custom_status = "—"
+
+            avatar_url = None
+            banner_url = None
+            created_at = "—"
+            if user_obj:
+                avatar_url = str(user_obj.display_avatar.url) if getattr(user_obj, "display_avatar", None) else None
+                banner_url = str(user_obj.banner.url) if getattr(user_obj, "banner", None) else None
+                if getattr(user_obj, "created_at", None):
+                    created_at = discord.utils.format_dt(user_obj.created_at, style="F")
+
+            embed = discord.Embed(
+                title=localized_whois("title", lang),
+                color=discord.Color.blurple()
+            )
+            embed.add_field(name=localized_whois("field_nickname", lang), value=nick or "—", inline=False)
+            embed.add_field(name=localized_whois("field_username", lang), value=user_name or "—", inline=False)
+            embed.add_field(name=localized_whois("field_id", lang), value=str(origin_sender_id), inline=False)
+            embed.add_field(name=localized_whois("field_status", lang), value=custom_status, inline=False)
+            embed.add_field(name=localized_whois("field_mode", lang), value=mode, inline=False)
+            embed.add_field(name=localized_whois("field_registered", lang), value=created_at, inline=False)
+            if avatar_url:
+                embed.set_thumbnail(url=avatar_url)
+            if banner_url:
+                embed.set_image(url=banner_url)
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
         elif origin_platform == "telegram":
             from telegram_bot import bot as tg_bot
             prefix = msg_row["origin_chat_id"].split(":", 1)[0]
@@ -1431,15 +1569,25 @@ async def whois_command(interaction: discord.Interaction):
                 u = member.user
                 nick = u.full_name or (u.first_name or "—")
                 username = f"@{u.username}" if u.username else "—"
+                full_user = await tg_bot.get_chat(int(origin_sender_id))
+                bio = getattr(full_user, "bio", None) or "—"
             except Exception:
-                pass
+                nick, username, bio = "—", "—", "—"
 
-        await interaction.response.send_message(
-            f"Nickname: {nick}\nUsername: {username}\nID: {origin_sender_id}",
-            ephemeral=True
-        )
+            embed = discord.Embed(
+                title=localized_whois("title", lang),
+                color=discord.Color.blurple()
+            )
+            embed.add_field(name=localized_whois("field_nickname", lang), value=nick, inline=False)
+            embed.add_field(name=localized_whois("field_username", lang), value=username, inline=False)
+            embed.add_field(name=localized_whois("field_id", lang), value=str(origin_sender_id), inline=False)
+            embed.add_field(name=localized_whois("field_bio", lang), value=bio if len(bio) < 1000 else (bio[:997] + "..."), inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        await interaction.response.send_message(localized_whois("origin_not_found", lang), ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"Error fetching user data: {e}", ephemeral=True)
+        await interaction.response.send_message(localized_whois("fetch_error", lang, error=e), ephemeral=True)
 
 async def status_loop():
     """Меняет статус бота раз в минуту, чередуя языки."""
