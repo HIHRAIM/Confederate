@@ -1,4 +1,5 @@
 import asyncio
+import time
 import db
 from config import DISCORD_TOKEN
 from discord_bot import bot as discord_bot
@@ -191,6 +192,7 @@ async def daily_check_loop():
             for r in rows:
                 platform = r["platform"]
                 chat_key = r["chat_id"]
+                inaccessible = False
                 if platform == "telegram":
                     try:
                         prefix = chat_key.split(":",1)[0]
@@ -198,13 +200,15 @@ async def daily_check_loop():
                             ch = await tg.get_chat(int(prefix))
                         except Exception:
                             await send_service_event("daily_missing_tg_chat", chat_key=chat_key)
-                            continue
+                            inaccessible = True
+                            ch = None
                         try:
-                            me = await tg.get_me()
-                            mem = await tg.get_chat_member(int(prefix), me.id)
-                            can_delete = getattr(mem, "can_delete_messages", False)
-                            if not can_delete:
-                                await send_service_event("daily_no_tg_delete_perm", chat_key=chat_key)
+                            if ch is not None:
+                                me = await tg.get_me()
+                                mem = await tg.get_chat_member(int(prefix), me.id)
+                                can_delete = getattr(mem, "can_delete_messages", False)
+                                if not can_delete:
+                                    await send_service_event("daily_no_tg_delete_perm", chat_key=chat_key)
                         except Exception:
                             await send_service_event("daily_tg_perm_check_error", chat_key=chat_key, error="unknown")
                     except Exception:
@@ -221,12 +225,34 @@ async def daily_check_loop():
                                 ch = None
                         if not ch:
                             await send_service_event("daily_missing_dc_channel", chat_key=chat_key)
-                            continue
-                        perms = ch.permissions_for(dc.user)
-                        if not perms.manage_messages:
-                            await send_service_event("daily_no_dc_manage_perm", chat_key=chat_key)
+                            inaccessible = True
+                        else:
+                            perms = ch.permissions_for(dc.user)
+                            if not perms.manage_messages:
+                                await send_service_event("daily_no_dc_manage_perm", chat_key=chat_key)
                     except Exception:
                         continue
+
+                if inaccessible:
+                    fail_row = db.mark_chat_inaccessible(platform, chat_key)
+                    if fail_row:
+                        first_failed_ts = int(fail_row["first_failed_ts"])
+                        if int(time.time()) - first_failed_ts >= 24 * 3600:
+                            result = db.remove_chat_from_bridge(chat_key)
+                            if result:
+                                await send_service_event(
+                                    "daily_auto_removed_chat",
+                                    chat_key=chat_key,
+                                    platform=platform.capitalize()
+                                )
+                                if result.get("bridge_deleted"):
+                                    await send_service_event(
+                                        "daily_auto_removed_bridge",
+                                        bridge_id=result["bridge_id"]
+                                    )
+                    continue
+
+                db.clear_chat_inaccessible(chat_key)
         except Exception as e:
             try:
                 await send_service_event("daily_loop_error", error=str(e))

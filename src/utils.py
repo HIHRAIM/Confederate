@@ -245,6 +245,22 @@ _LOCALE = {
         "es": "[Sticker]",
         "pt": "[Sticker]"
     },
+    "voice_message": {
+        "ru": "[Голосовое сообщение]",
+        "uk": "[Голосове повідомлення]",
+        "pl": "[Wiadomość głosowa]",
+        "en": "[Voice message]",
+        "es": "[Mensaje de voz]",
+        "pt": "[Mensagem de voz]"
+    },
+    "video_message": {
+        "ru": "[Видеосообщение]",
+        "uk": "[Відеоповідомлення]",
+        "pl": "[Wiadomość wideo]",
+        "en": "[Video message]",
+        "es": "[Mensaje de video]",
+        "pt": "[Mensagem de vídeo]"
+    },
     "discord_system_event": {
         "ru": "{name} {action}",
         "uk": "{name} {action}",
@@ -351,6 +367,192 @@ _LOCALE = {
             "en": "daily_check_loop error: {error}",
             "es": "Error de daily_check_loop: {error}",
             "pt": "Erro no daily_check_loop: {error}"
+        },
+        "daily_auto_removed_chat": {
+            "ru": "Автоудаление из моста: чат {chat_key} ({platform}) был недоступен более 24 часов.",
+            "uk": "Автовидалення з мосту: чат {chat_key} ({platform}) був недоступний понад 24 години.",
+            "pl": "Automatyczne usunięcie z mostu: czat {chat_key} ({platform}) był niedostępny ponad 24 godziny.",
+            "en": "Auto-removed from bridge: chat {chat_key} ({platform}) was inaccessible for over 24 hours.",
+            "es": "Eliminado automáticamente del puente: el chat {chat_key} ({platform}) estuvo inaccesible por más de 24 horas.",
+            "pt": "Removido automaticamente da ponte: o chat {chat_key} ({platform}) ficou inacessível por mais de 24 horas."
+        },
+        "daily_auto_removed_bridge": {
+            "ru": "Мост {bridge_id} удалён из базы данных: в нём не осталось чатов.",
+            "uk": "Міст {bridge_id} видалено з бази даних: у ньому не залишилося чатів.",
+            "pl": "Most {bridge_id} został usunięty z bazy danych: nie pozostały w nim żadne czaty.",
+            "en": "Bridge {bridge_id} was deleted from the database because no chats remained.",
+            "es": "El puente {bridge_id} se eliminó de la base de datos porque no quedaron chats.",
+            "pt": "A ponte {bridge_id} foi removida do banco de dados porque não restaram chats."
+        }
+    },
+    "whois": {
+        "use_reply": {
+            "ru": "Используйте эту команду ответом на relay-сообщение бота.",
+            "uk": "Використайте цю команду у відповіді на relay-повідомлення бота.",
+            "pl": "Użyj tej komendy w odpowiedzi na wiadomość relay bota.",
+            "en": "Use this command in reply to a bot relay message.",
+            "es": "Usa este comando respondiendo a un mensaje relay del bot.",
+            "pt": "Use este comando respondendo a uma mensagem relay do bot."
+        },
+        "origin_not_found": {
+            "ru": "Не удалось определить источник сообщения.",
+            "uk": "Не вдалося визначити джерело повідомлення.",
+            "pl": "Nie udało się ustalić źródła wiadomości.",
+            "en": "Could not find the origin for that message.",
+            "es": "No se pudo encontrar el origen de ese mensaje.",
+            "pt": "Não foi possível encontrar a origem dessa mensagem."
+        },
+        "origin_missing": {
+            "ru": "Исходная запись отсутствует в базе данных.",
+            "uk": "Початковий запис відсутній у базі даних.",
+            "pl": "Brakuje wpisu źródłowego w bazie danych.",
+            "en": "Origin entry is missing in the database.",
+            "es": "Falta el registro de origen en la base de datos.",
+            "pt": "O registro de origem está ausente no banco de dados."
+        },
+        "origin_not_telegram": {
+            "ru": "Источник не Telegram; используйте /whois в соответствующей платформе.",
+            "uk": "Джерело не Telegram; використайте /whois на відповідній платформі.",
+            "pl": "Źródło nie jest z Telegrama; użyj /whois na odpowiedniej platformie.",
+            "en": "Origin is not Telegram; use /whois on the corresponding platform.",
+            "es": "El origen no es Telegram; usa /whois en la plataforma correspondiente.",
+            "pt": "A origem não é do Telegram; use /whois na plataforma correspondente."
+        },
+        "fetch_error": {
+            "ru": "Не удалось получить данные пользователя: {error}",
+            "uk": "Не вдалося отримати дані користувача: {error}",
+            "pl": "Nie udało się pobrać danych użytkownika: {error}",
+            "en": "Could not fetch user data: {error}",
+            "es": "No se pudieron obtener los datos del usuario: {error}",
+            "pt": "Não foi possível obter os dados do usuário: {error}"
+        },
+        "discord_left_guild": {
+            "ru": "Неизвестно (пользователь покинул сервер)",
+            "uk": "Невідомо (користувач покинув сервер)",
+            "pl": "Nieznane (użytkownik opuścił serwer)",
+            "en": "Unknown (user left the server)",
+            "es": "Desconocido (el usuario abandonó el servidor)",
+            "pt": "Desconhecido (usuário saiu do servidor)"
+        },
+        "discord_no_bio": {
+            "ru": "Биография отсутствует",
+            "uk": "Біографія відсутня",
+            "pl": "Brak bio",
+            "en": "No bio",
+            "es": "Sin bio",
+            "pt": "Sem bio"
+        },
+        "title": {
+            "ru": "Информация о пользователе",
+            "uk": "Інформація про користувача",
+            "pl": "Informacje o użytkowniku",
+            "en": "User information",
+            "es": "Información del usuario",
+            "pt": "Informações do usuário"
+        },
+        "field_nickname": {
+            "ru": "Никнейм",
+            "uk": "Нікнейм",
+            "pl": "Pseudonim",
+            "en": "Nickname",
+            "es": "Apodo",
+            "pt": "Apelido"
+        },
+        "field_username": {
+            "ru": "Юзернейм",
+            "uk": "Юзернейм",
+            "pl": "Nazwa użytkownika",
+            "en": "Username",
+            "es": "Nombre de usuario",
+            "pt": "Nome de usuário"
+        },
+        "field_id": {
+            "ru": "ID",
+            "uk": "ID",
+            "pl": "ID",
+            "en": "ID",
+            "es": "ID",
+            "pt": "ID"
+        },
+        "field_status": {
+            "ru": "Статус",
+            "uk": "Статус",
+            "pl": "Status",
+            "en": "Status",
+            "es": "Estado",
+            "pt": "Status"
+        },
+        "field_mode": {
+            "ru": "Режим",
+            "uk": "Режим",
+            "pl": "Tryb",
+            "en": "Mode",
+            "es": "Modo",
+            "pt": "Modo"
+        },
+        "mode_online": {
+            "ru": "В сети",
+            "uk": "У мережі",
+            "pl": "Online",
+            "en": "Online",
+            "es": "En línea",
+            "pt": "Online"
+        },
+        "mode_idle": {
+            "ru": "Неактивен",
+            "uk": "Неактивний",
+            "pl": "Bezczynny",
+            "en": "Idle",
+            "es": "Ausente",
+            "pt": "Ausente"
+        },
+        "mode_dnd": {
+            "ru": "Не беспокоить",
+            "uk": "Не турбувати",
+            "pl": "Nie przeszkadzać",
+            "en": "Do Not Disturb",
+            "es": "No molestar",
+            "pt": "Não perturbe"
+        },
+        "mode_offline": {
+            "ru": "Оффлайн",
+            "uk": "Офлайн",
+            "pl": "Offline",
+            "en": "Offline",
+            "es": "Desconectado",
+            "pt": "Offline"
+        },
+        "field_bio": {
+            "ru": "Био",
+            "uk": "Біо",
+            "pl": "Bio",
+            "en": "Bio",
+            "es": "Bio",
+            "pt": "Bio"
+        },
+        "field_registered": {
+            "ru": "Дата регистрации Discord",
+            "uk": "Дата реєстрації Discord",
+            "pl": "Data rejestracji Discord",
+            "en": "Discord registration date",
+            "es": "Fecha de registro en Discord",
+            "pt": "Data de registro no Discord"
+        },
+        "field_joined_server": {
+            "ru": "Дата вступления на сервер",
+            "uk": "Дата вступу на сервер",
+            "pl": "Data dołączenia do serwera",
+            "en": "Server join date",
+            "es": "Fecha de ingreso al servidor",
+            "pt": "Data de entrada no servidor"
+        },
+        "tg_template": {
+            "ru": "Никнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nБио: {bio}",
+            "uk": "Нікнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nБіо: {bio}",
+            "pl": "Pseudonim: {nickname}\nNazwa użytkownika: {username}\nID: {id}\nBio: {bio}",
+            "en": "Nickname: {nickname}\nUsername: {username}\nID: {id}\nBio: {bio}",
+            "es": "Apodo: {nickname}\nUsuario: {username}\nID: {id}\nBio: {bio}",
+            "pt": "Apelido: {nickname}\nUsuário: {username}\nID: {id}\nBio: {bio}"
         }
     },
 }
@@ -437,6 +639,12 @@ def localized_consent_button(lang):
 def localized_sticker(lang):
     return _LOCALE["sticker"].get(lang, _LOCALE["sticker"][DEFAULT_LANG])
 
+def localized_voice_message(lang):
+    return _LOCALE["voice_message"].get(lang, _LOCALE["voice_message"][DEFAULT_LANG])
+
+def localized_video_message(lang):
+    return _LOCALE["video_message"].get(lang, _LOCALE["video_message"][DEFAULT_LANG])
+
 def localized_discord_system_event(name, event_key, lang):
     action_table = _LOCALE.get("discord_system_event_action", {}).get(event_key, {})
     action = action_table.get(lang, action_table.get(DEFAULT_LANG, event_key))
@@ -445,6 +653,14 @@ def localized_discord_system_event(name, event_key, lang):
 
 def localized_service_event(event_key, lang, **kwargs):
     table = _LOCALE.get("service_event", {}).get(event_key, {})
+    template = table.get(lang, table.get(DEFAULT_LANG, event_key))
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
+
+def localized_whois(event_key, lang, **kwargs):
+    table = _LOCALE.get("whois", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
         return template.format(**kwargs)

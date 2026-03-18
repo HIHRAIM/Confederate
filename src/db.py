@@ -90,6 +90,8 @@ def init():
         user_id TEXT,
         bot_message_id TEXT,
         chat_key TEXT,
+        first_message_id TEXT,
+        first_message_payload TEXT,
         created_at INTEGER,
         PRIMARY KEY (platform, prefix, user_id)
     );
@@ -104,13 +106,28 @@ def init():
         platform TEXT,
         user_id TEXT,
         PRIMARY KEY (platform, user_id)
-    );                 
+    );
+
+    CREATE TABLE IF NOT EXISTS inaccessible_chats (
+        platform TEXT,
+        chat_id TEXT PRIMARY KEY,
+        first_failed_ts INTEGER,
+        last_failed_ts INTEGER
+    );
     """)
     conn.commit()
 
     cols = [r["name"] for r in cur.execute("PRAGMA table_info(messages)").fetchall()]
     if "origin_sender_id" not in cols:
         cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_id TEXT")
+        conn.commit()
+
+    pending_cols = [r["name"] for r in cur.execute("PRAGMA table_info(pending_consents)").fetchall()]
+    if "first_message_id" not in pending_cols:
+        cur.execute("ALTER TABLE pending_consents ADD COLUMN first_message_id TEXT")
+        conn.commit()
+    if "first_message_payload" not in pending_cols:
+        cur.execute("ALTER TABLE pending_consents ADD COLUMN first_message_payload TEXT")
         conn.commit()
 
 def chat_exists(chat_id):
@@ -262,11 +279,28 @@ def remove_verified_user(platform, user_id, prefix):
     )
     conn.commit()
 
-def add_pending_consent(platform, prefix, user_id, bot_message_id, chat_key):
+def add_pending_consent(
+    platform,
+    prefix,
+    user_id,
+    bot_message_id,
+    chat_key,
+    first_message_id=None,
+    first_message_payload=None
+):
     now = int(time.time())
     cur.execute(
-        "INSERT OR REPLACE INTO pending_consents (platform, prefix, user_id, bot_message_id, chat_key, created_at) VALUES (?,?,?,?,?,?)",
-        (platform, str(prefix), str(user_id), str(bot_message_id), str(chat_key), now)
+        "INSERT OR REPLACE INTO pending_consents (platform, prefix, user_id, bot_message_id, chat_key, first_message_id, first_message_payload, created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            platform,
+            str(prefix),
+            str(user_id),
+            str(bot_message_id),
+            str(chat_key),
+            str(first_message_id) if first_message_id is not None else None,
+            str(first_message_payload) if first_message_payload is not None else None,
+            now
+        )
     )
     conn.commit()
 
@@ -365,3 +399,48 @@ def attach_chat_to_bridge(platform, chat_id, bridge_id):
 def get_targets(bridge_id, exclude_chat_id):
     chats = get_bridge_chats(bridge_id)
     return [c for c in chats if c["chat_id"] != exclude_chat_id]
+
+def mark_chat_inaccessible(platform, chat_id):
+    now = int(time.time())
+    cur.execute(
+        """
+        INSERT INTO inaccessible_chats (platform, chat_id, first_failed_ts, last_failed_ts)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            platform=excluded.platform,
+            last_failed_ts=excluded.last_failed_ts
+        """,
+        (platform, chat_id, now, now)
+    )
+    conn.commit()
+    return cur.execute(
+        "SELECT first_failed_ts, last_failed_ts FROM inaccessible_chats WHERE chat_id=?",
+        (chat_id,)
+    ).fetchone()
+
+def clear_chat_inaccessible(chat_id):
+    cur.execute("DELETE FROM inaccessible_chats WHERE chat_id=?", (chat_id,))
+    conn.commit()
+
+def remove_chat_from_bridge(chat_id):
+    row = cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+    if not row:
+        return None
+
+    bridge_id = row["bridge_id"]
+    cur.execute("DELETE FROM chats WHERE chat_id=?", (chat_id,))
+    cur.execute("DELETE FROM chat_settings WHERE chat_id=?", (chat_id,))
+    cur.execute("DELETE FROM chat_admins WHERE chat_id=?", (chat_id,))
+    cur.execute("DELETE FROM inaccessible_chats WHERE chat_id=?", (chat_id,))
+    cur.execute("DELETE FROM pending_consents WHERE chat_key=?", (chat_id,))
+
+    left = cur.execute("SELECT COUNT(*) AS cnt FROM chats WHERE bridge_id=?", (bridge_id,)).fetchone()
+    bridge_deleted = False
+    if not left or int(left["cnt"]) == 0:
+        cur.execute("DELETE FROM bridges WHERE id=?", (bridge_id,))
+        cur.execute("DELETE FROM bridge_admins WHERE bridge_id=?", (bridge_id,))
+        cur.execute("DELETE FROM bridge_rules WHERE bridge_id=?", (bridge_id,))
+        bridge_deleted = True
+
+    conn.commit()
+    return {"bridge_id": bridge_id, "bridge_deleted": bridge_deleted}

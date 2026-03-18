@@ -125,6 +125,8 @@ from utils import (
     localized_forward_from_user,
     localized_forward_unknown,
     localized_sticker,
+    localized_voice_message,
+    localized_video_message,
 )
 
 async def relay_message(
@@ -223,6 +225,20 @@ async def relay_message(
             current_discord_text = current_discord_text.replace("__TG_STICKER__", sticker_marker)
             if current_telegram_html is not None:
                 current_telegram_html = current_telegram_html.replace("__TG_STICKER__", escape_html(sticker_marker))
+
+        if "__TG_VOICE__" in current_text:
+            voice_marker = localized_voice_message(lang)
+            current_text = current_text.replace("__TG_VOICE__", voice_marker)
+            current_discord_text = current_discord_text.replace("__TG_VOICE__", voice_marker)
+            if current_telegram_html is not None:
+                current_telegram_html = current_telegram_html.replace("__TG_VOICE__", escape_html(voice_marker))
+
+        if "__TG_VIDEO_NOTE__" in current_text:
+            video_marker = localized_video_message(lang)
+            current_text = current_text.replace("__TG_VIDEO_NOTE__", video_marker)
+            current_discord_text = current_discord_text.replace("__TG_VIDEO_NOTE__", video_marker)
+            if current_telegram_html is not None:
+                current_telegram_html = current_telegram_html.replace("__TG_VIDEO_NOTE__", escape_html(video_marker))
 
         sent_id = await send_to_chat_func(
             chat,
