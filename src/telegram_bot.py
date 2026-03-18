@@ -7,11 +7,13 @@ from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
-    set_chat_lang
+    set_chat_lang, localized_sticker, localized_file_count_text,
+    localized_voice_message, localized_video_message, localized_whois
 )
 from config import TELEGRAM_TOKEN
 import time
 import asyncio
+import json
 
 bot = Bot(TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -38,9 +40,136 @@ def _count_telegram_files(message: Message) -> int:
         count += 1
     if getattr(message, "voice", None):
         count += 1
+    if getattr(message, "video_note", None):
+        count += 1
     if getattr(message, "animation", None):
         count += 1
     return count
+
+def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None = None):
+    is_sticker = getattr(message, "sticker", None) is not None
+    thread = message.message_thread_id or 0
+    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    total_files = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
+
+    if is_sticker:
+        return ["__TG_STICKER__"], None
+
+    is_voice = getattr(message, "voice", None) is not None
+    is_video_note = getattr(message, "video_note", None) is not None
+    if not base_text and total_files == 1 and is_voice:
+        return ["__TG_VOICE__"], None
+    if not base_text and total_files == 1 and is_video_note:
+        return ["__TG_VIDEO_NOTE__"], None
+
+    relay_file_count = None
+    if total_files > 0:
+        username = getattr(message.chat, "username", None)
+        if username:
+            if total_files > 1:
+                relay_file_count = total_files
+                if thread:
+                    link = f"https://t.me/{username}/{thread}/{message.message_id}"
+                else:
+                    link = f"https://t.me/{username}/{message.message_id}"
+                return [(base_text + "\n" if base_text else "") + f"{link} (__TG_FILES_{total_files}__)"], relay_file_count
+            if thread:
+                link = f"https://t.me/{username}/{thread}/{message.message_id}"
+            else:
+                link = f"https://t.me/{username}/{message.message_id}"
+            return [(base_text + "\n" if base_text else "") + link], relay_file_count
+        relay_file_count = total_files
+        return [(base_text + "\n" if base_text else "") + f"[__TG_FILES_{total_files}__]"], relay_file_count
+
+    return [base_text], relay_file_count
+
+def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_name, forward_type, forward_name):
+    texts, relay_file_count = _build_telegram_relay_texts(message)
+    source_text = getattr(message, "text", None)
+    source_caption = getattr(message, "caption", None)
+    tg_html_source = None
+    if source_text is not None:
+        tg_html_source = getattr(message, "html_text", None)
+        discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
+    elif source_caption is not None:
+        tg_html_source = getattr(message, "html_caption", None)
+        discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
+    else:
+        discord_text = texts[0] if texts else ""
+
+    payload = {
+        "bridge_id": bridge_id,
+        "origin_chat_id": chat_id,
+        "origin_message_id": str(message.message_id),
+        "origin_sender_id": str(message.from_user.id) if message.from_user else "",
+        "place_name": message.chat.title or "Private chat",
+        "sender_name": message.from_user.full_name if message.from_user else "Unknown",
+        "reply_to_name": reply_to_name,
+        "forward_type": forward_type,
+        "forward_name": forward_name,
+        "texts": texts,
+        "relay_file_count": relay_file_count,
+        "base_text": (getattr(message, "text", "") or getattr(message, "caption", "") or ""),
+        "discord_text": discord_text,
+        "telegram_html": tg_html_source,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+async def _relay_serialized_telegram_payload(payload_json: str):
+    try:
+        payload = json.loads(payload_json)
+    except Exception:
+        return
+
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
+        if chat["platform"] == "telegram":
+            chat_id_str, thread = chat["chat_id"].split(":")
+            body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
+            if reply_line:
+                body_html = f"{escape_html(reply_line)}\n{body_html}"
+            html_text = f"{escape_html(header)}\n{body_html}".strip()
+            sent = await bot.send_message(
+                chat_id=int(chat_id_str),
+                message_thread_id=int(thread) or None,
+                text=html_text,
+                parse_mode="HTML"
+            )
+            return str(sent.message_id)
+
+        if chat["platform"] == "discord":
+            from discord_bot import bot as dc_bot
+            channel_id = int(chat["chat_id"].split(":")[1])
+            channel = dc_bot.get_channel(channel_id)
+            if not channel:
+                return None
+            body = body_discord
+            if reply_line:
+                body = f"{reply_line}\n{body}"
+            sent = await channel.send(f"{header}\n{body}".strip())
+            return str(sent.id)
+
+    base_text = payload.get("base_text", "")
+    for text in payload.get("texts", []):
+        current_discord_text = payload.get("discord_text", "") if text == base_text else text
+        current_telegram_html = payload.get("telegram_html") if text == base_text else None
+        await message_relay.relay_message(
+            bridge_id=payload["bridge_id"],
+            origin_platform="telegram",
+            origin_chat_id=payload["origin_chat_id"],
+            origin_message_id=payload["origin_message_id"],
+            origin_sender_id=payload["origin_sender_id"],
+            messenger_name="Telegram",
+            place_name=payload.get("place_name", "Private chat"),
+            sender_name=payload.get("sender_name", "Unknown"),
+            text=text,
+            discord_text=current_discord_text,
+            telegram_html=current_telegram_html,
+            reply_to_name=payload.get("reply_to_name"),
+            send_to_chat_func=send_to_chat,
+            telegram_file_count=payload.get("relay_file_count"),
+            forward_type=payload.get("forward_type"),
+            forward_name=payload.get("forward_name"),
+        )
 
 async def _flush_media_group(buffer_key):
     await asyncio.sleep(1.0)
@@ -241,8 +370,6 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     if message.from_user and message.from_user.is_bot:
         return
 
-    is_sticker = getattr(message, "sticker", None) is not None
-
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(origin_chat_id)
@@ -262,6 +389,27 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         forward_type = "unknown"
 
     is_forward = forward_type is not None
+
+    pending_reply_to_name = None
+    if (
+        not is_forward
+        and getattr(message, "reply_to_message", None)
+        and message.reply_to_message.message_id != message.message_thread_id
+    ):
+        if message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
+            reply_source = (
+                getattr(message.reply_to_message, "text", "")
+                or getattr(message.reply_to_message, "caption", "")
+                or getattr(message.reply_to_message, "html_text", "")
+                or getattr(message.reply_to_message, "html_caption", "")
+                or ""
+            )
+            pending_reply_to_name = extract_username_from_bot_message(reply_source)
+        else:
+            try:
+                pending_reply_to_name = message.reply_to_message.from_user.full_name
+            except Exception:
+                pending_reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
 
     chat_id = origin_chat_id
 
@@ -315,9 +463,40 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                     parse_mode="HTML"
                 )
                 chat_key = f"{message.chat.id}:{thread}"
-                db.add_pending_consent("telegram", prefix, user_id_str, str(sent.message_id), chat_key)
+                db.add_pending_consent(
+                    "telegram",
+                    prefix,
+                    user_id_str,
+                    str(sent.message_id),
+                    chat_key,
+                    first_message_id=str(message.message_id),
+                    first_message_payload=_serialize_first_telegram_message(
+                        message,
+                        chat_id=chat_id,
+                        bridge_id=bridge_id,
+                        reply_to_name=pending_reply_to_name,
+                        forward_type=forward_type,
+                        forward_name=forward_name,
+                    )
+                )
             except Exception:
-                pass
+                chat_key = f"{message.chat.id}:{thread}"
+                db.add_pending_consent(
+                    "telegram",
+                    prefix,
+                    user_id_str,
+                    "",
+                    chat_key,
+                    first_message_id=str(message.message_id),
+                    first_message_payload=_serialize_first_telegram_message(
+                        message,
+                        chat_id=chat_id,
+                        bridge_id=bridge_id,
+                        reply_to_name=pending_reply_to_name,
+                        forward_type=forward_type,
+                        forward_name=forward_name,
+                    )
+                )
             return
 
     reply_to_name = None
@@ -341,38 +520,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             except Exception:
                 reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
 
-    texts = []
-    relay_file_count = None
-
-    if is_sticker:
-        texts = ["__TG_STICKER__"]
-    else:
-        base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
-
-        total_files = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
-
-        if total_files > 0:
-            username = getattr(message.chat, "username", None)
-            thread_id = thread
-            if username:
-                if total_files > 1:
-                    relay_file_count = total_files
-                    if thread_id:
-                        link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
-                    else:
-                        link = f"https://t.me/{username}/{message.message_id}"
-                    texts = [(base_text + "\n" if base_text else "") + f"{link} (__TG_FILES_{total_files}__)"]
-                else:
-                    if thread_id:
-                        link = f"https://t.me/{username}/{thread_id}/{message.message_id}"
-                    else:
-                        link = f"https://t.me/{username}/{message.message_id}"
-                    texts = [(base_text + "\n" if base_text else "") + link]
-            else:
-                relay_file_count = total_files
-                texts = [(base_text + "\n" if base_text else "") + f"[__TG_FILES_{total_files}__]"]
-        else:
-            texts = [base_text]
+    texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
         if chat["platform"] == "telegram":
@@ -603,18 +751,23 @@ async def handle_verify_callback(query: CallbackQuery):
         await query.answer("This button is not for you", show_alert=True)
         return
 
+    pend = db.get_pending_consent("telegram", prefix, target_user_id)
     db.add_verified_user("telegram", target_user_id, "*", days_valid=365)
 
-    pend = db.get_pending_consent("telegram", prefix, target_user_id)
     if pend:
         chat_key = pend["chat_key"]
         bot_msg_id = pend["bot_message_id"]
         try:
-            chat_id_str, th = chat_key.split(":")
-            await bot.delete_message(chat_id=int(chat_id_str), message_id=int(bot_msg_id))
+            if bot_msg_id:
+                chat_id_str, th = chat_key.split(":")
+                await bot.delete_message(chat_id=int(chat_id_str), message_id=int(bot_msg_id))
         except Exception:
             pass
+        first_message_payload = pend["first_message_payload"] if "first_message_payload" in pend.keys() else None
         db.remove_pending_consent("telegram", prefix, target_user_id)
+
+        if first_message_payload:
+            await _relay_serialized_telegram_payload(first_message_payload)
 
     await query.answer("Спасибо — вы подтверждены", show_alert=False)
 
@@ -716,6 +869,16 @@ async def shadow_ban_cmd(message: Message):
 
 @router.message(Command("whois"))
 async def whois_cmd(message: Message):
+    lang = get_chat_lang(f"{message.chat.id}:{message.message_thread_id or 0}")
+
+    async def _reply_autodelete(text: str):
+        sent = await message.reply(text)
+        await asyncio.sleep(60)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+
     reply = getattr(message, "reply_to_message", None)
     replied_id = str(
         getattr(reply, "message_id", "")
@@ -724,7 +887,7 @@ async def whois_cmd(message: Message):
     )
 
     if not replied_id.strip():
-        await message.reply("Use this command in reply to a bot-relay message.")
+        await _reply_autodelete(localized_whois("use_reply", lang))
         return
 
     chat_key = f"{message.chat.id}:{message.message_thread_id or 0}"
@@ -735,12 +898,12 @@ async def whois_cmd(message: Message):
     ).fetchone()
 
     if not row:
-        await message.reply("Could not find origin for that message.")
+        await _reply_autodelete(localized_whois("origin_not_found", lang))
         return
 
     msg_row = db.cur.execute("SELECT * FROM messages WHERE id=?", (row["message_id"],)).fetchone()
     if not msg_row:
-        await message.reply("Origin entry missing")
+        await _reply_autodelete(localized_whois("origin_missing", lang))
         return
 
     origin_platform = msg_row["origin_platform"]
@@ -748,7 +911,7 @@ async def whois_cmd(message: Message):
     origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
 
     if origin_platform != "telegram":
-        await message.reply("Origin is not Telegram; use /whois in corresponding platform or use Discord whois.")
+        await _reply_autodelete(localized_whois("origin_not_telegram", lang))
         return
 
     try:
@@ -757,9 +920,20 @@ async def whois_cmd(message: Message):
         u = member.user
         uname = f"@{u.username}" if u.username else "—"
         full = u.full_name or (u.first_name or "")
-        await message.reply(f"Nickname: {full}\nUsername: {uname}\nID: {u.id}")
+        full_user = await bot.get_chat(int(origin_sender_id))
+        bio = getattr(full_user, "bio", None) or "—"
+        await _reply_autodelete(
+            localized_whois(
+                "tg_template",
+                lang,
+                nickname=full,
+                username=uname,
+                id=u.id,
+                bio=bio
+            )
+        )
     except Exception as e:
-        await message.reply(f"Could not fetch user data: {e}")
+        await _reply_autodelete(localized_whois("fetch_error", lang, error=e))
 
 @router.edited_message()
 async def edited_message_handler(message: Message):
@@ -776,6 +950,8 @@ async def edited_message_handler(message: Message):
     if not row:
         return
 
+    texts, relay_file_count = _build_telegram_relay_texts(message)
+    rendered_text = texts[0] if texts else ""
     base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
     if getattr(message, "text", None) is not None:
         discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
@@ -791,7 +967,22 @@ async def edited_message_handler(message: Message):
         try:
             if c["platform"] == "telegram":
                 chat_id_str, th = c["chat_id"].split(":")
-                text_html = f"{escape_html(header)}\n{telegram_html or escape_html(base_text)}"
+                target_lang = get_chat_lang(c["chat_id"])
+                localized_text = rendered_text
+                if relay_file_count is not None:
+                    localized_text = localized_text.replace(
+                        f"__TG_FILES_{relay_file_count}__",
+                        localized_file_count_text(relay_file_count, target_lang)
+                    )
+                localized_text = localized_text.replace("__TG_STICKER__", localized_sticker(target_lang))
+                localized_text = localized_text.replace("__TG_VOICE__", localized_voice_message(target_lang))
+                localized_text = localized_text.replace("__TG_VIDEO_NOTE__", localized_video_message(target_lang))
+
+                if rendered_text == base_text and telegram_html is not None:
+                    body_html = telegram_html
+                else:
+                    body_html = escape_html(localized_text)
+                text_html = f"{escape_html(header)}\n{body_html}"
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
@@ -804,8 +995,18 @@ async def edited_message_handler(message: Message):
                 channel = dc_bot.get_channel(channel_id)
                 if not channel:
                     continue
+                target_lang = get_chat_lang(c["chat_id"])
+                localized_discord_text = (discord_text if rendered_text == base_text else rendered_text)
+                if relay_file_count is not None:
+                    localized_discord_text = localized_discord_text.replace(
+                        f"__TG_FILES_{relay_file_count}__",
+                        localized_file_count_text(relay_file_count, target_lang)
+                    )
+                localized_discord_text = localized_discord_text.replace("__TG_STICKER__", localized_sticker(target_lang))
+                localized_discord_text = localized_discord_text.replace("__TG_VOICE__", localized_voice_message(target_lang))
+                localized_discord_text = localized_discord_text.replace("__TG_VIDEO_NOTE__", localized_video_message(target_lang))
                 msg = await channel.fetch_message(int(c["message_id_platform"]))
-                await msg.edit(content=f"{header}\n{discord_text}".strip())
+                await msg.edit(content=f"{header}\n{localized_discord_text}".strip())
         except Exception:
             pass
 
