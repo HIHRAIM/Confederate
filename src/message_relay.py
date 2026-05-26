@@ -119,7 +119,7 @@ def escape_html(text: str):
 
 from utils import (
     get_chat_lang,
-    localized_replying,
+    localized_reply_unknown,
     localized_file_count_text,
     localized_forward_from_chat,
     localized_forward_from_user,
@@ -142,7 +142,7 @@ async def relay_message(
     text,
     discord_text=None,
     telegram_html=None,
-    reply_to_name=None,
+    reply_to_msg_db_id=None,
     send_to_chat_func,
     telegram_file_count=None,
     forward_type=None,
@@ -179,7 +179,29 @@ async def relay_message(
 
         header = f"[{messenger_name} | {place_name}] {sender_name}:"
 
-        reply_line = localized_replying(reply_to_name, lang) if reply_to_name else None
+        reply_line = None
+        reply_to_platform_message_id = None
+        if reply_to_msg_db_id:
+            if reply_to_msg_db_id < 0:
+                reply_line = localized_reply_unknown(lang)
+            else:
+                copy_row = db.cur.execute(
+                    "SELECT message_id_platform FROM message_copies WHERE message_id=? AND platform=? AND chat_id=?",
+                    (reply_to_msg_db_id, chat["platform"], chat["chat_id"])
+                ).fetchone()
+                if copy_row:
+                    reply_to_platform_message_id = copy_row["message_id_platform"]
+                else:
+                    origin_row = db.cur.execute(
+                        "SELECT origin_platform, origin_chat_id, origin_message_id FROM messages WHERE id=?",
+                        (reply_to_msg_db_id,)
+                    ).fetchone()
+                    if (origin_row
+                            and origin_row["origin_platform"] == chat["platform"]
+                            and origin_row["origin_chat_id"] == chat["chat_id"]):
+                        reply_to_platform_message_id = origin_row["origin_message_id"]
+                    else:
+                        reply_line = localized_reply_unknown(lang)
 
         current_text = text
         current_discord_text = discord_text or current_text
@@ -247,6 +269,7 @@ async def relay_message(
             body_discord=current_discord_text,
             body_telegram_html=current_telegram_html,
             reply_line=reply_line,
+            reply_to_platform_message_id=reply_to_platform_message_id,
         )
         if not sent_id:
             continue

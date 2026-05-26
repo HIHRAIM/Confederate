@@ -83,7 +83,7 @@ def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None
 
     return [base_text], relay_file_count
 
-def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_name, forward_type, forward_name):
+def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_msg_db_id, forward_type, forward_name):
     texts, relay_file_count = _build_telegram_relay_texts(message)
     source_text = getattr(message, "text", None)
     source_caption = getattr(message, "caption", None)
@@ -104,7 +104,7 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         "origin_sender_id": str(message.from_user.id) if message.from_user else "",
         "place_name": message.chat.title or "Private chat",
         "sender_name": message.from_user.full_name if message.from_user else "Unknown",
-        "reply_to_name": reply_to_name,
+        "reply_to_msg_db_id": reply_to_msg_db_id,
         "forward_type": forward_type,
         "forward_name": forward_name,
         "texts": texts,
@@ -121,23 +121,34 @@ async def _relay_serialized_telegram_payload(payload_json: str):
     except Exception:
         return
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
             html_text = f"{escape_html(header)}\n{body_html}".strip()
-            sent = await bot.send_message(
+            send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
                 text=html_text,
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
+            if reply_to_platform_message_id:
+                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
+            try:
+                sent = await bot.send_message(**send_kwargs)
+            except Exception:
+                if reply_to_platform_message_id:
+                    send_kwargs.pop("reply_to_message_id", None)
+                    sent = await bot.send_message(**send_kwargs)
+                else:
+                    raise
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
             from discord_bot import bot as dc_bot
+            import discord as _discord
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = dc_bot.get_channel(channel_id)
             if not channel:
@@ -145,7 +156,15 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            sent = await channel.send(f"{header}\n{body}".strip())
+            send_kwargs = {}
+            if reply_to_platform_message_id:
+                send_kwargs["reference"] = _discord.MessageReference(
+                    message_id=int(reply_to_platform_message_id),
+                    channel_id=channel_id,
+                    fail_if_not_exists=False,
+                )
+                send_kwargs["mention_author"] = False
+            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
             return str(sent.id)
 
     base_text = payload.get("base_text", "")
@@ -164,7 +183,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             text=text,
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
-            reply_to_name=payload.get("reply_to_name"),
+            reply_to_msg_db_id=payload.get("reply_to_msg_db_id"),
             send_to_chat_func=send_to_chat,
             telegram_file_count=payload.get("relay_file_count"),
             forward_type=payload.get("forward_type"),
@@ -390,26 +409,26 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     is_forward = forward_type is not None
 
-    pending_reply_to_name = None
+    pending_reply_to_msg_db_id = None
     if (
         not is_forward
         and getattr(message, "reply_to_message", None)
         and message.reply_to_message.message_id != message.message_thread_id
     ):
-        if message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
-            reply_source = (
-                getattr(message.reply_to_message, "text", "")
-                or getattr(message.reply_to_message, "caption", "")
-                or getattr(message.reply_to_message, "html_text", "")
-                or getattr(message.reply_to_message, "html_caption", "")
-                or ""
-            )
-            pending_reply_to_name = extract_username_from_bot_message(reply_source)
+        replied_msg = message.reply_to_message
+        replied_msg_id = str(replied_msg.message_id)
+        if replied_msg.from_user and replied_msg.from_user.is_bot:
+            copy_row = db.cur.execute(
+                "SELECT message_id FROM message_copies WHERE platform='telegram' AND chat_id=? AND message_id_platform=?",
+                (origin_chat_id, replied_msg_id)
+            ).fetchone()
+            pending_reply_to_msg_db_id = copy_row["message_id"] if copy_row else -1
         else:
-            try:
-                pending_reply_to_name = message.reply_to_message.from_user.full_name
-            except Exception:
-                pending_reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
+            msg_row = db.cur.execute(
+                "SELECT id FROM messages WHERE origin_platform='telegram' AND origin_chat_id=? AND origin_message_id=?",
+                (origin_chat_id, replied_msg_id)
+            ).fetchone()
+            pending_reply_to_msg_db_id = msg_row["id"] if msg_row else -1
 
     chat_id = origin_chat_id
 
@@ -421,6 +440,12 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         return
 
     bridge_id = row["bridge_id"]
+
+    db.cur.execute(
+        "UPDATE bridge_rules SET message_counter = COALESCE(message_counter, 0) + 1 WHERE bridge_id=?",
+        (bridge_id,)
+    )
+    db.conn.commit()
 
     prefix = str(message.chat.id)
     user_id_str = str(message.from_user.id)
@@ -474,7 +499,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         message,
                         chat_id=chat_id,
                         bridge_id=bridge_id,
-                        reply_to_name=pending_reply_to_name,
+                        reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
                     )
@@ -492,37 +517,18 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         message,
                         chat_id=chat_id,
                         bridge_id=bridge_id,
-                        reply_to_name=pending_reply_to_name,
+                        reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
                     )
                 )
             return
 
-    reply_to_name = None
-    if (
-        not is_forward
-        and getattr(message, "reply_to_message", None)
-        and message.reply_to_message.message_id != message.message_thread_id
-    ):
-        if message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
-            reply_source = (
-                getattr(message.reply_to_message, "text", "")
-                or getattr(message.reply_to_message, "caption", "")
-                or getattr(message.reply_to_message, "html_text", "")
-                or getattr(message.reply_to_message, "html_caption", "")
-                or ""
-            )
-            reply_to_name = extract_username_from_bot_message(reply_source)
-        else:
-            try:
-                reply_to_name = message.reply_to_message.from_user.full_name
-            except Exception:
-                reply_to_name = getattr(message.reply_to_message.from_user, "username", None)
+    reply_to_msg_db_id = pending_reply_to_msg_db_id
 
     texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             if body_telegram_html:
@@ -532,16 +538,27 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
             html_text = f"{escape_html(header)}\n{body_html}".strip()
-            sent = await bot.send_message(
+            send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
                 text=html_text,
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
+            if reply_to_platform_message_id:
+                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
+            try:
+                sent = await bot.send_message(**send_kwargs)
+            except Exception:
+                if reply_to_platform_message_id:
+                    send_kwargs.pop("reply_to_message_id", None)
+                    sent = await bot.send_message(**send_kwargs)
+                else:
+                    raise
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
             from discord_bot import bot as dc_bot
+            import discord as _discord
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = dc_bot.get_channel(channel_id)
             if not channel:
@@ -549,7 +566,15 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            sent = await channel.send(f"{header}\n{body}".strip())
+            send_kwargs = {}
+            if reply_to_platform_message_id:
+                send_kwargs["reference"] = _discord.MessageReference(
+                    message_id=int(reply_to_platform_message_id),
+                    channel_id=channel_id,
+                    fail_if_not_exists=False,
+                )
+                send_kwargs["mention_author"] = False
+            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
             return str(sent.id)
 
     source_text = getattr(message, "text", None)
@@ -581,7 +606,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             text=text,
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
-            reply_to_name=reply_to_name,
+            reply_to_msg_db_id=reply_to_msg_db_id,
             send_to_chat_func=send_to_chat,
             telegram_file_count=relay_file_count,
             forward_type=forward_type,
@@ -674,13 +699,23 @@ async def remindrules(message: Message):
 
     parts = message.text.split()
     if len(parts) < 2:
-        await message.reply("Usage: /remindrules <hours> [messages]")
+        await message.reply("Usage: /remindrules <5h|30m> [messages]")
         return
 
+    raw = parts[1].strip().lower()
     try:
-        hours = int(parts[1])
+        if raw.endswith("h"):
+            interval_minutes = int(raw[:-1]) * 60
+        elif raw.endswith("m"):
+            interval_minutes = int(raw[:-1])
+        else:
+            interval_minutes = int(raw) * 60
+        if interval_minutes <= 0:
+            raise ValueError
     except ValueError:
-        await message.reply("First parameter must be an integer (hours)")
+        await message.reply(
+            "First parameter must be a duration: e.g. `2h` (2 hours) or `30m` (30 minutes)"
+        )
         return
 
     messages = int(parts[2]) if len(parts) > 2 else None
@@ -720,15 +755,16 @@ async def remindrules(message: Message):
             "telegram",
             chat_id,
             str(ref.message_id) if hasattr(ref, "message_id") else str(ref.id),
-            hours,
+            interval_minutes,
             messages,
-            int(time.time()) - (hours * 3600),
+            int(time.time()) - (interval_minutes * 60),
             0
         )
     )
     db.conn.commit()
 
-    await message.reply("Rules saved and will be posted automatically")
+    human = f"{interval_minutes // 60}h {interval_minutes % 60}m".replace("0h ", "").replace(" 0m", "").strip()
+    await message.reply(f"Rules saved — will be posted to all bridge chats every {human}")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("verify:"))
 async def handle_verify_callback(query: CallbackQuery):
@@ -751,23 +787,26 @@ async def handle_verify_callback(query: CallbackQuery):
         await query.answer("This button is not for you", show_alert=True)
         return
 
-    pend = db.get_pending_consent("telegram", prefix, target_user_id)
-    db.add_verified_user("telegram", target_user_id, "*", days_valid=365)
+    db.add_verified_user("telegram", target_user_id, prefix, days_valid=365)
 
-    if pend:
-        chat_key = pend["chat_key"]
-        bot_msg_id = pend["bot_message_id"]
-        try:
-            if bot_msg_id:
-                chat_id_str, th = chat_key.split(":")
-                await bot.delete_message(chat_id=int(chat_id_str), message_id=int(bot_msg_id))
-        except Exception:
-            pass
-        first_message_payload = pend["first_message_payload"] if "first_message_payload" in pend.keys() else None
-        db.remove_pending_consent("telegram", prefix, target_user_id)
+    all_pendings = db.get_all_pending_consents_for_user("telegram", target_user_id)
 
-        if first_message_payload:
-            await _relay_serialized_telegram_payload(first_message_payload)
+    first_payloads = []
+    for p in all_pendings:
+        p_bot_msg_id = p["bot_message_id"]
+        if p_bot_msg_id:
+            try:
+                p_chat_id_str, p_th = p["chat_key"].split(":")
+                await bot.delete_message(chat_id=int(p_chat_id_str), message_id=int(p_bot_msg_id))
+            except Exception:
+                pass
+        p_payload = p["first_message_payload"] if "first_message_payload" in p.keys() else None
+        if p_payload:
+            first_payloads.append(p_payload)
+        db.remove_pending_consent("telegram", p["prefix"], target_user_id)
+
+    for payload in first_payloads:
+        await _relay_serialized_telegram_payload(payload)
 
     await query.answer("Спасибо — вы подтверждены", show_alert=False)
 

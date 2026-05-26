@@ -150,21 +150,41 @@ async def pending_cleanup_loop():
                 chat_key = p["chat_key"]
                 prefix = p["prefix"]
                 user_id = p["user_id"]
-                try:
-                    if platform == "telegram":
-                        chat_id_str, th = chat_key.split(":")
-                        await tg.delete_message(int(chat_id_str), int(bot_msg_id))
-                    elif platform == "discord":
+                first_msg_id = p["first_message_id"] if "first_message_id" in p.keys() else None
+
+                if platform == "telegram":
+                    chat_id_str, th = chat_key.split(":")
+                    try:
+                        if bot_msg_id:
+                            await tg.delete_message(int(chat_id_str), int(bot_msg_id))
+                    except Exception:
+                        pass
+                    try:
+                        if first_msg_id and first_msg_id not in (None, "None", ""):
+                            await tg.delete_message(int(chat_id_str), int(first_msg_id))
+                    except Exception:
+                        pass
+
+                elif platform == "discord":
+                    try:
                         guild_id, channel_id = chat_key.split(":")
                         ch = dc.get_channel(int(channel_id))
                         if ch:
-                            try:
-                                msg = await ch.fetch_message(int(bot_msg_id))
-                                await msg.delete()
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            if bot_msg_id:
+                                try:
+                                    msg = await ch.fetch_message(int(bot_msg_id))
+                                    await msg.delete()
+                                except Exception:
+                                    pass
+                            if first_msg_id and first_msg_id not in (None, "None", ""):
+                                try:
+                                    first_msg = await ch.fetch_message(int(first_msg_id))
+                                    await first_msg.delete()
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
                 db.remove_pending_consent(platform, prefix, user_id)
 
             db.cleanup_expired_verified()
