@@ -133,24 +133,48 @@ def extract_discord_forward_payload(message: discord.Message):
     return None, None, ""
 
 async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None):
-    reply_to_name = None
+    reply_to_msg_db_id = None
     forward_type = None
     forward_name = None
     forward_text = ""
 
-    if message.reference:
+    if message.type == discord.MessageType.reply and message.reference:
+        ref_msg_id = getattr(message.reference, "message_id", None)
         replied = message.reference.resolved
-        if not replied and getattr(message.reference, "message_id", None):
+        if not replied and ref_msg_id:
             try:
-                replied = await message.channel.fetch_message(message.reference.message_id)
+                replied = await message.channel.fetch_message(ref_msg_id)
             except Exception:
                 replied = None
 
+        origin_chat_id = f"{message.guild.id}:{message.channel.id}"
+
         if replied and getattr(replied, "author", None):
             if replied.author.bot:
-                reply_to_name = extract_username_from_bot_message(getattr(replied, "content", "") or "")
-            if not reply_to_name:
-                reply_to_name = replied.author.display_name
+                copy_row = db.cur.execute(
+                    "SELECT message_id FROM message_copies WHERE platform='discord' AND message_id_platform=?",
+                    (str(replied.id),)
+                ).fetchone()
+                reply_to_msg_db_id = copy_row["message_id"] if copy_row else -1
+            else:
+                msg_row = db.cur.execute(
+                    "SELECT id FROM messages WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?",
+                    (origin_chat_id, str(replied.id))
+                ).fetchone()
+                reply_to_msg_db_id = msg_row["id"] if msg_row else -1
+        elif ref_msg_id:
+            copy_row = db.cur.execute(
+                "SELECT message_id FROM message_copies WHERE platform='discord' AND message_id_platform=?",
+                (str(ref_msg_id),)
+            ).fetchone()
+            if copy_row:
+                reply_to_msg_db_id = copy_row["message_id"]
+            else:
+                msg_row = db.cur.execute(
+                    "SELECT id FROM messages WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?",
+                    (origin_chat_id, str(ref_msg_id))
+                ).fetchone()
+                reply_to_msg_db_id = msg_row["id"] if msg_row else -1
 
     forward_type, forward_name, forward_text = extract_discord_forward_payload(message)
     content = replace_mentions(message, message.content or "")
@@ -174,7 +198,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
     if forward_type and not any((t or "").strip() for t in texts):
         texts = [forward_text or ""]
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
         if chat["platform"] == "discord":
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = bot.get_channel(channel_id)
@@ -183,7 +207,15 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            sent = await channel.send(f"{header}\n{body}".strip())
+            send_kwargs = {}
+            if reply_to_platform_message_id:
+                send_kwargs["reference"] = discord.MessageReference(
+                    message_id=int(reply_to_platform_message_id),
+                    channel_id=channel_id,
+                    fail_if_not_exists=False,
+                )
+                send_kwargs["mention_author"] = False
+            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
             return str(sent.id)
 
         if chat["platform"] == "telegram":
@@ -193,12 +225,22 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
             text_html = f"{escape_html(header)}\n{body_html}".strip()
-            sent = await tg_bot.send_message(
+            send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
                 text=text_html,
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
+            if reply_to_platform_message_id:
+                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
+            try:
+                sent = await tg_bot.send_message(**send_kwargs)
+            except Exception:
+                if reply_to_platform_message_id:
+                    send_kwargs.pop("reply_to_message_id", None)
+                    sent = await tg_bot.send_message(**send_kwargs)
+                else:
+                    raise
             return str(sent.message_id)
 
     if system_event_key:
@@ -220,7 +262,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             text=event_text,
             discord_text=event_text,
             telegram_html=discord_to_telegram_html(event_text),
-            reply_to_name=None,
+            reply_to_msg_db_id=None,
             send_to_chat_func=send_to_chat,
         )
         return
@@ -240,7 +282,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             text=localized_text,
             discord_text=localized_text,
             telegram_html=discord_to_telegram_html(localized_text),
-            reply_to_name=reply_to_name,
+            reply_to_msg_db_id=reply_to_msg_db_id,
             send_to_chat_func=send_to_chat,
             forward_type=forward_type,
             forward_name=forward_name,
@@ -281,6 +323,7 @@ class DiscordBot(discord.Client):
         await self.tree.sync()
         self.loop.create_task(self.deadchat_loop())
         self.loop.create_task(self.status_loop())
+        self.loop.create_task(self.bridge_rules_loop())
 
     async def deadchat_loop(self):
         await self.wait_until_ready()
@@ -335,6 +378,72 @@ class DiscordBot(discord.Client):
                 )
             except Exception as e:
                 print(f"Status update error: {e}")
+
+            await asyncio.sleep(60)
+
+    async def bridge_rules_loop(self):
+        """Periodically posts bridge rules to ALL chats in the bridge (Discord + Telegram)."""
+        await self.wait_until_ready()
+        from telegram_bot import bot as tg_bot
+
+        while not self.is_closed():
+            try:
+                now = int(time.time())
+                rows = db.cur.execute("SELECT * FROM bridge_rules").fetchall()
+
+                for r in rows:
+                    interval_minutes = r["hours"]
+                    if not interval_minutes or interval_minutes <= 0:
+                        continue
+
+                    interval_seconds = interval_minutes * 60
+                    elapsed_since_post = now - (r["last_post_ts"] or 0)
+
+                    time_due = elapsed_since_post >= interval_seconds
+
+                    msg_count = r["messages"]
+                    count_due = (msg_count is None) or (r["message_counter"] or 0) >= msg_count
+
+                    if not (time_due and count_due):
+                        continue
+
+                    content = r["content"] or ""
+                    if not content:
+                        continue
+
+                    bridge_id = r["bridge_id"]
+                    chats = db.get_bridge_chats(bridge_id)
+
+                    for chat in chats:
+                        try:
+                            if chat["platform"] == "discord":
+                                channel_id = int(chat["chat_id"].split(":")[1])
+                                channel = self.get_channel(channel_id)
+                                if not channel:
+                                    try:
+                                        channel = await self.fetch_channel(channel_id)
+                                    except Exception:
+                                        continue
+                                await channel.send(content)
+
+                            elif chat["platform"] == "telegram":
+                                chat_id_str, thread = chat["chat_id"].split(":")
+                                await tg_bot.send_message(
+                                    chat_id=int(chat_id_str),
+                                    message_thread_id=int(thread) or None,
+                                    text=content,
+                                )
+                        except Exception as e:
+                            print(f"bridge_rules_loop: failed to send to {chat['chat_id']}: {e}")
+
+                    db.cur.execute(
+                        "UPDATE bridge_rules SET last_post_ts=?, message_counter=0 WHERE bridge_id=?",
+                        (now, bridge_id)
+                    )
+                    db.conn.commit()
+
+            except Exception as e:
+                print(f"bridge_rules_loop error: {e}")
 
             await asyncio.sleep(60)
 
@@ -519,6 +628,12 @@ async def on_message(message: discord.Message):
 
     bridge_id = row["bridge_id"]
 
+    db.cur.execute(
+        "UPDATE bridge_rules SET message_counter = COALESCE(message_counter, 0) + 1 WHERE bridge_id=?",
+        (bridge_id,)
+    )
+    db.conn.commit()
+
     prefix = str(message.guild.id)
     user_id_str = str(message.author.id)
 
@@ -556,16 +671,30 @@ async def on_message(message: discord.Message):
                     if str(interaction.user.id) != str(self.user_id):
                         await interaction.response.send_message("This button is not for you", ephemeral=True)
                         return
-                    db.add_verified_user("discord", self.user_id, "*", days_valid=365)
-                    pend_row = db.get_pending_consent("discord", self.prefix, self.user_id)
-                    db.remove_pending_consent("discord", self.prefix, self.user_id)
+                    db.add_verified_user("discord", self.user_id, self.prefix, days_valid=365)
+                    all_pendings = db.get_all_pending_consents_for_user("discord", self.user_id)
+                    for p in all_pendings:
+                        db.remove_pending_consent("discord", p["prefix"], self.user_id)
+                        p_bot_msg_id = p["bot_message_id"]
+                        if p_bot_msg_id:
+                            try:
+                                p_guild_id, p_channel_id = p["chat_key"].split(":")
+                                p_ch = bot.get_channel(int(p_channel_id))
+                                if p_ch:
+                                    try:
+                                        p_msg = await p_ch.fetch_message(int(p_bot_msg_id))
+                                        await p_msg.delete()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
                     try:
                         await interaction.message.delete()
                     except Exception:
                         pass
                     await interaction.response.send_message("Thanks — verified", ephemeral=True)
-                    if pend_row:
-                        await _relay_pending_discord_first_message(pend_row)
+                    for p in all_pendings:
+                        await _relay_pending_discord_first_message(p)
 
             try:
                 mention = f"<@{message.author.id}>"
@@ -1087,13 +1216,20 @@ async def remindrules(
         await interaction.response.send_message("Rules reminder disabled for this bridge", ephemeral=True)
         return
 
+    raw = hours_or_disable.strip().lower()
     try:
-        hours = int(hours_or_disable)
-        if hours <= 0:
+        if raw.endswith("h"):
+            interval_minutes = int(raw[:-1]) * 60
+        elif raw.endswith("m"):
+            interval_minutes = int(raw[:-1])
+        else:
+            interval_minutes = int(raw) * 60
+        if interval_minutes <= 0:
             raise ValueError
     except ValueError:
         await interaction.response.send_message(
-            "Usage: /remindrules <hours|disable> [messages] [message_id] [text]",
+            "Usage: /remindrules <5h|30m|disable> [messages] [message_id] [text]\n"
+            "Examples: `2h` — every 2 hours, `30m` — every 30 minutes",
             ephemeral=True,
         )
         return
@@ -1131,16 +1267,17 @@ async def remindrules(
             "discord",
             chat_id,
             source_message_id,
-            hours,
+            interval_minutes,
             messages,
-            int(time.time()) - (hours * 3600),
+            int(time.time()) - (interval_minutes * 60),
             0
         )
     )
     db.conn.commit()
 
+    human = f"{interval_minutes // 60}h {interval_minutes % 60}m".replace("0h ", "").replace(" 0m", "").strip()
     await interaction.response.send_message(
-        "Rules saved and will be posted across the whole bridge",
+        f"Rules saved — will be posted to **all bridge chats** every {human}",
         ephemeral=True
     )
 
@@ -1321,16 +1458,30 @@ async def verify_slash(interaction: discord.Interaction):
             if str(interaction2.user.id) != str(self.user_id):
                 await interaction2.response.send_message("This button is not for you", ephemeral=True)
                 return
-            db.add_verified_user("discord", self.user_id, "*", days_valid=365)
-            pend_row = db.get_pending_consent("discord", self.prefix, self.user_id)
-            db.remove_pending_consent("discord", self.prefix, self.user_id)
+            db.add_verified_user("discord", self.user_id, self.prefix, days_valid=365)
+            all_pendings = db.get_all_pending_consents_for_user("discord", self.user_id)
+            for p in all_pendings:
+                db.remove_pending_consent("discord", p["prefix"], self.user_id)
+                p_bot_msg_id = p["bot_message_id"]
+                if p_bot_msg_id:
+                    try:
+                        p_guild_id, p_channel_id = p["chat_key"].split(":")
+                        p_ch = bot.get_channel(int(p_channel_id))
+                        if p_ch:
+                            try:
+                                p_msg = await p_ch.fetch_message(int(p_bot_msg_id))
+                                await p_msg.delete()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
             try:
                 await interaction2.message.delete()
             except Exception:
                 pass
             await interaction2.response.send_message("Thanks — verified", ephemeral=True)
-            if pend_row:
-                await _relay_pending_discord_first_message(pend_row)
+            for p in all_pendings:
+                await _relay_pending_discord_first_message(p)
 
     mention = f"<@{interaction.user.id}>"
     consent_text = f"{mention}\n**{localized_consent_title(lang)}**\n\n{localized_consent_body(lang)}"
