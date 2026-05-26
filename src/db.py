@@ -317,6 +317,12 @@ def remove_pending_consent(platform, prefix, user_id):
     )
     conn.commit()
 
+def get_all_pending_consents_for_user(platform, user_id):
+    return cur.execute(
+        "SELECT * FROM pending_consents WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).fetchall()
+
 def get_expired_pending_consents(older_than_seconds=24*3600):
     cutoff = int(time.time()) - older_than_seconds
     return cur.execute(
