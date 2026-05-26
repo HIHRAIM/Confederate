@@ -261,6 +261,14 @@ _LOCALE = {
         "es": "[Mensaje de video]",
         "pt": "[Mensagem de vídeo]"
     },
+    "reply_unknown": {
+        "ru": "(ответ на неизвестное сообщение)",
+        "uk": "(відповідь на невідоме повідомлення)",
+        "pl": "(odpowiedź na nieznaną wiadomość)",
+        "en": "(reply to an unknown message)",
+        "es": "(respuesta a un mensaje desconocido)",
+        "pt": "(resposta a uma mensagem desconhecida)",
+    },
     "discord_system_event": {
         "ru": "{name} {action}",
         "uk": "{name} {action}",
@@ -644,6 +652,9 @@ def localized_voice_message(lang):
 
 def localized_video_message(lang):
     return _LOCALE["video_message"].get(lang, _LOCALE["video_message"][DEFAULT_LANG])
+
+def localized_reply_unknown(lang):
+    return _LOCALE["reply_unknown"].get(lang, _LOCALE["reply_unknown"][DEFAULT_LANG])
 
 def localized_discord_system_event(name, event_key, lang):
     action_table = _LOCALE.get("discord_system_event_action", {}).get(event_key, {})
