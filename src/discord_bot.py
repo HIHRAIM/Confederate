@@ -205,7 +205,10 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = bot.get_channel(channel_id)
             if not channel:
-                return None
+                try:
+                    channel = await bot.fetch_channel(channel_id)
+                except Exception:
+                    return None
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
@@ -217,8 +220,11 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                     fail_if_not_exists=False,
                 )
                 send_kwargs["mention_author"] = False
-            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
-            return str(sent.id)
+            try:
+                sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
+                return str(sent.id)
+            except Exception:
+                return None
 
         if chat["platform"] == "telegram":
             from telegram_bot import bot as tg_bot
@@ -589,6 +595,13 @@ async def rfb(interaction: discord.Interaction, target: str | None = None):
         elif raw.isdigit():
             target_chat_id = f"{interaction.guild_id}:{raw}"
             target_platform = "discord"
+            if not db.cur.execute("SELECT 1 FROM chats WHERE chat_id=?", (target_chat_id,)).fetchone():
+                row_any = db.cur.execute(
+                    "SELECT chat_id FROM chats WHERE platform='discord' AND chat_id LIKE ?",
+                    (f"%:{raw}",)
+                ).fetchone()
+                if row_any:
+                    target_chat_id = row_any["chat_id"]
         else:
             target_chat_id = raw
             target_platform = None
