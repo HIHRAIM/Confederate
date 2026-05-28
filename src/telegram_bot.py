@@ -8,7 +8,8 @@ from utils import (
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang, localized_sticker, localized_file_count_text,
-    localized_voice_message, localized_video_message, localized_whois
+    localized_voice_message, localized_video_message, localized_whois,
+    localized_bridge_info, localized_help
 )
 from config import TELEGRAM_TOKEN
 import time
@@ -645,6 +646,38 @@ async def setadmin(message: Message):
     db.add_bridge_admin(bridge_id, uid)
     await message.reply(f"User `{uid}` added as bridge admin")
 
+@router.message(Command("remadmin"))
+async def remadmin(message: Message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply("Usage: /remadmin <user_id_or_username>")
+        return
+
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    if not is_admin("telegram", message.from_user.id):
+        await message.reply("No permission")
+        return
+
+    identifier = parts[1].strip()
+    uid = None
+    if identifier.startswith("@") or not identifier.isdigit():
+        uid = await resolve_telegram_user(identifier)
+        if uid is None:
+            await message.reply("Could not resolve username")
+            return
+    else:
+        uid = int(identifier)
+
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+    if not row:
+        await message.reply("Chat is not attached to any bridge")
+        return
+
+    bridge_id = row["bridge_id"]
+    db.remove_bridge_admin(bridge_id, uid)
+    await message.reply(f"User `{uid}` removed from bridge admins")
+
 @router.message(Command("lang"))
 async def set_lang_handler(message: Message):
     parts = message.text.split()
@@ -974,6 +1007,109 @@ async def whois_cmd(message: Message):
     except Exception as e:
         await _reply_autodelete(localized_whois("fetch_error", lang, error=e))
 
+@router.message(Command("bridge"))
+async def bridge_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    async def _reply_autodelete(text: str):
+        sent = await message.reply(text)
+        await asyncio.sleep(60)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)
+    ).fetchone()
+
+    if not row:
+        await _reply_autodelete(localized_bridge_info("not_in_bridge", lang))
+        return
+
+    bridge_id = row["bridge_id"]
+    chats = db.get_bridge_chats(bridge_id)
+
+    from discord_bot import bot as dc_bot
+
+    unknown = localized_bridge_info("unknown", lang)
+    chat_lines = []
+    for chat in chats:
+        platform = chat["platform"]
+        cid = chat["chat_id"]
+        if platform == "discord":
+            try:
+                guild_id_str, channel_id_str = cid.split(":", 1)
+                guild = dc_bot.get_guild(int(guild_id_str))
+                server_name = guild.name if guild else unknown
+                channel = guild.get_channel(int(channel_id_str)) if guild else None
+                chat_name = channel.name if channel else unknown
+                display_id = channel_id_str
+            except Exception:
+                server_name, chat_name, display_id = unknown, unknown, cid
+        elif platform == "telegram":
+            try:
+                tg_chat_id_str, thread_str = cid.split(":", 1)
+                thread_id = int(thread_str)
+                tg_chat = await bot.get_chat(int(tg_chat_id_str))
+                server_name = tg_chat.title or getattr(tg_chat, "full_name", None) or unknown
+                if thread_id == 0:
+                    chat_name = server_name
+                    display_id = tg_chat_id_str
+                else:
+                    chat_name = localized_bridge_info("topic", lang, thread_id=thread_id)
+                    display_id = None
+            except Exception:
+                server_name, chat_name, display_id = unknown, unknown, cid
+        else:
+            server_name, chat_name, display_id = platform, unknown, cid
+
+        chat_lines.append(f"* {server_name}: {chat_name}" + (f" ({display_id})" if display_id is not None else ""))
+
+    chats_str = "\n".join(chat_lines) if chat_lines else "—"
+    text = localized_bridge_info("tg_template", lang, bridge_id=bridge_id, chats=chats_str)
+    await _reply_autodelete(text)
+
+
+@router.message(Command("help"))
+async def help_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    async def _reply_autodelete(text: str):
+        sent = await message.reply(text, parse_mode="HTML")
+        await asyncio.sleep(60)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+
+    everyone_lines = "\n".join([
+        escape_html(localized_help("cmd_bridge", lang)),
+        escape_html(localized_help("cmd_whois", lang)),
+        escape_html(localized_help("cmd_verify", lang)),
+    ])
+
+    admins_lines = "\n".join([
+        escape_html(localized_help("cmd_rfb", lang)),
+        escape_html(localized_help("cmd_setadmin", lang)),
+        escape_html(localized_help("cmd_lang", lang)),
+        escape_html(localized_help("cmd_remindrules", lang)),
+        escape_html(localized_help("cmd_shadowban", lang)),
+        escape_html(localized_help("cmd_deadtopic", lang)),
+    ])
+
+    text = (
+        f"<b>{localized_help('title', lang)}</b>\n\n"
+        f"<b>{localized_help('section_everyone', lang)}</b>\n{everyone_lines}\n\n"
+        f"<b>{localized_help('section_admins', lang)}</b>\n{admins_lines}"
+    )
+    await _reply_autodelete(text)
+
+
 @router.edited_message()
 async def edited_message_handler(message: Message):
     thread = message.message_thread_id or 0
@@ -1013,46 +1149,27 @@ async def edited_message_handler(message: Message):
                         f"__TG_FILES_{relay_file_count}__",
                         localized_file_count_text(relay_file_count, target_lang)
                     )
-                localized_text = localized_text.replace("__TG_STICKER__", localized_sticker(target_lang))
-                localized_text = localized_text.replace("__TG_VOICE__", localized_voice_message(target_lang))
-                localized_text = localized_text.replace("__TG_VIDEO_NOTE__", localized_video_message(target_lang))
-
-                if rendered_text == base_text and telegram_html is not None:
-                    body_html = telegram_html
-                else:
-                    body_html = escape_html(localized_text)
-                text_html = f"{escape_html(header)}\n{body_html}"
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
-                    text=text_html,
+                    text=f"{escape_html(header)}\n{telegram_html or escape_html(discord_text)}",
                     parse_mode="HTML"
                 )
             elif c["platform"] == "discord":
                 from discord_bot import bot as dc_bot
                 channel_id = int(c["chat_id"].split(":")[1])
-                channel = dc_bot.get_channel(channel_id)
-                if not channel:
-                    continue
-                target_lang = get_chat_lang(c["chat_id"])
-                localized_discord_text = (discord_text if rendered_text == base_text else rendered_text)
-                if relay_file_count is not None:
-                    localized_discord_text = localized_discord_text.replace(
-                        f"__TG_FILES_{relay_file_count}__",
-                        localized_file_count_text(relay_file_count, target_lang)
-                    )
-                localized_discord_text = localized_discord_text.replace("__TG_STICKER__", localized_sticker(target_lang))
-                localized_discord_text = localized_discord_text.replace("__TG_VOICE__", localized_voice_message(target_lang))
-                localized_discord_text = localized_discord_text.replace("__TG_VIDEO_NOTE__", localized_video_message(target_lang))
-                msg = await channel.fetch_message(int(c["message_id_platform"]))
-                await msg.edit(content=f"{header}\n{localized_discord_text}".strip())
+                ch = dc_bot.get_channel(channel_id)
+                if not ch:
+                    try:
+                        ch = await dc_bot.fetch_channel(channel_id)
+                    except Exception:
+                        continue
+                m = await ch.fetch_message(int(c["message_id_platform"]))
+                await m.edit(content=f"{header}\n{discord_text}".strip())
         except Exception:
             pass
 
-async def main():
-    db.init()
-    await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+
+async def main():
+    await dp.start_polling(bot)

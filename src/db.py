@@ -114,6 +114,12 @@ def init():
         first_failed_ts INTEGER,
         last_failed_ts INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS deadtopic_chats (
+        chat_id TEXT PRIMARY KEY,
+        last_message_ts INTEGER,
+        bot_last_sent_ts INTEGER
+    );
     """)
     conn.commit()
 
@@ -356,6 +362,19 @@ def add_bridge_admin(bridge_id, user_id):
 
 def get_bridge_admins(bridge_id):
     return [r["user_id"] for r in cur.execute("SELECT user_id FROM bridge_admins WHERE bridge_id=?", (bridge_id,)).fetchall()]
+
+def remove_bridge_admin(bridge_id, user_id):
+    cur.execute(
+        "DELETE FROM bridge_admins WHERE bridge_id=? AND user_id=?",
+        (bridge_id, str(user_id))
+    )
+    rows = cur.execute("SELECT platform, chat_id FROM chats WHERE bridge_id=?", (bridge_id,)).fetchall()
+    for r in rows:
+        cur.execute(
+            "DELETE FROM chat_admins WHERE platform=? AND chat_id=? AND user_id=?",
+            (r["platform"], r["chat_id"], str(user_id))
+        )
+    conn.commit()
 
 _old_attach_chat = attach_chat
 def attach_chat(platform, chat_id, bridge_id):
