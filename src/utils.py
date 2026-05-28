@@ -206,28 +206,28 @@ _LOCALE = {
         "pt": "O bot entrou na ponte."
     },
     "consent_title": {
-        "ru": "Внимание — мост сообщений",
-        "uk": "Увага — міст повідомлень",
-        "pl": "Uwaga — most wiadomości",
-        "en": "Notice — message bridge",
-        "es": "Aviso — puente de mensajes",
-        "pt": "Aviso — ponte de mensagens"
+        "ru": "Внимание: мост сообщений",
+        "uk": "Увага: міст повідомлень",
+        "pl": "Uwaga: mostek wiadomości",
+        "en": "Notice: Message Bridge",
+        "es": "Atención: puente de mensajes",
+        "pt": "Atenção: ponte de mensagens"
     },
     "consent_body": {
-        "ru": "Этот чат связан с другими. Все твои сообщения будут автоматически пересылаться в связанные чаты. Ты можешь изменить или удалить любое своё сообщение через оригинал в течение 30 дней после отправки. Нажми «Принимаю», чтобы согласиться с пересылкой и продолжить общение. Подробнее — в описании чата или закреплённом сообщении.",
-        "uk": "Цей чат пов’язано з іншими. Усі твої повідомлення будуть автоматично пересилатися до пов’язаних чатів. Ти можеш змінити або видалити будь-яке своє повідомлення через оригінал протягом 30 днів після відправлення. Натисни «Приймаю», щоб погодитися з пересиланням і продовжити спілкування. Деталі — в описі чату або закріпленому повідомленні.",
-        "pl": "Ten czat jest połączony z innymi. Wszystkie Twoje wiadomości będą automatycznie przesyłane do powiązanych czatów. Możesz zmienić lub usunąć dowolną swoją wiadomość poprzez oryginał w ciągu 30 dni od wysłania. Kliknij „Akceptuję”, aby zgodzić się na przesyłanie i dalej rozmawiać. Szczegóły w opisie czatu lub w przypiętej wiadomości.",
-        "en": "This chat is linked with other chats. All your messages will be automatically forwarded to linked chats. You can edit or delete any of your messages through the original message within 30 days after sending. Tap “I accept” to agree to forwarding and continue chatting. More details are in the chat description or the pinned message.",
-        "es": "Este chat está vinculado con otros. Todos tus mensajes serán reenviados automáticamente a los chats vinculados. Puedes editar o eliminar cualquiera de tus mensajes desde el mensaje original durante 30 días después del envío. Pulsa «Acepto» para aceptar el reenvío y seguir conversando. Más información en la descripción del chat o en el mensaje fijado.",
-        "pt": "Este chat está ligado a outros. Todas as suas mensagens serão encaminhadas automaticamente para os chats ligados. Pode editar ou apagar qualquer uma das suas mensagens através da mensagem original durante 30 dias após o envio. Toque em «Aceito» para concordar com o encaminhamento e continuar a conversar. Mais detalhes na descrição do chat ou na mensagem fixada."
+        "ru": "Этот чат соединён с другими. Твои сообщения будут автоматически пересылаться в связанные чаты. Если ты изменишь или удалишь своё сообщение в течение 30 дней с его отправки, оно автоматически обновится или исчезнет и в других чатах. Нажми «Принимаю», чтобы согласиться с пересылкой и продолжить общение. Подробнее — в описании чата или закреплённом сообщении.",
+        "uk": "Цей чат з'єднаний з іншими. Твої повідомлення автоматично надсилатимуться до пов'язаних чатів. Якщо ти зміниш або видалиш своє повідомлення протягом 30 днів з моменту його надсилання, воно автоматично оновиться або зникне й в інших чатах. Натисни «Погоджуюсь», щоб погодитися з пересиланням і продовжити спілкування. Детальніше — в описі чату або у закріпленому повідомленні.",
+        "pl": "Ten czat jest połączony z innymi. Twoje wiadomości będą automatycznie przesyłane do powiązanych czatów. Jeśli edytujesz lub usuniesz swoją wiadomość w ciągu 30 dni od jej wysłania, automatycznie zaktualizuje się ona lub zniknie również na innych czatach. Kliknij „Akceptuję”, aby wyrazić zgodę na przesyłanie i kontynuować rozmowę. Więcej informacji znajdziesz w opisie czatu lub w przypiętej wiadomości.",
+        "en": "This chat is connected to others. Your messages will be automatically forwarded to linked chats. If you edit or delete your message within 30 days of sending, it will automatically update or disappear in the other chats as well. Click \"Accept\" to agree to the forwarding and continue chatting. For more details, check the chat description or the pinned message.",
+        "es": "Este chat está conectado con otros. Tus mensajes se reenviarán automáticamente a los chats vinculados. Si editas o eliminas tu mensaje dentro de los 30 días posteriores a su envío, también se actualizará o desaparecerá automáticamente en los demás chats. Haz clic en «Aceptar» para dar tu consentimiento y seguir chateando. Para más detalles, consulta la descripción del chat o el mensaje fijado.",
+        "pt": "Este chat está conectado a outros. As suas mensagens serão encaminhadas automaticamente para os chats vinculados. Se você editar ou excluir a sua mensagem em até 30 dias após o envio, ela também será atualizada ou desaparecerá automaticamente nos outros chats. Clique em \"Aceitar\" para concordar com o encaminhamento e continuar conversando. Para mais detalhes, verifique a descrição do chat ou a mensagem fixada."
     },
     "consent_button": {
         "ru": "Принимаю",
-        "uk": "Приймаю",
+        "uk": "Погоджуюсь",
         "pl": "Akceptuję",
-        "en": "I accept",
-        "es": "Acepto",
-        "pt": "Aceito"
+        "en": "Accept",
+        "es": "Aceptar",
+        "pt": "Aceitar"
     },
     "sticker": {
         "ru": "[Стикер]",
