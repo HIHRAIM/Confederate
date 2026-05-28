@@ -7,10 +7,12 @@ from utils import (
     get_next_status_text, get_chat_lang,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
-    localized_sticker, localized_discord_system_event, localized_whois
+    localized_sticker, localized_discord_system_event, localized_whois,
+    localized_bridge_info, localized_deadtopic, localized_help
 )
 import time
 import asyncio
+import datetime
 import json
 from message_relay import discord_to_telegram_html, escape_html
 
@@ -324,6 +326,7 @@ class DiscordBot(discord.Client):
         self.loop.create_task(self.deadchat_loop())
         self.loop.create_task(self.status_loop())
         self.loop.create_task(self.bridge_rules_loop())
+        self.loop.create_task(self.deadtopic_loop())
 
     async def deadchat_loop(self):
         await self.wait_until_ready()
@@ -446,6 +449,71 @@ class DiscordBot(discord.Client):
                 print(f"bridge_rules_loop error: {e}")
 
             await asyncio.sleep(60)
+
+    async def deadtopic_loop(self):
+        """
+        Каждые 5 минут проверяет deadtopic_chats.
+        В полночь UTC (00:00–00:05), если с последнего сообщения прошло >= 6 дней —
+        отправляет фантомное сообщение и сразу удаляет его.
+        """
+        await self.wait_until_ready()
+        while not self.is_closed():
+            try:
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                if now_utc.hour == 0 and now_utc.minute < 5:
+                    now_ts = int(time.time())
+                    today_str = now_utc.strftime("%Y-%m-%d")
+                    rows = db.cur.execute("SELECT * FROM deadtopic_chats").fetchall()
+
+                    for r in rows:
+                        try:
+                            chat_id = r["chat_id"]
+
+                            bot_last_ts = r["bot_last_sent_ts"] or 0
+                            if bot_last_ts > 0:
+                                last_sent_day = datetime.datetime.fromtimestamp(
+                                    bot_last_ts, tz=datetime.timezone.utc
+                                ).strftime("%Y-%m-%d")
+                                if last_sent_day == today_str:
+                                    continue
+
+                            last_msg_ts = r["last_message_ts"] or 0
+                            ref_ts = max(last_msg_ts, bot_last_ts)
+
+                            if now_ts - ref_ts < 6 * 86400:
+                                continue
+
+                            _, channel_id_str = chat_id.split(":")
+                            channel = self.get_channel(int(channel_id_str))
+                            if not channel:
+                                try:
+                                    channel = await self.fetch_channel(int(channel_id_str))
+                                except Exception:
+                                    continue
+
+                            lang = get_chat_lang(chat_id) or "en"
+                            phantom_text = localized_deadtopic("phantom_message", lang)
+
+                            sent = await channel.send(phantom_text)
+                            await asyncio.sleep(1)
+                            try:
+                                await sent.delete()
+                            except Exception:
+                                pass
+
+                            db.cur.execute(
+                                "UPDATE deadtopic_chats SET bot_last_sent_ts=? WHERE chat_id=?",
+                                (now_ts, chat_id)
+                            )
+                            db.conn.commit()
+
+                        except Exception as e:
+                            print(f"deadtopic_loop: error for {r['chat_id']}: {e}")
+
+            except Exception as e:
+                print(f"deadtopic_loop error: {e}")
+
+            await asyncio.sleep(300)
 
 bot = DiscordBot()
 
@@ -616,6 +684,12 @@ async def on_message(message: discord.Message):
 
     if message.author.bot:
         return
+
+    db.cur.execute(
+        "UPDATE deadtopic_chats SET last_message_ts=? WHERE chat_id=?",
+        (int(time.time()), chat_id)
+    )
+    db.conn.commit()
 
     system_event_key = _discord_system_event_key(message)
 
@@ -911,6 +985,30 @@ async def setadmin(interaction: discord.Interaction, user: str):
 
     await interaction.response.send_message(f"User `{uid}` added as chat admin", ephemeral=True)
 
+@bot.tree.command(name="remadmin")
+async def remadmin(interaction: discord.Interaction, user: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message("No permission to manage chat admins", ephemeral=True)
+        return
+
+    uid = None
+    if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
+        uid = await resolve_discord_user(interaction.guild, user)
+        if uid is None:
+            await interaction.response.send_message("Could not resolve user", ephemeral=True)
+            return
+    else:
+        uid = int(user)
+
+    db.cur.execute(
+        "DELETE FROM chat_admins WHERE platform=? AND chat_id=? AND user_id=?",
+        ("discord", chat_id, str(uid))
+    )
+    db.conn.commit()
+
+    await interaction.response.send_message(f"User `{uid}` removed from chat admins", ephemeral=True)
+
 async def handle_delete_of_copy(platform, platform_message_id):
     row = db.cur.execute(
         """
@@ -1007,6 +1105,11 @@ async def on_guild_remove(guild: discord.Guild):
 
     db.cur.execute(
         "DELETE FROM chat_settings WHERE chat_id LIKE ?",
+        (f"{guild.id}:%",)
+    )
+
+    db.cur.execute(
+        "DELETE FROM deadtopic_chats WHERE chat_id LIKE ?",
         (f"{guild.id}:%",)
     )
 
@@ -1183,6 +1286,67 @@ async def newschat(
         ephemeral=True
     )
 
+@bot.tree.command(name="deadtopic")
+async def deadtopic(
+    interaction: discord.Interaction,
+    action: str,
+):
+    """
+    /deadtopic enable  — включить авто-сохранение темы (phantom message каждые 6 дней).
+    /deadtopic disable — выключить.
+    Доступно только Bridge Admins и Bot Admins.
+    """
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    user_id = interaction.user.id
+
+    allowed = is_admin("discord", user_id)
+    if not allowed:
+        row = db.cur.execute(
+            "SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)
+        ).fetchone()
+        if row:
+            bridge_admins = db.get_bridge_admins(row["bridge_id"])
+            if str(user_id) in bridge_admins:
+                allowed = True
+
+    if not allowed:
+        await interaction.response.send_message("No permission", ephemeral=True)
+        return
+
+    lang = get_chat_lang(chat_id) or "en"
+    action = action.strip().lower()
+
+    if action == "disable":
+        db.cur.execute("DELETE FROM deadtopic_chats WHERE chat_id=?", (chat_id,))
+        db.conn.commit()
+        await interaction.response.send_message(
+            localized_deadtopic("disabled", lang), ephemeral=True
+        )
+        return
+
+    if action == "enable":
+        now_ts = int(time.time())
+        db.cur.execute(
+            """
+            INSERT INTO deadtopic_chats (chat_id, last_message_ts, bot_last_sent_ts)
+            VALUES (?, ?, NULL)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                last_message_ts=excluded.last_message_ts,
+                bot_last_sent_ts=NULL
+            """,
+            (chat_id, now_ts)
+        )
+        db.conn.commit()
+        await interaction.response.send_message(
+            localized_deadtopic("enabled", lang), ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        "Usage: /deadtopic enable | /deadtopic disable",
+        ephemeral=True
+    )
+
 @bot.tree.command(name="remindrules")
 async def remindrules(
     interaction: discord.Interaction,
@@ -1314,7 +1478,7 @@ async def list_chats(interaction: discord.Interaction):
         return
 
     lines = []
-    lines.append("**Discord — серверы, где бот состоит:**")
+    lines.append("**Discord-серверы:**")
     for g in bot.guilds:
         lines.append(f"- {g.name} — id: {g.id}")
 
@@ -1325,7 +1489,7 @@ async def list_chats(interaction: discord.Interaction):
         prefixes[prefix] = True
 
     if prefixes:
-        lines.append("\n**Telegram — чаты/группы (id):**")
+        lines.append("\n**Telegram-группы:**")
         try:
             from telegram_bot import bot as tg_bot
             for pid in prefixes.keys():
@@ -1390,6 +1554,7 @@ async def force_leave(interaction: discord.Interaction, platform: str, target_id
         db.cur.execute("DELETE FROM dead_chats WHERE chat_id LIKE ?", (f"{gid}:%",))
         db.cur.execute("DELETE FROM news_chats WHERE chat_id LIKE ?", (f"{gid}:%",))
         db.cur.execute("DELETE FROM chat_settings WHERE chat_id LIKE ?", (f"{gid}:%",))
+        db.cur.execute("DELETE FROM deadtopic_chats WHERE chat_id LIKE ?", (f"{gid}:%",))
         db.cur.execute("DELETE FROM chats WHERE chat_id LIKE ?", (f"{gid}:%",))
         db.conn.commit()
 
@@ -1740,36 +1905,102 @@ async def whois_command(interaction: discord.Interaction):
     except Exception as e:
         await interaction.response.send_message(localized_whois("fetch_error", lang, error=e), ephemeral=True)
 
+@bot.tree.command(name="bridge")
+async def bridge_command(interaction: discord.Interaction):
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
+    chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
+
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)
+    ).fetchone()
+
+    if not row:
+        await interaction.response.send_message(
+            localized_bridge_info("not_in_bridge", lang), ephemeral=True
+        )
+        return
+
+    bridge_id = row["bridge_id"]
+    chats = db.get_bridge_chats(bridge_id)
+
+    from telegram_bot import bot as tg_bot
+
+    chat_lines = []
+    for chat in chats:
+        platform = chat["platform"]
+        cid = chat["chat_id"]
+        unknown = localized_bridge_info("unknown", lang)
+        if platform == "discord":
+            try:
+                guild_id_str, channel_id_str = cid.split(":", 1)
+                guild = bot.get_guild(int(guild_id_str))
+                server_name = guild.name if guild else unknown
+                channel = guild.get_channel(int(channel_id_str)) if guild else None
+                chat_name = channel.name if channel else unknown
+                display_id = channel_id_str
+            except Exception:
+                server_name, chat_name, display_id = unknown, unknown, cid
+        elif platform == "telegram":
+            try:
+                tg_chat_id_str, thread_str = cid.split(":", 1)
+                thread_id = int(thread_str)
+                tg_chat = await tg_bot.get_chat(int(tg_chat_id_str))
+                server_name = tg_chat.title or getattr(tg_chat, "full_name", None) or unknown
+                if thread_id == 0:
+                    chat_name = server_name
+                    display_id = tg_chat_id_str
+                else:
+                    chat_name = localized_bridge_info("topic", lang, thread_id=thread_id)
+                    display_id = None
+            except Exception:
+                server_name, chat_name, display_id = unknown, unknown, cid
+        else:
+            server_name, chat_name, display_id = platform, unknown, cid
+
+        chat_lines.append(f"* {server_name}: {chat_name}" + (f" ({display_id})" if display_id is not None else ""))
+
+    chats_value = "\n".join(chat_lines) if chat_lines else "—"
+
+    embed = discord.Embed(
+        title=localized_bridge_info("title", lang),
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name=localized_bridge_info("field_number", lang), value=str(bridge_id), inline=False)
+    embed.add_field(name=localized_bridge_info("field_chats", lang), value=chats_value, inline=False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="help")
+async def help_command(interaction: discord.Interaction):
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
+
+    everyone_lines = "\n".join([
+        localized_help("cmd_bridge", lang),
+        localized_help("cmd_whois", lang),
+        localized_help("cmd_verify", lang),
+    ])
+
+    admins_lines = "\n".join([
+        localized_help("cmd_rfb", lang),
+        localized_help("cmd_setadmin", lang),
+        localized_help("cmd_lang", lang),
+        localized_help("cmd_remindrules", lang),
+        localized_help("cmd_shadowban", lang),
+        localized_help("cmd_deadtopic", lang),
+        localized_help("cmd_deadchat", lang),
+        localized_help("cmd_newschat", lang),
+    ])
+
+    embed = discord.Embed(
+        title=localized_help("title", lang),
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name=localized_help("section_everyone", lang), value=everyone_lines, inline=False)
+    embed.add_field(name=localized_help("section_admins", lang), value=admins_lines, inline=False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 async def status_loop():
     """Меняет статус бота раз в минуту, чередуя языки."""
-    await bot.wait_until_ready()
-    from telegram_bot import bot as tg_bot
-    
-    while not bot.is_closed():
-        try:
-            discord_members = sum((g.member_count or 0) for g in bot.guilds)
-            telegram_members = 0
-            for gid in db.get_telegram_group_ids():
-                try:
-                    members_count = await tg_bot.get_chat_member_count(int(gid))
-                    telegram_members += int(members_count or 0)
-                except Exception:
-                    continue
-            total_members = discord_members + telegram_members
-
-            discord_servers = len(bot.guilds)
-            telegram_groups = db.get_telegram_group_count()
-            total_servers = discord_servers + telegram_groups
-
-            status_text = get_next_status_text(total_members, total_servers)
-
-            await bot.change_presence(
-                activity=discord.Activity(
-                    type=discord.ActivityType.playing,
-                    name=status_text
-                )
-            )
-        except Exception as e:
-            print(f"Status update error: {e}")
-        
-        await asyncio.sleep(60)
