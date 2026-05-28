@@ -141,14 +141,6 @@ SUPPORTED_LANGS = {"ru", "uk", "pl", "en", "es", "pt"}
 DEFAULT_LANG = "en"
 
 _LOCALE = {
-    "replying": {
-        "ru": "(отвечая {name})",
-        "uk": "(відповідаючи {name})",
-        "pl": "(odpowiadając {name})",
-        "en": "(replying to {name})",
-        "es": "(respondiendo a {name})",
-        "pt": "(respondendo a {name})",
-    },
     "forward_from_chat": {
         "ru": "(переслано из {name})",
         "uk": "(переслано з {name})",
@@ -392,6 +384,204 @@ _LOCALE = {
             "es": "El puente {bridge_id} se eliminó de la base de datos porque no quedaron chats.",
             "pt": "A ponte {bridge_id} foi removida do banco de dados porque não restaram chats."
         }
+    },
+    "deadtopic": {
+        "enabled": {
+            "ru": "Авто-сохранение темы включено. Каждые 6 дней без активности в полночь UTC бот пришлёт и удалит фантомное сообщение.",
+            "uk": "Авто-збереження теми увімкнено. Щожних 6 днів без активності опівночі UTC бот надішле та видалить фантомне повідомлення.",
+            "pl": "Automatyczne zachowanie tematu włączone. Co 6 dni braku aktywności o północy UTC bot wyśle i usunie wiadomość widmo.",
+            "en": "Dead topic prevention enabled. Every 6 days of inactivity at midnight UTC the bot will send and delete a phantom message.",
+            "es": "Prevención de tema muerto activada. Cada 6 días de inactividad a medianoche UTC el bot enviará y eliminará un mensaje fantasma.",
+            "pt": "Prevenção de tópico inativo ativada. A cada 6 dias de inatividade à meia-noite UTC o bot enviará e excluirá uma mensagem fantasma.",
+        },
+        "disabled": {
+            "ru": "Авто-сохранение темы отключено.",
+            "uk": "Авто-збереження теми вимкнено.",
+            "pl": "Automatyczne zachowanie tematu wyłączone.",
+            "en": "Dead topic prevention disabled.",
+            "es": "Prevención de tema muerto desactivada.",
+            "pt": "Prevenção de tópico inativo desativada.",
+        },
+        "phantom_message": {
+            "ru": "Фантомное сообщение для сохранения темы.",
+            "uk": "Фантомне повідомлення для збереження теми.",
+            "pl": "Wiadomość widmo dla zachowania tematu.",
+            "en": "Phantom message to preserve the topic.",
+            "es": "Mensaje fantasma para mantener el tema.",
+            "pt": "Mensagem fantasma para manter o tópico.",
+        },
+    },
+    "bridge_info": {
+        "title": {
+            "ru": "Информация о мосте",
+            "uk": "Інформація про міст",
+            "pl": "Informacje o moście",
+            "en": "Bridge information",
+            "es": "Información del puente",
+            "pt": "Informações da ponte"
+        },
+        "field_number": {
+            "ru": "Номер",
+            "uk": "Номер",
+            "pl": "Numer",
+            "en": "Number",
+            "es": "Número",
+            "pt": "Número"
+        },
+        "field_chats": {
+            "ru": "Подключённые чаты",
+            "uk": "Підключені чати",
+            "pl": "Podłączone czaty",
+            "en": "Connected chats",
+            "es": "Chats conectados",
+            "pt": "Chats conectados"
+        },
+        "not_in_bridge": {
+            "ru": "Этот чат не подключён к мосту.",
+            "uk": "Цей чат не підключений до мосту.",
+            "pl": "Ten czat nie jest podłączony do mostu.",
+            "en": "This chat is not connected to a bridge.",
+            "es": "Este chat no está conectado a ningún puente.",
+            "pt": "Este chat não está conectado a nenhuma ponte."
+        },
+        "tg_template": {
+            "ru": "Информация о мосте\n\nНомер: {bridge_id}\nПодключённые чаты:\n{chats}",
+            "uk": "Інформація про міст\n\nНомер: {bridge_id}\nПідключені чати:\n{chats}",
+            "pl": "Informacje o moście\n\nNumer: {bridge_id}\nPodłączone czaty:\n{chats}",
+            "en": "Bridge information\n\nNumber: {bridge_id}\nConnected chats:\n{chats}",
+            "es": "Información del puente\n\nNúmero: {bridge_id}\nChats conectados:\n{chats}",
+            "pt": "Informações da ponte\n\nNúmero: {bridge_id}\nChats conectados:\n{chats}"
+        },
+        "unknown": {
+            "ru": "Неизвестно",
+            "uk": "Невідомо",
+            "pl": "Nieznane",
+            "en": "Unknown",
+            "es": "Desconocido",
+            "pt": "Desconhecido"
+        },
+        "topic": {
+            "ru": "тема {thread_id}",
+            "uk": "тема {thread_id}",
+            "pl": "temat {thread_id}",
+            "en": "topic {thread_id}",
+            "es": "tema {thread_id}",
+            "pt": "tópico {thread_id}"
+        }
+    },
+    "help": {
+        "title": {
+            "ru": "Команды бота",
+            "uk": "Команди бота",
+            "pl": "Komendy bota",
+            "en": "Bot commands",
+            "es": "Comandos del bot",
+            "pt": "Comandos do bot",
+        },
+        "section_everyone": {
+            "ru": "Для всех",
+            "uk": "Для всіх",
+            "pl": "Dla wszystkich",
+            "en": "For everyone",
+            "es": "Para todos",
+            "pt": "Para todos",
+        },
+        "section_admins": {
+            "ru": "Для админов моста",
+            "uk": "Для адмінів моста",
+            "pl": "Dla adminów mostów",
+            "en": "For Bridge Admins",
+            "es": "Para admins de puentes",
+            "pt": "Para admines de ponte",
+        },
+        "cmd_bridge": {
+            "ru": "/bridge — информация о мосте и подключённых чатах",
+            "uk": "/bridge — інформація про міст і підключені чати",
+            "pl": "/bridge — informacje o moście i podłączonych czatach",
+            "en": "/bridge — info about the bridge and connected chats",
+            "es": "/bridge — información sobre el puente y los chats conectados",
+            "pt": "/bridge — informações sobre a ponte e os chats conectados",
+        },
+        "cmd_whois": {
+            "ru": "/whois — информация об авторе сообщения (ответом на relay-сообщение бота)",
+            "uk": "/whois — інформація про автора повідомлення (відповіддю на relay-повідомлення бота)",
+            "pl": "/whois — informacje o autorze wiadomości (w odpowiedzi na wiadomość relay bota)",
+            "en": "/whois — info about the message author (reply to a bot relay message)",
+            "es": "/whois — información sobre el autor del mensaje (responde a un mensaje relay del bot)",
+            "pt": "/whois — informações sobre o autor da mensagem (responda a uma mensagem relay do bot)",
+        },
+        "cmd_verify": {
+            "ru": "/verify — подтвердить согласие на пересылку сообщений",
+            "uk": "/verify — підтвердити згоду на пересилання повідомлень",
+            "pl": "/verify — potwierdzenie zgody na przesyłanie wiadomości",
+            "en": "/verify — confirm consent to message forwarding",
+            "es": "/verify — confirmar el consentimiento para el reenvío de mensajes",
+            "pt": "/verify — confirmar o consentimento para o encaminhamento de mensagens",
+        },
+        "cmd_rfb": {
+            "ru": "/rfb — отключить этот чат от моста",
+            "uk": "/rfb — відключити цей чат від мосту",
+            "pl": "/rfb — odłączyć ten czat od mostu",
+            "en": "/rfb — remove this chat from the bridge",
+            "es": "/rfb — desconectar este chat del puente",
+            "pt": "/rfb — remover este chat da ponte",
+        },
+        "cmd_setadmin": {
+            "ru": "/setadmin <user> — добавить Bridge Admin",
+            "uk": "/setadmin <user> — додати Bridge Admin",
+            "pl": "/setadmin <user> — dodaj Bridge Admin",
+            "en": "/setadmin <user> — add a Bridge Admin",
+            "es": "/setadmin <user> — añadir un Bridge Admin",
+            "pt": "/setadmin <user> — adicionar um Bridge Admin",
+        },
+        "cmd_lang": {
+            "ru": "/lang <код> — установить язык бота (ru, uk, pl, en, es, pt)",
+            "uk": "/lang <код> — встановити мову бота (ru, uk, pl, en, es, pt)",
+            "pl": "/lang <kod> — ustawić język bota (ru, uk, pl, en, es, pt)",
+            "en": "/lang <code> — set bot language (ru, uk, pl, en, es, pt)",
+            "es": "/lang <código> — establecer el idioma del bot (ru, uk, pl, en, es, pt)",
+            "pt": "/lang <código> — definir o idioma do bot (ru, uk, pl, en, es, pt)",
+        },
+        "cmd_remindrules": {
+            "ru": "/remindrules <время> [сообщений] — периодически публиковать правила во всех чатах моста (например: 2h, 30m)",
+            "uk": "/remindrules <час> [повідомлень] — періодично публікувати правила в усіх чатах мосту (напр.: 2h, 30m)",
+            "pl": "/remindrules <czas> [wiadomości] — cyklicznie publikować regulamin we wszystkich czatach mostu (np.: 2h, 30m)",
+            "en": "/remindrules <time> [messages] — periodically post rules to all bridge chats (e.g.: 2h, 30m)",
+            "es": "/remindrules <tiempo> [mensajes] — publicar reglas periódicamente en todos los chats del puente (ej.: 2h, 30m)",
+            "pt": "/remindrules <tempo> [mensagens] — publicar regras periodicamente em todos os chats da ponte (ex.: 2h, 30m)",
+        },
+        "cmd_shadowban": {
+            "ru": "/shadow-ban <user> — скрыть сообщения пользователя от пересылки",
+            "uk": "/shadow-ban <user> — приховати повідомлення користувача від пересилання",
+            "pl": "/shadow-ban <user> — ukryć wiadomości użytkownika przed przekazywaniem",
+            "en": "/shadow-ban <user> — hide user's messages from relay",
+            "es": "/shadow-ban <user> — ocultar los mensajes del usuario del relay",
+            "pt": "/shadow-ban <user> — ocultar mensagens do usuário do relay",
+        },
+        "cmd_deadtopic": {
+            "ru": "/deadtopic enable|disable — раз в 6 дней без активности отправлять фантомное сообщение для сохранения темы",
+            "uk": "/deadtopic enable|disable — раз на 6 днів без активності надсилати фантомне повідомлення для збереження теми",
+            "pl": "/deadtopic enable|disable — co 6 dni braku aktywności wysyłać wiadomość widmo w celu zachowania tematu",
+            "en": "/deadtopic enable|disable — send a phantom message every 6 days of inactivity to keep the topic alive",
+            "es": "/deadtopic enable|disable — enviar un mensaje fantasma cada 6 días de inactividad para mantener el tema activo",
+            "pt": "/deadtopic enable|disable — enviar mensagem fantasma a cada 6 dias de inatividade para manter o tópico ativo",
+        },
+        "cmd_deadchat": {
+            "ru": "/deadchat <роль> <часы> | disable — пинговать роль при неактивности (только Discord)",
+            "uk": "/deadchat <роль> <години> | disable — пінгувати роль при неактивності (тільки Discord)",
+            "pl": "/deadchat <rola> <godziny> | disable — pingować rolę przy braku aktywności (tylko Discord)",
+            "en": "/deadchat <role> <hours> | disable — ping a role when chat is inactive (Discord only)",
+            "es": "/deadchat <rol> <horas> | disable — mencionar un rol cuando el chat está inactivo (solo Discord)",
+            "pt": "/deadchat <cargo> <horas> | disable — mencionar um cargo quando o chat está inativo (somente Discord)",
+        },
+        "cmd_newschat": {
+            "ru": "/newschat add <эмодзи> | disable — авто-реакция на сообщения в канале новостей (только Discord)",
+            "uk": "/newschat add <емодзі> | disable — авто-реакція на повідомлення в каналі новин (тільки Discord)",
+            "pl": "/newschat add <emoji> | disable — auto-reakcja na wiadomości w kanale newsów (tylko Discord)",
+            "en": "/newschat add <emoji> | disable — auto-react to messages in a news channel (Discord only)",
+            "es": "/newschat add <emoji> | disable — reaccionar automáticamente a mensajes en un canal de noticias (solo Discord)",
+            "pt": "/newschat add <emoji> | disable — reagir automaticamente a mensagens em um canal de notícias (somente Discord)",
+        },
     },
     "whois": {
         "use_reply": {
@@ -670,8 +860,32 @@ def localized_service_event(event_key, lang, **kwargs):
     except Exception:
         return template
 
+def localized_bridge_info(event_key, lang, **kwargs):
+    table = _LOCALE.get("bridge_info", {}).get(event_key, {})
+    template = table.get(lang, table.get(DEFAULT_LANG, event_key))
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
+
 def localized_whois(event_key, lang, **kwargs):
     table = _LOCALE.get("whois", {}).get(event_key, {})
+    template = table.get(lang, table.get(DEFAULT_LANG, event_key))
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
+
+def localized_help(event_key, lang, **kwargs):
+    table = _LOCALE.get("help", {}).get(event_key, {})
+    template = table.get(lang, table.get(DEFAULT_LANG, event_key))
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
+
+def localized_deadtopic(event_key, lang, **kwargs):
+    table = _LOCALE.get("deadtopic", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
         return template.format(**kwargs)
