@@ -34,10 +34,10 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 4. **Create config file**
    - Copy `config.example.py` to `config.py`.
    - Set:
-     - `YOUR_DISCORD_BOT_TOKEN`
-     - `YOUR_TELEGRAM_BOT_TOKEN`
-     - `ADMINS={"discord"}` and `ADMINS={"telegram"}` with bot-admin user IDs.
-     - `SERVICE_CHATS={"discord"}` and `SERVICE_CHATS={"telegram"}` with chat IDs.
+     - `DISCORD_TOKEN` — your Discord bot token.
+     - `TELEGRAM_TOKEN` — your Telegram bot token.
+     - `ADMINS["discord"]` and `ADMINS["telegram"]` — sets of numeric user IDs with global bot-admin rights.
+     - `SERVICE_CHATS["discord"]` and `SERVICE_CHATS["telegram"]` — chat IDs where the bot sends startup/shutdown and health events. Telegram format: `"-1000000000000:0"` (chat\_id:thread\_id); Discord format: numeric channel ID.
 
 5. **Run the bot**
    ```bash
@@ -57,37 +57,45 @@ Permission roles used below:
 > Notes:
 > - On Telegram, bridge-level delegation is done via `/setadmin` and stored per bridge/chat.
 > - On Discord, bridge/chat management permissions are enforced through bot-managed admin checks.
+> - Telegram `/rfb` must be run inside the chat/topic to be removed — removal by ID is not supported.
 
 ### Discord commands
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
 | `/atb <bridge_id>` | Attach current Discord channel to a bridge | ❌ | ❌ | ✅ |
-| `/rfb [channel_or_chat_id]` | Remove channel from a bridge | ❌ | ✅ | ✅ |
-| `/setadmin <user>` | Grant chat/bridge admin permissions in current chat | ❌ | ✅ | ✅ |
-| `/deadchat <role_id\|disable> [hours]` | Enable/disable inactivity role-ping automation | ❌ | ✅ | ✅ |
-| `/newschat add <emoji>` / `/newschat disable` | Auto-react to new messages in channel | ❌ | ✅ | ✅ |
-| `/remindrules <hours> [messages]` (as reply) | Save periodic rules repost configuration | ❌ | ✅ | ✅ |
+| `/rfb [channel_or_chat_id]` | Remove channel from a bridge (current channel if no ID given) | ❌ | ✅ | ✅ |
+| `/setadmin <user>` | Grant bridge admin permissions in current chat | ❌ | ✅ | ✅ |
+| `/remadmin <user>` | Revoke bridge admin permissions in current chat | ❌ | ❌ | ✅ |
+| `/deadchat <role_id\|disable> <hours>` | Ping a role after N hours of inactivity in the channel | ❌ | ✅ | ✅ |
+| `/deadtopic <enable\|disable>` | Post a phantom message every 6 days to keep the thread alive | ❌ | ✅ | ✅ |
+| `/newschat <add <emoji>\|disable>` | Auto-react to new messages in channel | ❌ | ✅ | ✅ |
+| `/remindrules <5h\|30m\|disable> [messages] [message_id] [text]` | Post rules to all bridge chats on a schedule | ❌ | ✅ | ✅ |
 | `/lang <ru\|uk\|pl\|en\|es\|pt>` | Set language for this channel/topic | ❌ | ✅ | ✅ |
+| `/bridge` | Show which bridge and chats the current channel belongs to | ✅ | ✅ | ✅ |
 | `/verify` | Request/refresh user verification prompt | ✅ | ✅ | ✅ |
 | `/whois` (as reply to relay message) | Show original sender identity | ✅ | ✅ | ✅ |
-| `/shadow-ban <user>` | Shadow-ban a user for relay | ❌ | ✅ | ✅ |
+| `/help` | Show command reference | ✅ | ✅ | ✅ |
+| `/shadow-ban <user>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify <user>` | Remove verification status from user | ❌ | ❌ | ✅ |
-| `/list_chats` | Show known Discord/Telegram chats | ❌ | ❌ | ✅ |
-| `/force_leave <platform> <id>` | Force bot to leave guild/chat and cleanup records | ❌ | ❌ | ✅ |
+| `/list_chats` | List all Discord guilds and Telegram groups known to the bot | ❌ | ❌ | ✅ |
+| `/force_leave <platform> <id>` | Force bot to leave a guild/chat and clean up DB records | ❌ | ❌ | ✅ |
 
 ### Telegram commands
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
 | `/atb <bridge_id>` | Attach current Telegram chat/topic to a bridge | ❌ | ❌ | ✅ |
-| `/rfb` | Remove current chat/topic from a bridge | ❌ | ✅ | ✅ |
+| `/rfb` | Remove current chat/topic from a bridge (run inside the target chat) | ❌ | ✅ | ✅ |
 | `/setadmin <user_id_or_username>` | Grant bridge admin permissions | ❌ | ✅ | ✅ |
+| `/remadmin <user_id_or_username>` | Revoke bridge admin permissions | ❌ | ❌ | ✅ |
 | `/lang <ru\|uk\|pl\|en\|es\|pt>` | Set language for current chat/topic | ❌ | ✅ | ✅ |
-| `/remindrules <hours> [messages]` (as reply) | Save periodic rules repost configuration | ❌ | ✅ | ✅ |
+| `/remindrules <5h\|30m> [messages]` (as reply) | Post rules to all bridge chats on a schedule | ❌ | ✅ | ✅ |
+| `/bridge` | Show which bridge and chats the current chat belongs to | ✅ | ✅ | ✅ |
 | `/verify` | Request/refresh user verification prompt | ✅ | ✅ | ✅ |
 | `/whois` (as reply to relay message) | Show original Telegram sender identity | ✅ | ✅ | ✅ |
-| `/shadow-ban <user_id_or_username>` | Shadow-ban a user for relay | ❌ | ✅ | ✅ |
+| `/help` | Show command reference | ✅ | ✅ | ✅ |
+| `/shadow-ban <user_id_or_username>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify <user_id_or_username>` | Remove verification status from user | ❌ | ❌ | ✅ |
 
 ---
@@ -110,6 +118,7 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
   - Shadow-ban records.
 - **Automation settings**
   - Deadchat config (`role_id`, timeout, last activity timestamp).
+  - Deadtopic config (phantom-message schedule per thread).
   - Newschat emoji reaction rules.
   - Rules reminder configuration.
   - Chat language settings.
