@@ -56,12 +56,51 @@ def _discord_embed_texts(message: discord.Message):
     texts = []
     for e in getattr(message, "embeds", []) or []:
         parts = []
+
+        author = getattr(e, "author", None)
+        if author:
+            author_name = getattr(author, "name", None)
+            author_url = getattr(author, "url", None)
+            if author_name:
+                parts.append(f"[{author_name}]({author_url})" if author_url else author_name)
+
         title = getattr(e, "title", None)
-        description = getattr(e, "description", None)
+        url = getattr(e, "url", None)
         if title:
-            parts.append(str(title))
+            parts.append(f"[{title}]({url})" if url else f"**{title}**")
+        elif url:
+            parts.append(url)
+
+        description = getattr(e, "description", None)
         if description:
             parts.append(str(description))
+
+        for field in getattr(e, "fields", []) or []:
+            fname = getattr(field, "name", None)
+            fvalue = getattr(field, "value", None)
+            if fname and fvalue:
+                parts.append(f"**{fname}**\n{fvalue}")
+            elif fvalue:
+                parts.append(str(fvalue))
+
+        image = getattr(e, "image", None)
+        if image:
+            img_url = getattr(image, "url", None)
+            if img_url:
+                parts.append(img_url)
+
+        thumbnail = getattr(e, "thumbnail", None)
+        if thumbnail:
+            thumb_url = getattr(thumbnail, "url", None)
+            if thumb_url:
+                parts.append(thumb_url)
+
+        footer = getattr(e, "footer", None)
+        if footer:
+            footer_text = getattr(footer, "text", None)
+            if footer_text:
+                parts.append(f"_{footer_text}_")
+
         if parts:
             texts.append("\n".join(parts))
     return texts
@@ -192,10 +231,13 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
         else:
             texts = [content]
 
-    if (not any((t or "").strip() for t in texts)):
-        embed_texts = _discord_embed_texts(message)
-        if embed_texts:
-            texts = ["\n\n".join(embed_texts)]
+    embed_texts = _discord_embed_texts(message)
+    if embed_texts:
+        embed_block = "\n\n".join(embed_texts)
+        if any((t or "").strip() for t in texts):
+            texts[0] = (texts[0] or "").rstrip() + "\n\n" + embed_block
+        else:
+            texts = [embed_block]
 
     if forward_type and not any((t or "").strip() for t in texts):
         texts = [forward_text or ""]
@@ -753,6 +795,8 @@ async def on_message(message: discord.Message):
     db.conn.commit()
 
     if message.author.bot:
+        if message.author == bot.user:
+            return
         if db.get_allow_bots(chat_id) and not db.is_relay_copy("discord", chat_id, str(message.id)):
             row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
             if row:
@@ -973,13 +1017,14 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     )
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
+    # If the deleted message is a relay copy (not the original rule source), skip
     row = db.cur.execute(
         """
         SELECT 1 FROM message_copies
-        WHERE origin_platform=? AND origin_chat_id=? AND origin_message_id=?
+        WHERE platform=? AND chat_id=? AND message_id_platform=?
         LIMIT 1
         """,
-        (origin_platform, origin_chat_id, origin_message_id)
+        (origin_platform, origin_chat_id, str(origin_message_id))
     ).fetchone()
 
     if row:
@@ -990,7 +1035,7 @@ def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
         DELETE FROM bridge_rules
         WHERE origin_platform=? AND origin_chat_id=? AND origin_message_id=?
         """,
-        (origin_platform, origin_chat_id, origin_message_id)
+        (origin_platform, origin_chat_id, str(origin_message_id))
     )
     db.conn.commit()
 
@@ -2019,9 +2064,12 @@ async def help_command(interaction: discord.Interaction):
     admins_lines = "\n".join([
         localized_help("cmd_rfb", lang),
         localized_help("cmd_setadmin", lang),
+        localized_help("cmd_remadmin", lang),
         localized_help("cmd_lang", lang),
         localized_help("cmd_remindrules", lang),
         localized_help("cmd_shadowban", lang),
+        localized_help("cmd_unverify", lang),
+        localized_help("cmd_allow_bots", lang),
         localized_help("cmd_deadtopic", lang),
         localized_help("cmd_deadchat", lang),
         localized_help("cmd_newschat", lang),
