@@ -1127,9 +1127,12 @@ async def help_cmd(message: Message):
     admins_lines = "\n".join([
         escape_html(localized_help("cmd_rfb", lang)),
         escape_html(localized_help("cmd_setadmin", lang)),
+        escape_html(localized_help("cmd_remadmin", lang)),
         escape_html(localized_help("cmd_lang", lang)),
         escape_html(localized_help("cmd_remindrules", lang)),
         escape_html(localized_help("cmd_shadowban", lang)),
+        escape_html(localized_help("cmd_unverify", lang)),
+        escape_html(localized_help("cmd_allow_bots_tg", lang)),
         escape_html(localized_help("cmd_deadtopic", lang)),
     ])
 
