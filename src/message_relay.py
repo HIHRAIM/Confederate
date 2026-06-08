@@ -79,6 +79,8 @@ def discord_to_telegram_html(text: str):
     if not text:
         return ""
 
+    text = re.sub(r"<(https?://[^\s>]+)>", r"\1", text)
+
     escaped = html.escape(text)
 
     escaped = re.sub(
