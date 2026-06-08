@@ -134,7 +134,7 @@ def extract_discord_forward_payload(message: discord.Message):
 
     return None, None, ""
 
-async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None):
+async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None, is_bot_sender=False):
     reply_to_msg_db_id = None
     forward_type = None
     forward_name = None
@@ -294,7 +294,51 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             send_to_chat_func=send_to_chat,
             forward_type=forward_type,
             forward_name=forward_name,
+            is_bot_sender=is_bot_sender,
         )
+
+async def _send_db_backup_discord(client):
+    import io
+    from config import BACKUP_CHATS
+    try:
+        with open("bridge.db", "rb") as f:
+            data = f.read()
+    except Exception:
+        return
+    for channel_id in BACKUP_CHATS.get("discord", set()):
+        try:
+            ch = client.get_channel(channel_id)
+            if not ch:
+                try:
+                    ch = await client.fetch_channel(channel_id)
+                except Exception:
+                    continue
+            if ch:
+                await ch.send(file=discord.File(io.BytesIO(data), filename="bridge.db"))
+        except Exception:
+            pass
+
+async def _send_db_backup_telegram():
+    import io
+    from config import BACKUP_CHATS
+    from telegram_bot import bot as tg_bot
+    try:
+        with open("bridge.db", "rb") as f:
+            data = f.read()
+    except Exception:
+        return
+    for chat_entry in BACKUP_CHATS.get("telegram", set()):
+        try:
+            chat_id_str, thread_str = chat_entry.split(":")
+            from aiogram.types import BufferedInputFile
+            doc = BufferedInputFile(data, filename="bridge.db")
+            await tg_bot.send_document(
+                chat_id=int(chat_id_str),
+                document=doc,
+                message_thread_id=int(thread_str) or None,
+            )
+        except Exception:
+            pass
 
 async def _relay_pending_discord_first_message(pend_row):
     try:
@@ -333,6 +377,14 @@ class DiscordBot(discord.Client):
         self.loop.create_task(self.status_loop())
         self.loop.create_task(self.bridge_rules_loop())
         self.loop.create_task(self.deadtopic_loop())
+        self.loop.create_task(self.backup_loop())
+
+    async def backup_loop(self):
+        await self.wait_until_ready()
+        while not self.is_closed():
+            await asyncio.sleep(12 * 3600)
+            await _send_db_backup_discord(self)
+            await _send_db_backup_telegram()
 
     async def deadchat_loop(self):
         await self.wait_until_ready()
@@ -458,68 +510,73 @@ class DiscordBot(discord.Client):
 
     async def deadtopic_loop(self):
         """
-        Каждые 5 минут проверяет deadtopic_chats.
-        В полночь UTC (00:00–00:05), если с последнего сообщения прошло >= 6 дней —
+        Ровно в 00:00 UTC проверяет deadtopic_chats.
+        Если с последнего сообщения (или последней отправки бота) прошло >= 6 дней —
         отправляет фантомное сообщение и сразу удаляет его.
+        Засыпает до следующей полуночи, чтобы перезапуск бота не влиял на расписание.
         """
         await self.wait_until_ready()
         while not self.is_closed():
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            next_midnight = (now_utc + datetime.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            sleep_seconds = (next_midnight - now_utc).total_seconds()
+            await asyncio.sleep(sleep_seconds)
+
             try:
                 now_utc = datetime.datetime.now(datetime.timezone.utc)
-                if now_utc.hour == 0 and now_utc.minute < 5:
-                    now_ts = int(time.time())
-                    today_str = now_utc.strftime("%Y-%m-%d")
-                    rows = db.cur.execute("SELECT * FROM deadtopic_chats").fetchall()
+                now_ts = int(time.time())
+                today_str = now_utc.strftime("%Y-%m-%d")
+                rows = db.cur.execute("SELECT * FROM deadtopic_chats").fetchall()
 
-                    for r in rows:
-                        try:
-                            chat_id = r["chat_id"]
+                for r in rows:
+                    try:
+                        chat_id = r["chat_id"]
 
-                            bot_last_ts = r["bot_last_sent_ts"] or 0
-                            if bot_last_ts > 0:
-                                last_sent_day = datetime.datetime.fromtimestamp(
-                                    bot_last_ts, tz=datetime.timezone.utc
-                                ).strftime("%Y-%m-%d")
-                                if last_sent_day == today_str:
-                                    continue
-
-                            last_msg_ts = r["last_message_ts"] or 0
-                            ref_ts = max(last_msg_ts, bot_last_ts)
-
-                            if now_ts - ref_ts < 6 * 86400:
+                        bot_last_ts = r["bot_last_sent_ts"] or 0
+                        if bot_last_ts > 0:
+                            last_sent_day = datetime.datetime.fromtimestamp(
+                                bot_last_ts, tz=datetime.timezone.utc
+                            ).strftime("%Y-%m-%d")
+                            if last_sent_day == today_str:
                                 continue
 
-                            _, channel_id_str = chat_id.split(":")
-                            channel = self.get_channel(int(channel_id_str))
-                            if not channel:
-                                try:
-                                    channel = await self.fetch_channel(int(channel_id_str))
-                                except Exception:
-                                    continue
+                        last_msg_ts = r["last_message_ts"] or 0
+                        ref_ts = max(last_msg_ts, bot_last_ts)
 
-                            lang = get_chat_lang(chat_id) or "en"
-                            phantom_text = localized_deadtopic("phantom_message", lang)
+                        if now_ts - ref_ts < 6 * 86400:
+                            continue
 
-                            sent = await channel.send(phantom_text)
-                            await asyncio.sleep(1)
+                        _, channel_id_str = chat_id.split(":")
+                        channel = self.get_channel(int(channel_id_str))
+                        if not channel:
                             try:
-                                await sent.delete()
+                                channel = await self.fetch_channel(int(channel_id_str))
                             except Exception:
-                                pass
+                                continue
 
-                            db.cur.execute(
-                                "UPDATE deadtopic_chats SET bot_last_sent_ts=? WHERE chat_id=?",
-                                (now_ts, chat_id)
-                            )
-                            db.conn.commit()
+                        lang = get_chat_lang(chat_id) or "en"
+                        phantom_text = localized_deadtopic("phantom_message", lang)
 
-                        except Exception as e:
-                            print(f"deadtopic_loop: error for {r['chat_id']}: {e}")
+                        sent = await channel.send(phantom_text)
+                        await asyncio.sleep(1)
+                        try:
+                            await sent.delete()
+                        except Exception:
+                            pass
+
+                        db.cur.execute(
+                            "UPDATE deadtopic_chats SET bot_last_sent_ts=? WHERE chat_id=?",
+                            (now_ts, chat_id)
+                        )
+                        db.conn.commit()
+
+                    except Exception as e:
+                        print(f"deadtopic_loop: error for {r['chat_id']}: {e}")
 
             except Exception as e:
                 print(f"deadtopic_loop error: {e}")
-
-            await asyncio.sleep(300)
 
 bot = DiscordBot()
 
@@ -696,6 +753,10 @@ async def on_message(message: discord.Message):
     db.conn.commit()
 
     if message.author.bot:
+        if db.get_allow_bots(chat_id) and not db.is_relay_copy("discord", chat_id, str(message.id)):
+            row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+            if row:
+                await _relay_verified_discord_message(message, row["bridge_id"], is_bot_sender=True)
         return
 
     db.cur.execute(
@@ -1720,74 +1781,9 @@ async def shadow_ban(interaction: discord.Interaction, target: str):
     db.add_shadow_ban("discord", uid)
     await interaction.response.send_message(f"User {uid} shadow-banned on Discord.", ephemeral=True)
 
-@bot.tree.command(name="whois")
-async def whois_command(interaction: discord.Interaction):
-    def _extract_message_id_from_data(payload):
-        if isinstance(payload, dict):
-            for key in ("target_id", "message_id"):
-                value = payload.get(key)
-                if value:
-                    return str(value)
-
-            resolved = payload.get("resolved")
-            if isinstance(resolved, dict):
-                messages = resolved.get("messages")
-                if isinstance(messages, dict) and messages:
-                    return str(next(iter(messages.keys())))
-
-            options = payload.get("options")
-            if isinstance(options, list):
-                for opt in options:
-                    found = _extract_message_id_from_data(opt)
-                    if found:
-                        return found
-
-        elif isinstance(payload, list):
-            for item in payload:
-                found = _extract_message_id_from_data(item)
-                if found:
-                    return found
-
-        return None
-
-    replied_id = None
+async def _whois_lookup(interaction: discord.Interaction, target_message: discord.Message | None, replied_id: str | None = None):
+    """Общая логика для whois: ищет автора target_message или сообщения с replied_id."""
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
-
-    if interaction.message and interaction.message.reference:
-        replied = interaction.message.reference.resolved
-        if replied:
-            replied_id = str(replied.id)
-
-    if not replied_id:
-        replied_id = _extract_message_id_from_data(interaction.data or {})
-
-    if not replied_id and interaction.channel:
-        try:
-            async for m in interaction.channel.history(limit=50):
-                if getattr(m, "author", None) and m.author.id != interaction.user.id:
-                    continue
-                ref = getattr(m, "reference", None)
-                if ref and getattr(ref, "message_id", None):
-                    replied_id = str(ref.message_id)
-                    break
-        except Exception:
-            pass
-
-    if not replied_id and interaction.channel:
-        try:
-            relay_bot_ids = {int(bot.user.id)} if bot.user else set()
-            relay_bot_ids.update({1295454829883298023, 888314689824636998})
-            async for m in interaction.channel.history(limit=30):
-                if m.author and m.author.id in relay_bot_ids:
-                    replied_id = str(m.id)
-                    break
-        except Exception:
-            pass
-
-    if not replied_id:
-        await interaction.response.send_message(localized_whois("use_reply", lang), ephemeral=True)
-        return
-
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
 
     def _find_origin_row(message_id_platform: str | None):
@@ -1798,19 +1794,11 @@ async def whois_command(interaction: discord.Interaction):
             ("discord", chat_key, str(message_id_platform))
         ).fetchone()
 
-    row = _find_origin_row(replied_id)
-    if not row and interaction.channel:
-        try:
-            relay_bot_ids = {int(bot.user.id)} if bot.user else set()
-            relay_bot_ids.update({1295454829883298023, 888314689824636998})
-            async for m in interaction.channel.history(limit=40):
-                if not m.author or m.author.id not in relay_bot_ids:
-                    continue
-                row = _find_origin_row(str(m.id))
-                if row:
-                    break
-        except Exception:
-            pass
+    row = None
+    if target_message:
+        row = _find_origin_row(str(target_message.id))
+    elif replied_id:
+        row = _find_origin_row(replied_id)
 
     if not row:
         await interaction.response.send_message(localized_whois("origin_not_found", lang), ephemeral=True)
@@ -1918,6 +1906,24 @@ async def whois_command(interaction: discord.Interaction):
     except Exception as e:
         await interaction.response.send_message(localized_whois("fetch_error", lang, error=e), ephemeral=True)
 
+
+@bot.tree.context_menu(name="whois")
+async def whois_context_menu(interaction: discord.Interaction, message: discord.Message):
+    """Context menu (правая кнопка → Apps → whois): показывает автора пересланного сообщения."""
+    await _whois_lookup(interaction, target_message=message)
+
+
+@bot.tree.command(name="whois")
+async def whois_command(interaction: discord.Interaction):
+    """
+    Slash-команда /whois. Поскольку Discord не передаёт контекст reply для slash-команд,
+    используй лучше context menu: ПКМ на сообщении → Apps → whois.
+    """
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
+    await interaction.response.send_message(
+        localized_whois("use_context_menu", lang), ephemeral=True
+    )
+
 @bot.tree.command(name="bridge")
 async def bridge_command(interaction: discord.Interaction):
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
@@ -1984,6 +1990,22 @@ async def bridge_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@bot.tree.command(name="allow-bots")
+async def allow_bots_command(interaction: discord.Interaction, action: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):
+        await interaction.response.send_message("No permission", ephemeral=True)
+        return
+    action = action.strip().lower()
+    if action == "enable":
+        db.set_allow_bots(chat_id, True)
+        await interaction.response.send_message("Bot and webhook messages will now be relayed from this channel", ephemeral=True)
+    elif action == "disable":
+        db.set_allow_bots(chat_id, False)
+        await interaction.response.send_message("Bot and webhook messages will no longer be relayed from this channel", ephemeral=True)
+    else:
+        await interaction.response.send_message("Usage: /allow-bots enable | /allow-bots disable", ephemeral=True)
+
 @bot.tree.command(name="help")
 async def help_command(interaction: discord.Interaction):
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
@@ -2013,6 +2035,23 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(name=localized_help("section_admins", lang), value=admins_lines, inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="backup", description="Send current database backup")
+async def backup_discord_cmd(interaction: discord.Interaction):
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message("No permission", ephemeral=True)
+        return
+    import io
+    try:
+        with open("bridge.db", "rb") as f:
+            data = f.read()
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to read database: {e}", ephemeral=True)
+        return
+    await interaction.response.send_message(
+        file=discord.File(io.BytesIO(data), filename="bridge.db")
+    )
 
 
 async def status_loop():

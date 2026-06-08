@@ -147,6 +147,7 @@ async def relay_message(
     telegram_file_count=None,
     forward_type=None,
     forward_name=None,
+    is_bot_sender=False,
 ):
     db.cur.execute(
         """
@@ -177,7 +178,13 @@ async def relay_message(
 
         lang = get_chat_lang(chat["chat_id"])
 
-        header = f"[{messenger_name} | {place_name}] {sender_name}:"
+        if is_bot_sender:
+            if chat["platform"] == "discord":
+                header = f"[{messenger_name} | {place_name}] {sender_name} <:bot:1513502696953352363>:"
+            else:
+                header = f"[{messenger_name} | {place_name}] {sender_name} 🤖:"
+        else:
+            header = f"[{messenger_name} | {place_name}] {sender_name}:"
 
         reply_line = None
         reply_to_platform_message_id = None
@@ -207,19 +214,22 @@ async def relay_message(
         current_discord_text = discord_text or current_text
         current_telegram_html = telegram_html
 
-        if forward_type == "chat":
-            fwd_line = localized_forward_from_chat(forward_name or "unknown", lang)
+        eff_forward_type = None if is_bot_sender else forward_type
+        eff_forward_name = None if is_bot_sender else forward_name
+
+        if eff_forward_type == "chat":
+            fwd_line = localized_forward_from_chat(eff_forward_name or "unknown", lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
             if current_telegram_html is not None:
                 current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
-        elif forward_type == "user":
-            fwd_line = localized_forward_from_user(forward_name or "unknown", lang)
+        elif eff_forward_type == "user":
+            fwd_line = localized_forward_from_user(eff_forward_name or "unknown", lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
             if current_telegram_html is not None:
                 current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
-        elif forward_type == "unknown":
+        elif eff_forward_type == "unknown":
             fwd_line = localized_forward_unknown(lang)
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()

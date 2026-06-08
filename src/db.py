@@ -136,6 +136,11 @@ def init():
         cur.execute("ALTER TABLE pending_consents ADD COLUMN first_message_payload TEXT")
         conn.commit()
 
+    cs_cols = [r["name"] for r in cur.execute("PRAGMA table_info(chat_settings)").fetchall()]
+    if "allow_bots" not in cs_cols:
+        cur.execute("ALTER TABLE chat_settings ADD COLUMN allow_bots INTEGER DEFAULT 0")
+        conn.commit()
+
 def chat_exists(chat_id):
     return cur.execute(
         "SELECT 1 FROM chats WHERE chat_id=?",
@@ -446,6 +451,29 @@ def mark_chat_inaccessible(platform, chat_id):
 def clear_chat_inaccessible(chat_id):
     cur.execute("DELETE FROM inaccessible_chats WHERE chat_id=?", (chat_id,))
     conn.commit()
+
+def get_allow_bots(chat_id):
+    row = cur.execute(
+        "SELECT allow_bots FROM chat_settings WHERE chat_id=?",
+        (chat_id,)
+    ).fetchone()
+    return bool(row and row["allow_bots"])
+
+def set_allow_bots(chat_id, enabled: bool):
+    cur.execute(
+        "INSERT INTO chat_settings (chat_id, allow_bots) VALUES (?, ?)"
+        " ON CONFLICT(chat_id) DO UPDATE SET allow_bots=excluded.allow_bots",
+        (chat_id, 1 if enabled else 0)
+    )
+    conn.commit()
+
+def is_relay_copy(platform: str, chat_id: str, message_id_platform: str) -> bool:
+    """Return True if the given message was sent by the bridge bot as a relay copy."""
+    row = cur.execute(
+        "SELECT 1 FROM message_copies WHERE platform=? AND chat_id=? AND message_id_platform=?",
+        (platform, chat_id, message_id_platform)
+    ).fetchone()
+    return row is not None
 
 def remove_chat_from_bridge(chat_id):
     row = cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()

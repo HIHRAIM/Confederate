@@ -1,5 +1,7 @@
-DISCORD_TOKEN = "YOUR_DISCORD_BOT_TOKEN"
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+import os
+
+DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
+TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 ADMINS = {
     "discord": {ADMINISTRATOR_ID, ADMINISTRATOR_ID},
@@ -13,6 +15,17 @@ SERVICE_CHATS = {
     },
     "telegram": {
         "CHAT_ID", # Example: -1000000000000:00000
+        "CHAT_ID",
+    },
+}
+
+BACKUP_CHATS = {
+    "discord": {
+        CHAT_ID,
+        CHAT_ID,
+    },
+    "telegram": {
+        "CHAT_ID",
         "CHAT_ID",
     },
 }

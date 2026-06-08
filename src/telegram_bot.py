@@ -387,11 +387,15 @@ async def relay_from_telegram(message: Message):
     await _relay_from_telegram_impl(message)
 
 async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None):
-    if message.from_user and message.from_user.is_bot:
-        return
-
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
+
+    is_bot_sender = bool(message.from_user and message.from_user.is_bot)
+    if is_bot_sender:
+        if not db.get_allow_bots(origin_chat_id):
+            return
+        if db.is_relay_copy("telegram", origin_chat_id, str(message.message_id)):
+            return
     lang = get_chat_lang(origin_chat_id)
 
     forward_type = None
@@ -449,16 +453,16 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     db.conn.commit()
 
     prefix = str(message.chat.id)
-    user_id_str = str(message.from_user.id)
+    user_id_str = str(message.from_user.id) if message.from_user else ""
 
-    if db.is_shadow_banned("telegram", user_id_str):
+    if not is_bot_sender and db.is_shadow_banned("telegram", user_id_str):
         try:
             await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
         except Exception:
             pass
         return
 
-    if not db.is_user_verified("telegram", user_id_str, prefix):
+    if not is_bot_sender and not db.is_user_verified("telegram", user_id_str, prefix):
         pend = db.get_pending_consent("telegram", prefix, user_id_str)
         if pend:
             try:
@@ -612,6 +616,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             telegram_file_count=relay_file_count,
             forward_type=forward_type,
             forward_name=forward_name,
+            is_bot_sender=is_bot_sender,
         )
 
 @router.message(Command("setadmin"))
@@ -1073,6 +1078,32 @@ async def bridge_cmd(message: Message):
     await _reply_autodelete(text)
 
 
+@router.message(Command("allow_bots"))
+async def allow_bots_cmd(message: Message):
+    parts = message.text.split()
+    if len(parts) != 2 or parts[1].lower() not in ("enable", "disable"):
+        await message.reply("Usage: /allow_bots enable | /allow_bots disable")
+        return
+
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+
+    has_permission = (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_id, message.from_user.id)
+        or await is_telegram_native_admin(message.chat.id, message.from_user.id)
+    )
+    if not has_permission:
+        await message.reply("No permission")
+        return
+
+    enabled = parts[1].lower() == "enable"
+    db.set_allow_bots(chat_id, enabled)
+    if enabled:
+        await message.reply("Bot messages will now be relayed from this chat")
+    else:
+        await message.reply("Bot messages will no longer be relayed from this chat")
+
 @router.message(Command("help"))
 async def help_cmd(message: Message):
     thread = message.message_thread_id or 0
@@ -1169,6 +1200,19 @@ async def edited_message_handler(message: Message):
         except Exception:
             pass
 
+
+
+@router.message(Command("backup"))
+async def backup_tg_cmd(message: Message):
+    if not is_admin("telegram", message.from_user.id):
+        await message.reply("No permission")
+        return
+    try:
+        from aiogram.types import FSInputFile
+        doc = FSInputFile("bridge.db", filename="bridge.db")
+        await bot.send_document(chat_id=message.chat.id, document=doc)
+    except Exception as e:
+        await message.reply(f"Failed to send database: {e}")
 
 
 async def main():
