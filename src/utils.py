@@ -592,6 +592,14 @@ _LOCALE = {
             "es": "Usa este comando respondiendo a un mensaje relay del bot.",
             "pt": "Use este comando respondendo a uma mensagem relay do bot."
         },
+        "use_context_menu": {
+            "ru": "Slash-команда не может определить сообщение. Используйте контекстное меню: ПКМ на relay-сообщении → Apps → whois.",
+            "uk": "Slash-команда не може визначити повідомлення. Використайте контекстне меню: ПКМ на relay-повідомленні → Apps → whois.",
+            "pl": "Slash-komenda nie może określić wiadomości. Użyj menu kontekstowego: PPM na wiadomości relay → Apps → whois.",
+            "en": "Slash commands cannot detect the replied message. Use the context menu instead: right-click the relay message → Apps → whois.",
+            "es": "Los slash commands no pueden detectar el mensaje. Usa el menú contextual: clic derecho en el mensaje relay → Apps → whois.",
+            "pt": "Slash commands não conseguem detectar a mensagem. Use o menu de contexto: clique direito na mensagem relay → Apps → whois."
+        },
         "origin_not_found": {
             "ru": "Не удалось определить источник сообщения.",
             "uk": "Не вдалося визначити джерело повідомлення.",
