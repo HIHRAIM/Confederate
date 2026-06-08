@@ -33,11 +33,13 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 
 4. **Create config file**
    - Copy `config.example.py` to `config.py`.
-   - Set:
-     - `DISCORD_TOKEN` — your Discord bot token.
-     - `TELEGRAM_TOKEN` — your Telegram bot token.
+   - Set environment variables (the example config reads tokens from env):
+     - `DISCORD_BOT_TOKEN` — your Discord bot token.
+     - `TELEGRAM_BOT_TOKEN` — your Telegram bot token.
+   - Edit `config.py`:
      - `ADMINS["discord"]` and `ADMINS["telegram"]` — sets of numeric user IDs with global bot-admin rights.
      - `SERVICE_CHATS["discord"]` and `SERVICE_CHATS["telegram"]` — chat IDs where the bot sends startup/shutdown and health events. Telegram format: `"-1000000000000:0"` (chat\_id:thread\_id); Discord format: numeric channel ID.
+     - `BACKUP_CHATS["discord"]` and `BACKUP_CHATS["telegram"]` — chat IDs where the bot sends automatic database backups every 12 hours. Same format as `SERVICE_CHATS`.
 
 5. **Run the bot**
    ```bash
@@ -74,12 +76,14 @@ Permission roles used below:
 | `/lang <ru\|uk\|pl\|en\|es\|pt>` | Set language for this channel/topic | ❌ | ✅ | ✅ |
 | `/bridge` | Show which bridge and chats the current channel belongs to | ✅ | ✅ | ✅ |
 | `/verify` | Request/refresh user verification prompt | ✅ | ✅ | ✅ |
-| `/whois` (as reply to relay message) | Show original sender identity | ✅ | ✅ | ✅ |
+| `/whois` (as reply to relay message, or context menu on message) | Show original sender identity | ✅ | ✅ | ✅ |
 | `/help` | Show command reference | ✅ | ✅ | ✅ |
 | `/shadow-ban <user>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify <user>` | Remove verification status from user | ❌ | ❌ | ✅ |
 | `/list_chats` | List all Discord guilds and Telegram groups known to the bot | ❌ | ❌ | ✅ |
 | `/force_leave <platform> <id>` | Force bot to leave a guild/chat and clean up DB records | ❌ | ❌ | ✅ |
+| `/allow-bots <enable\|disable>` | Allow or block relay of bot/webhook messages from this channel | ❌ | ✅ | ✅ |
+| `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
 ### Telegram commands
 
@@ -97,6 +101,8 @@ Permission roles used below:
 | `/help` | Show command reference | ✅ | ✅ | ✅ |
 | `/shadow-ban <user_id_or_username>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify <user_id_or_username>` | Remove verification status from user | ❌ | ❌ | ✅ |
+| `/allow_bots <enable\|disable>` | Allow or block relay of bot messages from this chat | ❌ | ✅ | ✅ |
+| `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
 ---
 
