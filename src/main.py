@@ -1,5 +1,13 @@
 import asyncio
+import logging
 import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger("bridge.main")
+
 import db
 from config import DISCORD_TOKEN
 from discord_bot import bot as discord_bot
@@ -49,8 +57,8 @@ async def send_service_event(event_key, **kwargs):
                 text,
                 message_thread_id=int(thread) or None
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("send_service_event failed for telegram %s: %s", chat_key, e)
 
     for chat_key in SERVICE_CHATS.get("discord", set()):
         try:
@@ -71,8 +79,8 @@ async def send_service_event(event_key, **kwargs):
             text = localized_service_event(event_key, lang, **kwargs)
             if ch:
                 await ch.send(text)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("send_service_event failed for discord %s: %s", chat_key, e)
 
 async def rules_loop():
     import time

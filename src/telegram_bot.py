@@ -2,9 +2,13 @@ from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.types import Message, ChatMemberUpdated, CallbackQuery
 import db, message_relay
-from message_relay import telegram_entities_to_discord, escape_html
+from message_relay import (
+    telegram_entities_to_discord, escape_html,
+    build_telegram_text, clip_text, clean_display_name, DISCORD_MSG_LIMIT,
+)
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
+    rate_limit_ok,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang, localized_sticker, localized_file_count_text,
@@ -15,6 +19,9 @@ from config import TELEGRAM_TOKEN
 import time
 import asyncio
 import json
+import logging
+
+logger = logging.getLogger("bridge.telegram")
 
 bot = Bot(TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -128,7 +135,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
-            html_text = f"{escape_html(header)}\n{body_html}".strip()
+            html_text = build_telegram_text(header, body_html, body_plain)
             send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
@@ -148,7 +155,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
-            from discord_bot import bot as dc_bot
+            from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
             import discord as _discord
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = dc_bot.get_channel(channel_id)
@@ -157,7 +164,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            send_kwargs = {}
+            send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
             if reply_to_platform_message_id:
                 send_kwargs["reference"] = _discord.MessageReference(
                     message_id=int(reply_to_platform_message_id),
@@ -165,7 +172,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
                     fail_if_not_exists=False,
                 )
                 send_kwargs["mention_author"] = False
-            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
+            sent = await channel.send(clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT), **send_kwargs)
             return str(sent.id)
 
     base_text = payload.get("base_text", "")
@@ -458,8 +465,11 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     if not is_bot_sender and db.is_shadow_banned("telegram", user_id_str):
         try:
             await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "Failed to delete shadow-banned message (user=%s, chat=%s): %s",
+                user_id_str, origin_chat_id, e
+            )
         return
 
     if not is_bot_sender and not db.is_user_verified("telegram", user_id_str, prefix):
@@ -531,6 +541,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     reply_to_msg_db_id = pending_reply_to_msg_db_id
 
+    if not rate_limit_ok(("relay", "telegram", user_id_str), limit=20, window_seconds=60):
+        logger.warning("Rate limit: dropping relay from telegram user %s in %s", user_id_str, origin_chat_id)
+        return
+
     texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
@@ -542,7 +556,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 body_html = escape_html(body_plain)
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
-            html_text = f"{escape_html(header)}\n{body_html}".strip()
+            html_text = build_telegram_text(header, body_html, body_plain)
             send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
@@ -562,7 +576,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
-            from discord_bot import bot as dc_bot
+            from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
             import discord as _discord
             channel_id = int(chat["chat_id"].split(":")[1])
             channel = dc_bot.get_channel(channel_id)
@@ -571,7 +585,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            send_kwargs = {}
+            send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
             if reply_to_platform_message_id:
                 send_kwargs["reference"] = _discord.MessageReference(
                     message_id=int(reply_to_platform_message_id),
@@ -579,7 +593,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                     fail_if_not_exists=False,
                 )
                 send_kwargs["mention_author"] = False
-            sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
+            sent = await channel.send(clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT), **send_kwargs)
             return str(sent.id)
 
     source_text = getattr(message, "text", None)
@@ -628,7 +642,8 @@ async def setadmin(message: Message):
 
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
-    if not (is_admin("telegram", message.from_user.id) or is_chat_admin("telegram", chat_id, message.from_user.id)):
+
+    if not is_admin("telegram", message.from_user.id):
         await message.reply("No permission")
         return
 
@@ -710,7 +725,8 @@ async def set_lang_handler(message: Message):
         await message.reply("Unsupported language. Supported: ru, uk, pl, en, es, pt")
         return
     except Exception as e:
-        await message.reply(f"Error saving language: {e}")
+        logger.warning("Failed to save language for %s: %s", chat_key, e)
+        await message.reply("Error saving language")
         return
 
     await message.reply(f"Language for this topic/thread set to: {code}")
@@ -825,6 +841,10 @@ async def handle_verify_callback(query: CallbackQuery):
         await query.answer("This button is not for you", show_alert=True)
         return
 
+    if not db.get_pending_consent("telegram", prefix, target_user_id):
+        await query.answer("Invalid data", show_alert=True)
+        return
+
     db.add_verified_user("telegram", target_user_id, prefix, days_valid=365)
 
     all_pendings = db.get_all_pending_consents_for_user("telegram", target_user_id)
@@ -855,6 +875,9 @@ async def verify_cmd(message: Message):
     user_id = str(message.from_user.id)
     chat_key = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_key)
+
+    if not rate_limit_ok(("verify-cmd", "telegram", user_id), limit=2, window_seconds=60):
+        return
 
     prev = db.get_pending_consent("telegram", prefix, user_id)
     if prev:
@@ -956,6 +979,17 @@ async def whois_cmd(message: Message):
         except Exception:
             pass
 
+    requester_id = str(message.from_user.id) if message.from_user else ""
+    if not rate_limit_ok(("whois", "telegram", requester_id), limit=5, window_seconds=60):
+        return
+
+    if not (
+        is_admin("telegram", message.from_user.id if message.from_user else 0)
+        or db.is_user_verified("telegram", requester_id, str(message.chat.id))
+    ):
+        await _reply_autodelete(localized_whois("not_verified", lang))
+        return
+
     reply = getattr(message, "reply_to_message", None)
     replied_id = str(
         getattr(reply, "message_id", "")
@@ -1010,13 +1044,18 @@ async def whois_cmd(message: Message):
             )
         )
     except Exception as e:
-        await _reply_autodelete(localized_whois("fetch_error", lang, error=e))
+        logger.warning("whois lookup failed (chat=%s): %s", chat_key, e)
+        await _reply_autodelete(localized_whois("fetch_error", lang, error=type(e).__name__))
 
 @router.message(Command("bridge"))
 async def bridge_cmd(message: Message):
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_key)
+
+    requester = message.from_user.id if message.from_user else message.chat.id
+    if not rate_limit_ok(("bridge-cmd", "telegram", requester), limit=5, window_seconds=60):
+        return
 
     async def _reply_autodelete(text: str):
         sent = await message.reply(text)
@@ -1077,7 +1116,6 @@ async def bridge_cmd(message: Message):
     text = localized_bridge_info("tg_template", lang, bridge_id=bridge_id, chats=chats_str)
     await _reply_autodelete(text)
 
-
 @router.message(Command("allow_bots"))
 async def allow_bots_cmd(message: Message):
     parts = message.text.split()
@@ -1109,6 +1147,10 @@ async def help_cmd(message: Message):
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_key)
+
+    requester = message.from_user.id if message.from_user else message.chat.id
+    if not rate_limit_ok(("help-cmd", "telegram", requester), limit=5, window_seconds=60):
+        return
 
     async def _reply_autodelete(text: str):
         sent = await message.reply(text, parse_mode="HTML")
@@ -1143,7 +1185,6 @@ async def help_cmd(message: Message):
     )
     await _reply_autodelete(text)
 
-
 @router.edited_message()
 async def edited_message_handler(message: Message):
     thread = message.message_thread_id or 0
@@ -1169,7 +1210,7 @@ async def edited_message_handler(message: Message):
         discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
         telegram_html = getattr(message, "html_caption", None)
 
-    header = f"[Telegram | {message.chat.title or 'Private chat'}] {message.from_user.full_name if message.from_user else 'Unknown'}:"
+    header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(message.from_user.full_name if message.from_user else 'Unknown')}:"
 
     copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
     for c in copies:
@@ -1186,11 +1227,11 @@ async def edited_message_handler(message: Message):
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
-                    text=f"{escape_html(header)}\n{telegram_html or escape_html(discord_text)}",
+                    text=build_telegram_text(header, telegram_html or escape_html(discord_text), discord_text),
                     parse_mode="HTML"
                 )
             elif c["platform"] == "discord":
-                from discord_bot import bot as dc_bot
+                from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
                 channel_id = int(c["chat_id"].split(":")[1])
                 ch = dc_bot.get_channel(channel_id)
                 if not ch:
@@ -1199,24 +1240,25 @@ async def edited_message_handler(message: Message):
                     except Exception:
                         continue
                 m = await ch.fetch_message(int(c["message_id_platform"]))
-                await m.edit(content=f"{header}\n{discord_text}".strip())
+                await m.edit(content=clip_text(f"{header}\n{discord_text}".strip(), DISCORD_MSG_LIMIT), allowed_mentions=RELAY_ALLOWED_MENTIONS)
         except Exception:
             pass
-
-
 
 @router.message(Command("backup"))
 async def backup_tg_cmd(message: Message):
     if not is_admin("telegram", message.from_user.id):
         await message.reply("No permission")
         return
+    if message.chat.type != "private":
+        await message.reply("Use this command in a private chat with the bot")
+        return
     try:
         from aiogram.types import FSInputFile
         doc = FSInputFile("bridge.db", filename="bridge.db")
         await bot.send_document(chat_id=message.chat.id, document=doc)
     except Exception as e:
-        await message.reply(f"Failed to send database: {e}")
-
+        logger.warning("Failed to send database backup: %s", e)
+        await message.reply("Failed to send database")
 
 async def main():
     await dp.start_polling(bot)

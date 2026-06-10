@@ -119,6 +119,40 @@ def discord_to_telegram_html(text: str):
 def escape_html(text: str):
     return html.escape(text or "")
 
+DISCORD_MSG_LIMIT = 2000
+TELEGRAM_MSG_LIMIT = 4096
+
+def clip_text(text, limit):
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+def _clip_escaped_html(escaped, limit):
+    if len(escaped) <= limit:
+        return escaped
+    cut = escaped[: max(limit - 1, 0)]
+    cut = re.sub(r"&[#a-zA-Z0-9]{0,9}$", "", cut)
+    return cut.rstrip() + "…"
+
+def build_telegram_text(header, body_html, body_plain):
+    """Собирает header+body для Telegram с учётом лимита 4096 символов.
+    Если форматированный body слишком длинный, откатывается на экранированный
+    plain-текст, чтобы обрезка не ломала HTML-теги."""
+    header_html = escape_html(header)
+    text = f"{header_html}\n{body_html}".strip()
+    if len(text) <= TELEGRAM_MSG_LIMIT:
+        return text
+    budget = max(TELEGRAM_MSG_LIMIT - len(header_html) - 1, 0)
+    body = _clip_escaped_html(escape_html(body_plain or ""), budget)
+    return f"{header_html}\n{body}".strip()
+
+def clean_display_name(value, max_len=64):
+    """Имена пользователей/чатов попадают в заголовок relay-сообщения:
+    убираем переводы строк (защита от подделки заголовка) и ограничиваем длину."""
+    cleaned = re.sub(r"[\r\n\t]+", " ", str(value or "")).strip()
+    return cleaned[:max_len] or "Unknown"
+
 from utils import (
     get_chat_lang,
     localized_reply_unknown,
@@ -151,6 +185,9 @@ async def relay_message(
     forward_name=None,
     is_bot_sender=False,
 ):
+    place_name = clean_display_name(place_name)
+    sender_name = clean_display_name(sender_name)
+
     db.cur.execute(
         """
         UPDATE bridge_rules
@@ -161,7 +198,7 @@ async def relay_message(
     )
     db.conn.commit()
 
-    db.cur.execute(
+    inserted = db.cur.execute(
         """
         INSERT INTO messages
         (bridge_id, origin_platform, origin_chat_id, origin_message_id, origin_sender_id, created_at)
@@ -169,7 +206,7 @@ async def relay_message(
         """,
         (bridge_id, origin_platform, origin_chat_id, origin_message_id, str(origin_sender_id), int(time.time()))
     )
-    msg_id = db.cur.lastrowid
+    msg_id = inserted.lastrowid
     db.conn.commit()
 
     targets = db.get_bridge_chats(bridge_id)
@@ -296,9 +333,3 @@ async def relay_message(
         )
 
     db.conn.commit()
-
-try:
-    cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_id TEXT")
-    conn.commit()
-except Exception:
-    pass

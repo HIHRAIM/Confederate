@@ -1,11 +1,43 @@
 import sqlite3
+import threading
 import time
 
-conn = sqlite3.connect("bridge.db", check_same_thread=False)
-conn.execute("PRAGMA journal_mode=WAL;")
-conn.execute("PRAGMA synchronous=NORMAL;")
-conn.row_factory = sqlite3.Row
-cur = conn.cursor()
+_db_lock = threading.RLock()
+_raw_conn = sqlite3.connect("bridge.db", check_same_thread=False)
+_raw_conn.execute("PRAGMA journal_mode=WAL;")
+_raw_conn.execute("PRAGMA synchronous=NORMAL;")
+_raw_conn.row_factory = sqlite3.Row
+
+class _LockingConnection:
+    """Thread-safe facade over sqlite3.Connection.
+
+    `execute()` returns a brand new cursor on every call, so chained
+    `.fetchone()/.fetchall()/.lastrowid` always operate on a private cursor.
+    All access is guarded by a re-entrant lock to make concurrent use from the
+    Telegram bot, the Discord bot and the background loops safe.
+    """
+
+    def __init__(self, raw_conn, lock):
+        self._conn = raw_conn
+        self._lock = lock
+
+    def execute(self, sql, params=()):
+        with self._lock:
+            return self._conn.execute(sql, params)
+
+    def executescript(self, sql):
+        with self._lock:
+            return self._conn.executescript(sql)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+conn = _LockingConnection(_raw_conn, _db_lock)
+cur = conn
 
 def init():
     cur.executescript("""

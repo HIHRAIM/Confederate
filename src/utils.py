@@ -1,10 +1,30 @@
 import re
+import time
 from config import ADMINS, SERVICE_CHATS
 import db
 import itertools
 
 def is_admin(platform, user_id):
     return user_id in ADMINS.get(platform, set())
+
+_rate_buckets = {}
+
+def rate_limit_ok(key, limit, window_seconds):
+    """Sliding-window rate limiter. Returns True if the action is allowed,
+    False if `limit` actions already happened within `window_seconds`."""
+    now = time.monotonic()
+    if len(_rate_buckets) > 10000:
+        stale = [k for k, v in _rate_buckets.items() if not v or v[-1] < now - 3600]
+        for k in stale:
+            _rate_buckets.pop(k, None)
+    bucket = _rate_buckets.setdefault(key, [])
+    cutoff = now - window_seconds
+    while bucket and bucket[0] <= cutoff:
+        bucket.pop(0)
+    if len(bucket) >= limit:
+        return False
+    bucket.append(now)
+    return True
 
 def extract_username_from_bot_message(text: str):
     if not text:
@@ -623,6 +643,14 @@ _LOCALE = {
             "en": "Use this command in reply to a bot relay message.",
             "es": "Usa este comando respondiendo a un mensaje relay del bot.",
             "pt": "Use este comando respondendo a uma mensagem relay do bot."
+        },
+        "not_verified": {
+            "ru": "Эта команда доступна только верифицированным пользователям. Отправьте /verify, чтобы подтвердить согласие на пересылку.",
+            "uk": "Ця команда доступна лише верифікованим користувачам. Надішліть /verify, щоб підтвердити згоду на пересилання.",
+            "pl": "Ta komenda jest dostępna tylko dla zweryfikowanych użytkowników. Wyślij /verify, aby potwierdzić zgodę na przesyłanie.",
+            "en": "This command is only available to verified users. Send /verify to confirm consent to forwarding.",
+            "es": "Este comando solo está disponible para usuarios verificados. Envía /verify para confirmar el consentimiento de reenvío.",
+            "pt": "Este comando está disponível apenas para usuários verificados. Envie /verify para confirmar o consentimento de encaminhamento."
         },
         "use_context_menu": {
             "ru": "Slash-команда не может определить сообщение. Используйте контекстное меню: ПКМ на relay-сообщении → Apps → whois.",
