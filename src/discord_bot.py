@@ -4,7 +4,7 @@ from discord.utils import get
 import db, message_relay
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, set_chat_lang,
-    get_next_status_text, get_chat_lang,
+    get_next_status_text, get_chat_lang, rate_limit_ok,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     localized_sticker, localized_discord_system_event, localized_whois,
@@ -14,7 +14,17 @@ import time
 import asyncio
 import datetime
 import json
-from message_relay import discord_to_telegram_html, escape_html
+import logging
+from message_relay import (
+    discord_to_telegram_html, escape_html,
+    build_telegram_text, clip_text, clean_display_name, DISCORD_MSG_LIMIT,
+)
+
+logger = logging.getLogger("bridge.discord")
+
+RELAY_ALLOWED_MENTIONS = discord.AllowedMentions(
+    everyone=False, roles=False, users=True, replied_user=False
+)
 
 async def resolve_discord_user(guild: discord.Guild, identifier: str):
     identifier = identifier.strip()
@@ -254,7 +264,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             body = body_discord
             if reply_line:
                 body = f"{reply_line}\n{body}"
-            send_kwargs = {}
+            send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
             if reply_to_platform_message_id:
                 send_kwargs["reference"] = discord.MessageReference(
                     message_id=int(reply_to_platform_message_id),
@@ -263,7 +273,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 )
                 send_kwargs["mention_author"] = False
             try:
-                sent = await channel.send(f"{header}\n{body}".strip(), **send_kwargs)
+                sent = await channel.send(clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT), **send_kwargs)
                 return str(sent.id)
             except Exception:
                 return None
@@ -274,7 +284,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             body_html = body_telegram_html or escape_html(body_plain)
             if reply_line:
                 body_html = f"{escape_html(reply_line)}\n{body_html}"
-            text_html = f"{escape_html(header)}\n{body_html}".strip()
+            text_html = build_telegram_text(header, body_html, body_plain)
             send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
@@ -800,6 +810,9 @@ async def on_message(message: discord.Message):
         if db.get_allow_bots(chat_id) and not db.is_relay_copy("discord", chat_id, str(message.id)):
             row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
             if row:
+                if not rate_limit_ok(("relay", "discord", str(message.author.id)), limit=20, window_seconds=60):
+                    logger.warning("Rate limit: dropping relay from discord bot %s in %s", message.author.id, chat_id)
+                    return
                 await _relay_verified_discord_message(message, row["bridge_id"], is_bot_sender=True)
         return
 
@@ -832,8 +845,11 @@ async def on_message(message: discord.Message):
     if db.is_shadow_banned("discord", user_id_str):
         try:
             await message.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "Failed to delete shadow-banned message (user=%s, chat=%s): %s",
+                user_id_str, chat_id, e
+            )
         return
 
     if system_event_key and not db.is_user_verified("discord", user_id_str, prefix):
@@ -914,6 +930,10 @@ async def on_message(message: discord.Message):
                 )
             return
 
+    if not rate_limit_ok(("relay", "discord", user_id_str), limit=20, window_seconds=60):
+        logger.warning("Rate limit: dropping relay from discord user %s in %s", user_id_str, chat_id)
+        return
+
     await _relay_verified_discord_message(message, bridge_id, system_event_key)
 
 @bot.event
@@ -943,7 +963,7 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
     if not row:
         return
 
-    header = f"[Discord | {guild.name or channel.name}] {author_display_name}:"
+    header = f"[Discord | {clean_display_name(guild.name or channel.name)}] {clean_display_name(author_display_name)}:"
     text_html = discord_to_telegram_html(text)
 
     copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
@@ -958,14 +978,14 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                     except Exception:
                         continue
                 m = await ch.fetch_message(int(c["message_id_platform"]))
-                await m.edit(content=f"{header}\n{text}".strip())
+                await m.edit(content=clip_text(f"{header}\n{text}".strip(), DISCORD_MSG_LIMIT), allowed_mentions=RELAY_ALLOWED_MENTIONS)
             elif c["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
                 chat_id, _ = c["chat_id"].split(":")
                 await tg_bot.edit_message_text(
                     chat_id=int(chat_id),
                     message_id=int(c["message_id_platform"]),
-                    text=f"{escape_html(header)}\n{text_html}",
+                    text=build_telegram_text(header, text_html, text),
                     parse_mode="HTML"
                 )
         except Exception:
@@ -1017,7 +1037,6 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     )
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
-    # If the deleted message is a relay copy (not the original rule source), skip
     row = db.cur.execute(
         """
         SELECT 1 FROM message_copies
@@ -1260,6 +1279,13 @@ async def deadchat(
         db.conn.commit()
         await interaction.response.send_message(
             "Deadchat disabled for this channel",
+            ephemeral=True
+        )
+        return
+
+    if not role_id.isdigit():
+        await interaction.response.send_message(
+            "role_id must be a numeric role ID or 'disable'",
             ephemeral=True
         )
         return
@@ -1709,6 +1735,10 @@ async def verify_slash(interaction: discord.Interaction):
     prefix = str(interaction.guild_id)
     user_id_str = str(interaction.user.id)
 
+    if not rate_limit_ok(("verify-cmd", "discord", user_id_str), limit=2, window_seconds=60):
+        await interaction.response.send_message("Too many requests — try again later", ephemeral=True)
+        return
+
     if db.is_user_verified("discord", user_id_str, "*"):
         await interaction.response.send_message("You are already verified", ephemeral=True)
         return
@@ -1831,6 +1861,20 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
 
+    requester_id = str(interaction.user.id)
+    if not rate_limit_ok(("whois", "discord", requester_id), limit=5, window_seconds=60):
+        await interaction.response.send_message("Too many requests — try again later", ephemeral=True)
+        return
+
+    if not (
+        is_admin("discord", interaction.user.id)
+        or db.is_user_verified("discord", requester_id, str(interaction.guild_id))
+    ):
+        await interaction.response.send_message(
+            localized_whois("not_verified", lang), ephemeral=True
+        )
+        return
+
     def _find_origin_row(message_id_platform: str | None):
         if not message_id_platform:
             return None
@@ -1949,8 +1993,10 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
 
         await interaction.response.send_message(localized_whois("origin_not_found", lang), ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(localized_whois("fetch_error", lang, error=e), ephemeral=True)
-
+        logger.warning("whois lookup failed (chat=%s): %s", chat_key, e)
+        await interaction.response.send_message(
+            localized_whois("fetch_error", lang, error=type(e).__name__), ephemeral=True
+        )
 
 @bot.tree.context_menu(name="whois")
 async def whois_context_menu(interaction: discord.Interaction, message: discord.Message):
@@ -2034,7 +2080,6 @@ async def bridge_command(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
 @bot.tree.command(name="allow-bots")
 async def allow_bots_command(interaction: discord.Interaction, action: str):
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
@@ -2084,7 +2129,6 @@ async def help_command(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
 @bot.tree.command(name="backup", description="Send current database backup")
 async def backup_discord_cmd(interaction: discord.Interaction):
     if not is_admin("discord", interaction.user.id):
@@ -2098,9 +2142,9 @@ async def backup_discord_cmd(interaction: discord.Interaction):
         await interaction.response.send_message(f"Failed to read database: {e}", ephemeral=True)
         return
     await interaction.response.send_message(
-        file=discord.File(io.BytesIO(data), filename="bridge.db")
+        file=discord.File(io.BytesIO(data), filename="bridge.db"),
+        ephemeral=True
     )
-
 
 async def status_loop():
     """Меняет статус бота раз в минуту, чередуя языки."""
