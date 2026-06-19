@@ -15,6 +15,7 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 from message_relay import (
     discord_to_telegram_html, escape_html,
     build_telegram_text, clip_text, clean_display_name, DISCORD_MSG_LIMIT,
@@ -62,9 +63,25 @@ def replace_mentions(message: discord.Message, text: str) -> str:
 
     return text
 
+def replace_channel_mentions_for_telegram(text, guild) -> str:
+    """Discord-упоминания каналов (<#id>) рендерятся в Telegram как #название.
+    В Discord они оставляются как есть, чтобы сохранить кликабельное упоминание,
+    поэтому замена применяется только к тексту, уходящему в Telegram."""
+    if not guild or not text:
+        return text
+
+    def _repl(m):
+        channel = guild.get_channel_or_thread(int(m.group(1)))
+        name = getattr(channel, "name", None)
+        return f"#{name}" if name else m.group(0)
+
+    return re.sub(r"<#(\d+)>", _repl, text)
+
 def _discord_embed_texts(message: discord.Message):
     texts = []
     for e in getattr(message, "embeds", []) or []:
+        if getattr(e, "type", None) in ("image", "gifv", "video"):
+            continue
         parts = []
 
         author = getattr(e, "author", None)
@@ -330,6 +347,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
     for text in texts:
         target_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
         localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
+        telegram_text = replace_channel_mentions_for_telegram(localized_text, message.guild)
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
@@ -339,9 +357,9 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             messenger_name="Discord",
             place_name=message.guild.name or message.channel.name,
             sender_name=message.author.display_name or str(message.author),
-            text=localized_text,
+            text=telegram_text,
             discord_text=localized_text,
-            telegram_html=discord_to_telegram_html(localized_text),
+            telegram_html=discord_to_telegram_html(telegram_text),
             reply_to_msg_db_id=reply_to_msg_db_id,
             send_to_chat_func=send_to_chat,
             forward_type=forward_type,
@@ -964,7 +982,8 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
         return
 
     header = f"[Discord | {clean_display_name(guild.name or channel.name)}] {clean_display_name(author_display_name)}:"
-    text_html = discord_to_telegram_html(text)
+    telegram_text = replace_channel_mentions_for_telegram(text, guild)
+    text_html = discord_to_telegram_html(telegram_text)
 
     copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
     for c in copies:
@@ -985,7 +1004,7 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                 await tg_bot.edit_message_text(
                     chat_id=int(chat_id),
                     message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(header, text_html, text),
+                    text=build_telegram_text(header, text_html, telegram_text),
                     parse_mode="HTML"
                 )
         except Exception:
@@ -1215,6 +1234,7 @@ async def delete_all_copies_and_origin(msg_id):
                 pass
 
     db.cur.execute("DELETE FROM message_copies WHERE message_id=?", (msg_id,))
+    db.cur.execute("DELETE FROM media_group_members WHERE message_id=?", (msg_id,))
     db.cur.execute("DELETE FROM messages WHERE id=?", (msg_id,))
     db.conn.commit()
 
