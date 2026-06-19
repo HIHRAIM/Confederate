@@ -152,6 +152,13 @@ def init():
         last_message_ts INTEGER,
         bot_last_sent_ts INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS media_group_members (
+        chat_id TEXT,
+        message_id_platform TEXT,
+        message_id INTEGER,
+        PRIMARY KEY (chat_id, message_id_platform)
+    );
     """)
     conn.commit()
 
@@ -206,10 +213,36 @@ def cleanup_old_messages(days=30):
         (limit,)
     )
     cur.execute(
+        "DELETE FROM media_group_members WHERE message_id IN "
+        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?)",
+        (limit,)
+    )
+    cur.execute(
         "DELETE FROM messages WHERE created_at IS NOT NULL AND created_at < ?",
         (limit,)
     )
     conn.commit()
+
+def record_media_group_members(chat_id, platform_message_ids, message_db_id):
+    """Map every Telegram message_id of an album to the single relayed message.
+
+    A Telegram media group is delivered as several separate messages but relayed
+    as one. Recording each constituent message_id lets a reply to *any* file in
+    the album resolve to that one relayed message instead of being treated as a
+    reply to an unknown message."""
+    for pid in platform_message_ids:
+        cur.execute(
+            "INSERT OR REPLACE INTO media_group_members (chat_id, message_id_platform, message_id) VALUES (?,?,?)",
+            (chat_id, str(pid), message_db_id)
+        )
+    conn.commit()
+
+def find_message_db_id_by_media_member(chat_id, platform_message_id):
+    row = cur.execute(
+        "SELECT message_id FROM media_group_members WHERE chat_id=? AND message_id_platform=?",
+        (chat_id, str(platform_message_id))
+    ).fetchone()
+    return row["message_id"] if row else None
 
 def set_chat_lang(chat_id, lang_code):
     cur.execute(
