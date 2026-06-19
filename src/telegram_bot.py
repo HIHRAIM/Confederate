@@ -203,7 +203,11 @@ async def _flush_media_group(buffer_key):
     payload = _media_group_buffer.pop(buffer_key, None)
     if not payload:
         return
-    await _relay_from_telegram_impl(payload["message"], grouped_file_count=payload["count"])
+    await _relay_from_telegram_impl(
+        payload["message"],
+        grouped_file_count=payload["count"],
+        grouped_message_ids=payload.get("message_ids"),
+    )
 
 async def resolve_telegram_user(identifier: str):
     """
@@ -377,10 +381,11 @@ async def relay_from_telegram(message: Message):
             key = (f"{message.chat.id}:{thread}", str(media_group_id))
             payload = _media_group_buffer.get(key)
             if not payload:
-                payload = {"message": message, "count": 0, "task": None}
+                payload = {"message": message, "count": 0, "task": None, "message_ids": []}
                 _media_group_buffer[key] = payload
 
             payload["count"] += files_count
+            payload["message_ids"].append(message.message_id)
             if getattr(message, "caption", None) and not getattr(payload["message"], "caption", None):
                 payload["message"] = message
             elif message.message_id < payload["message"].message_id:
@@ -393,7 +398,7 @@ async def relay_from_telegram(message: Message):
 
     await _relay_from_telegram_impl(message)
 
-async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None):
+async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None, grouped_message_ids=None):
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
 
@@ -440,7 +445,11 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 "SELECT id FROM messages WHERE origin_platform='telegram' AND origin_chat_id=? AND origin_message_id=?",
                 (origin_chat_id, replied_msg_id)
             ).fetchone()
-            pending_reply_to_msg_db_id = msg_row["id"] if msg_row else -1
+            if msg_row:
+                pending_reply_to_msg_db_id = msg_row["id"]
+            else:
+                member_db_id = db.find_message_db_id_by_media_member(origin_chat_id, replied_msg_id)
+                pending_reply_to_msg_db_id = member_db_id if member_db_id is not None else -1
 
     chat_id = origin_chat_id
 
@@ -610,10 +619,11 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     telegram_html = tg_html_source
 
+    relayed_db_id = None
     for text in texts:
         current_discord_text = discord_text if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else text
         current_telegram_html = telegram_html if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else None
-        await message_relay.relay_message(
+        relayed_db_id = await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="telegram",
             origin_chat_id=chat_id,
@@ -632,6 +642,9 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             forward_name=forward_name,
             is_bot_sender=is_bot_sender,
         )
+
+    if grouped_message_ids and relayed_db_id is not None:
+        db.record_media_group_members(chat_id, grouped_message_ids, relayed_db_id)
 
 @router.message(Command("setadmin"))
 async def setadmin(message: Message):
