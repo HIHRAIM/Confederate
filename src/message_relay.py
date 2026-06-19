@@ -333,3 +333,4 @@ async def relay_message(
         )
 
     db.conn.commit()
+    return msg_id
