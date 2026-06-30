@@ -29,3 +29,20 @@ BACKUP_CHATS = {
         "CHAT_ID",
     },
 }
+
+SUPPORT_CHATS = {
+    "discord": {
+        CHAT_ID,
+    },
+    "telegram": {
+        "CHAT_ID",
+    },
+}
+
+VERIFIED = {
+    CHAT_ID,
+}
+
+UNVERIFIED = {
+    CHAT_ID,
+}

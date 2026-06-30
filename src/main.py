@@ -196,6 +196,8 @@ async def pending_cleanup_loop():
                 db.remove_pending_consent(platform, prefix, user_id)
 
             db.cleanup_expired_verified()
+            db.cleanup_old_loc_suggestions()
+            db.cleanup_old_polls()
 
         except Exception as e:
             try:
@@ -204,6 +206,23 @@ async def pending_cleanup_loop():
                 pass
 
         await asyncio.sleep(60)
+
+async def poll_loop():
+    """Posts results for expired polls to every bridge chat, then closes them."""
+    from discord_bot import post_poll_results
+    while True:
+        try:
+            for poll in db.get_expired_open_polls():
+                try:
+                    await post_poll_results(poll["id"])
+                finally:
+                    db.close_poll(poll["id"])
+        except Exception as e:
+            try:
+                await send_service_event("daily_loop_error", error=f"poll_loop error: {e}")
+            except Exception:
+                pass
+        await asyncio.sleep(30)
 
 async def daily_check_loop():
     """
@@ -296,6 +315,7 @@ async def main():
         asyncio.create_task(rules_loop()),
         asyncio.create_task(pending_cleanup_loop()),
         asyncio.create_task(daily_check_loop()),
+        asyncio.create_task(poll_loop()),
     ]
 
     await asyncio.sleep(5)

@@ -6,6 +6,7 @@ from message_relay import (
     telegram_entities_to_discord, escape_html,
     build_telegram_text, clip_text, clean_display_name, DISCORD_MSG_LIMIT,
 )
+import utils
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
     rate_limit_ok,
@@ -13,9 +14,13 @@ from utils import (
     localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang, localized_sticker, localized_file_count_text,
     localized_voice_message, localized_video_message, localized_whois,
-    localized_bridge_info, localized_help
+    localized_bridge_info, localized_help,
+    localized, language_name, available_locales, locale_stats, locale_bar,
+    compare_reply, LANG_ORDER, LOCALE_STATUS_EMOJI, SUPPORTED_LANGS, DEFAULT_LANG,
 )
-from config import TELEGRAM_TOKEN
+from config import TELEGRAM_TOKEN, SUPPORT_CHATS
+import os
+import secrets
 import time
 import asyncio
 import json
@@ -29,6 +34,59 @@ router = Router()
 dp.include_router(router)
 
 _media_group_buffer = {}
+
+_TG_AVATAR_ASSETS = {
+    1: "user-green.png", 2: "user-green.png",
+    3: "user-yellow.png", 4: "user-yellow.png",
+    5: "user-red.png", 6: "user-red.png",
+    7: "user-grey.png", 8: "user-grey.png",
+    9: "user-blue.png", 0: "user-blue.png",
+}
+
+async def get_telegram_avatar_url(user_id, host_chat_id=None):
+    """Discord-usable webhook avatar URL for a Telegram sender, picked by the last
+    digit of the user's ID."""
+    try:
+        last_digit = int(user_id) % 10
+    except Exception:
+        return None
+    asset = _TG_AVATAR_ASSETS.get(last_digit)
+    if not asset:
+        return None
+    from discord_bot import avatar_asset_url
+    return await avatar_asset_url(asset)
+
+async def _telegram_relay_avatar_url(bridge_id, user_id):
+    """Resolve a sender's avatar only if some Discord target has /webhooks on."""
+    if not user_id:
+        return None
+    try:
+        targets = db.get_bridge_chats(bridge_id)
+    except Exception:
+        return None
+    wh_targets = [c["chat_id"] for c in targets
+                  if c["platform"] == "discord" and db.get_webhooks_enabled(c["chat_id"])]
+    if not wh_targets:
+        return None
+    return await get_telegram_avatar_url(int(user_id), host_chat_id=wh_targets[0])
+
+def build_poll_keyboard(poll_id, options):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    rows = []
+    for idx, opt in enumerate(options):
+        label = opt if len(opt) <= 60 else opt[:59] + "…"
+        rows.append([InlineKeyboardButton(text=f"{idx + 1}. {label}", callback_data=f"poll:{poll_id}:{idx}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def poll_start_text_telegram(question, options, ends_at, lang):
+    from datetime import datetime, timezone
+    lines = [f"📊 {question}", localized("poll_anonymous", lang), ""]
+    for i, opt in enumerate(options):
+        lines.append(f"{i + 1}. {opt}")
+    lines.append("")
+    ends = datetime.fromtimestamp(ends_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(localized("poll_ends", lang, ends=ends))
+    return "\n".join(lines)
 
 def _telegram_html_mention(user) -> str:
     if getattr(user, "username", None):
@@ -72,20 +130,27 @@ def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None
 
     relay_file_count = None
     if total_files > 0:
+        link = None
         username = getattr(message.chat, "username", None)
         if username:
-            if total_files > 1:
-                relay_file_count = total_files
-                if thread:
-                    link = f"https://t.me/{username}/{thread}/{message.message_id}"
-                else:
-                    link = f"https://t.me/{username}/{message.message_id}"
-                return [(base_text + "\n" if base_text else "") + f"{link} (__TG_FILES_{total_files}__)"], relay_file_count
             if thread:
                 link = f"https://t.me/{username}/{thread}/{message.message_id}"
             else:
                 link = f"https://t.me/{username}/{message.message_id}"
-            return [(base_text + "\n" if base_text else "") + link], relay_file_count
+        else:
+            fwd_chat = getattr(message, "forward_from_chat", None)
+            fwd_username = getattr(fwd_chat, "username", None) if fwd_chat else None
+            fwd_msg_id = getattr(message, "forward_from_message_id", None)
+            if fwd_username and fwd_msg_id:
+                link = f"https://t.me/{fwd_username}/{fwd_msg_id}"
+
+        if link:
+            prefix = (base_text + "\n") if base_text else ""
+            if total_files > 1:
+                relay_file_count = total_files
+                return [prefix + f"{link} (__TG_FILES_{total_files}__)"], relay_file_count
+            return [prefix + link], relay_file_count
+
         relay_file_count = total_files
         return [(base_text + "\n" if base_text else "") + f"[__TG_FILES_{total_files}__]"], relay_file_count
 
@@ -129,7 +194,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
     except Exception:
         return
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
@@ -155,27 +220,17 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
-            from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
-            import discord as _discord
-            channel_id = int(chat["chat_id"].split(":")[1])
-            channel = dc_bot.get_channel(channel_id)
-            if not channel:
-                return None
-            body = body_discord
-            if reply_line:
-                body = f"{reply_line}\n{body}"
-            send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
-            if reply_to_platform_message_id:
-                send_kwargs["reference"] = _discord.MessageReference(
-                    message_id=int(reply_to_platform_message_id),
-                    channel_id=channel_id,
-                    fail_if_not_exists=False,
-                )
-                send_kwargs["mention_author"] = False
-            sent = await channel.send(clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT), **send_kwargs)
-            return str(sent.id)
+            from discord_bot import deliver_discord_relay
+            return await deliver_discord_relay(
+                chat, header=header, body_discord=body_discord, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
+                sender_name=sender_name, place_name=place_name,
+                messenger_name=messenger_name, avatar_url=avatar_url,
+                is_bot_sender=is_bot_sender,
+            )
 
     base_text = payload.get("base_text", "")
+    avatar_url = await _telegram_relay_avatar_url(payload["bridge_id"], payload.get("origin_sender_id"))
     for text in payload.get("texts", []):
         current_discord_text = payload.get("discord_text", "") if text == base_text else text
         current_telegram_html = payload.get("telegram_html") if text == base_text else None
@@ -196,6 +251,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             telegram_file_count=payload.get("relay_file_count"),
             forward_type=payload.get("forward_type"),
             forward_name=payload.get("forward_name"),
+            avatar_url=avatar_url,
         )
 
 async def _flush_media_group(buffer_key):
@@ -556,7 +612,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             if body_telegram_html:
@@ -585,25 +641,14 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             return str(sent.message_id)
 
         if chat["platform"] == "discord":
-            from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
-            import discord as _discord
-            channel_id = int(chat["chat_id"].split(":")[1])
-            channel = dc_bot.get_channel(channel_id)
-            if not channel:
-                return None
-            body = body_discord
-            if reply_line:
-                body = f"{reply_line}\n{body}"
-            send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
-            if reply_to_platform_message_id:
-                send_kwargs["reference"] = _discord.MessageReference(
-                    message_id=int(reply_to_platform_message_id),
-                    channel_id=channel_id,
-                    fail_if_not_exists=False,
-                )
-                send_kwargs["mention_author"] = False
-            sent = await channel.send(clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT), **send_kwargs)
-            return str(sent.id)
+            from discord_bot import deliver_discord_relay
+            return await deliver_discord_relay(
+                chat, header=header, body_discord=body_discord, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
+                sender_name=sender_name, place_name=place_name,
+                messenger_name=messenger_name, avatar_url=avatar_url,
+                is_bot_sender=is_bot_sender,
+            )
 
     source_text = getattr(message, "text", None)
     source_caption = getattr(message, "caption", None)
@@ -618,6 +663,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         discord_text = texts[0] if texts else ""
 
     telegram_html = tg_html_source
+
+    avatar_url = await _telegram_relay_avatar_url(
+        bridge_id, message.from_user.id if message.from_user else None
+    )
 
     relayed_db_id = None
     for text in texts:
@@ -641,6 +690,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             forward_type=forward_type,
             forward_name=forward_name,
             is_bot_sender=is_bot_sender,
+            avatar_url=avatar_url,
         )
 
     if grouped_message_ids and relayed_db_id is not None:
@@ -677,7 +727,12 @@ async def setadmin(message: Message):
 
     bridge_id = row["bridge_id"]
     db.add_bridge_admin(bridge_id, uid)
-    await message.reply(f"User `{uid}` added as bridge admin")
+    lang = get_chat_lang(chat_id)
+    await message.reply(localized("setadmin_bridge_done", lang, user_id=uid))
+    try:
+        await bot.send_message(uid, localized("setadmin_bridge_dm", lang, bridge_id=bridge_id))
+    except Exception:
+        pass
 
 @router.message(Command("remadmin"))
 async def remadmin(message: Message):
@@ -881,6 +936,12 @@ async def handle_verify_callback(query: CallbackQuery):
 
     await query.answer("Спасибо — вы подтверждены", show_alert=False)
 
+    try:
+        from discord_bot import announce_verified_user
+        await announce_verified_user(target_user_id)
+    except Exception as e:
+        logger.warning("Failed to publish verified telegram user %s: %s", target_user_id, e)
+
 @router.message(Command("verify"))
 async def verify_cmd(message: Message):
     thread = message.message_thread_id or 0
@@ -921,24 +982,21 @@ async def verify_cmd(message: Message):
 @router.message(Command("unverify"))
 async def unverify_cmd(message: Message):
     parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
-        await message.reply("Usage: /unverify <user_id_or_username>")
-        return
 
-    requester = message.from_user.id
-    if not is_admin("telegram", requester):
-        await message.reply("No permission")
-        return
-
-    identifier = parts[1].strip()
-    uid = None
-    if identifier.startswith("@") or not identifier.isdigit():
-        uid = await resolve_telegram_user(identifier)
-        if uid is None:
-            await message.reply("Could not resolve username to user id")
-            return
+    if len(parts) < 2 or not parts[1].strip():
+        uid = message.from_user.id
     else:
-        uid = int(identifier)
+        if not is_admin("telegram", message.from_user.id):
+            await message.reply("No permission")
+            return
+        identifier = parts[1].strip()
+        if identifier.startswith("@") or not identifier.isdigit():
+            uid = await resolve_telegram_user(identifier)
+            if uid is None:
+                await message.reply("Could not resolve username to user id")
+                return
+        else:
+            uid = int(identifier)
 
     db.cur.execute("DELETE FROM verified_users WHERE platform='telegram' AND user_id=?", (str(uid),))
     db.conn.commit()
@@ -1034,31 +1092,106 @@ async def whois_cmd(message: Message):
     origin_chat_id = msg_row["origin_chat_id"]
     origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
 
-    if origin_platform != "telegram":
-        await _reply_autodelete(localized_whois("origin_not_telegram", lang))
+    if origin_platform == "telegram":
+        try:
+            prefix = origin_chat_id.split(":",1)[0]
+            member = await bot.get_chat_member(int(prefix), int(origin_sender_id))
+            u = member.user
+            uname = f"@{u.username}" if u.username else "—"
+            full = u.full_name or (u.first_name or "")
+            full_user = await bot.get_chat(int(origin_sender_id))
+            bio = getattr(full_user, "bio", None) or "—"
+            await _reply_autodelete(
+                localized_whois(
+                    "tg_template",
+                    lang,
+                    nickname=full,
+                    username=uname,
+                    id=u.id,
+                    bio=bio
+                )
+            )
+        except Exception as e:
+            logger.warning("whois lookup failed (chat=%s): %s", chat_key, e)
+            await _reply_autodelete(localized_whois("fetch_error", lang, error=type(e).__name__))
         return
 
-    try:
-        prefix = origin_chat_id.split(":",1)[0]
-        member = await bot.get_chat_member(int(prefix), int(origin_sender_id))
-        u = member.user
-        uname = f"@{u.username}" if u.username else "—"
-        full = u.full_name or (u.first_name or "")
-        full_user = await bot.get_chat(int(origin_sender_id))
-        bio = getattr(full_user, "bio", None) or "—"
-        await _reply_autodelete(
-            localized_whois(
-                "tg_template",
-                lang,
-                nickname=full,
-                username=uname,
-                id=u.id,
-                bio=bio
+    if origin_platform == "discord":
+        try:
+            from discord_bot import bot as dc_bot
+            import discord as _discord
+
+            guild_id = origin_chat_id.split(":", 1)[0]
+            guild = dc_bot.get_guild(int(guild_id))
+            member = guild.get_member(int(origin_sender_id)) if guild else None
+            if not member and guild:
+                try:
+                    member = await guild.fetch_member(int(origin_sender_id))
+                except Exception:
+                    member = None
+
+            try:
+                user_obj = await dc_bot.fetch_user(int(origin_sender_id))
+            except Exception:
+                user_obj = getattr(member, "user", None)
+
+            nick = member.display_name if member else "—"
+            user_name = "—"
+            if user_obj:
+                user_name = f"{user_obj.name}#{user_obj.discriminator}"
+            elif member:
+                user_name = f"{member.name}#{member.discriminator}"
+
+            mode_key = str(getattr(member, "status", "offline"))
+            if mode_key not in ("online", "idle", "dnd", "offline", "invisible"):
+                mode_key = "offline"
+            if mode_key == "invisible":
+                mode_key = "offline"
+            mode = localized_whois(f"mode_{mode_key}", lang)
+
+            custom_status = "—"
+            if member:
+                try:
+                    custom = _discord.utils.find(
+                        lambda a: isinstance(a, _discord.CustomActivity),
+                        member.activities or []
+                    )
+                    if custom and getattr(custom, "name", None):
+                        custom_status = custom.name
+                except Exception:
+                    custom_status = "—"
+
+            avatar_url = "—"
+            banner_url = "—"
+            created_at = "—"
+            if user_obj:
+                if getattr(user_obj, "display_avatar", None):
+                    avatar_url = str(user_obj.display_avatar.url)
+                if getattr(user_obj, "banner", None):
+                    banner_url = str(user_obj.banner.url)
+                if getattr(user_obj, "created_at", None):
+                    created_at = user_obj.created_at.strftime("%Y-%m-%d %H:%M UTC")
+
+            await _reply_autodelete(
+                localized_whois(
+                    "dc_template",
+                    lang,
+                    nickname=nick or "—",
+                    username=user_name or "—",
+                    id=origin_sender_id,
+                    status=custom_status,
+                    mode=mode,
+                    registered=created_at,
+                    avatar=avatar_url,
+                    banner=banner_url,
+                )
             )
-        )
-    except Exception as e:
-        logger.warning("whois lookup failed (chat=%s): %s", chat_key, e)
-        await _reply_autodelete(localized_whois("fetch_error", lang, error=type(e).__name__))
+        except Exception as e:
+            logger.warning("whois lookup failed (chat=%s): %s", chat_key, e)
+            await _reply_autodelete(localized_whois("fetch_error", lang, error=type(e).__name__))
+        return
+
+    await _reply_autodelete(localized_whois("origin_not_telegram", lang))
 
 @router.message(Command("bridge"))
 async def bridge_cmd(message: Message):
@@ -1127,6 +1260,21 @@ async def bridge_cmd(message: Message):
 
     chats_str = "\n".join(chat_lines) if chat_lines else "—"
     text = localized_bridge_info("tg_template", lang, bridge_id=bridge_id, chats=chats_str)
+
+    try:
+        from discord_bot import resolve_bridge_admins
+        discord_admins, telegram_pings = await resolve_bridge_admins(bridge_id)
+    except Exception:
+        discord_admins, telegram_pings = [], []
+    if discord_admins or telegram_pings:
+        admin_lines = [localized_bridge_info("admins_title", lang)]
+        if discord_admins:
+            discord_str = ", ".join((uname or str(uid)) for uid, uname in discord_admins)
+            admin_lines.append(localized_bridge_info("admins_discord", lang, admins=discord_str))
+        if telegram_pings:
+            admin_lines.append(localized_bridge_info("admins_telegram", lang, admins=", ".join(telegram_pings)))
+        text = f"{text}\n\n" + "\n".join(admin_lines)
+
     await _reply_autodelete(text)
 
 @router.message(Command("allow_bots"))
@@ -1177,6 +1325,10 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_bridge", lang)),
         escape_html(localized_help("cmd_whois", lang)),
         escape_html(localized_help("cmd_verify", lang)),
+        escape_html(localized_help("cmd_locale", lang)),
+        escape_html(localized_help("cmd_loc_compare", lang)),
+        escape_html(localized_help("cmd_loc_suggest", lang)),
+        escape_html(localized_help("cmd_help", lang)),
     ])
 
     admins_lines = "\n".join([
@@ -1189,6 +1341,7 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_unverify", lang)),
         escape_html(localized_help("cmd_allow_bots_tg", lang)),
         escape_html(localized_help("cmd_deadtopic", lang)),
+        escape_html(localized_help("cmd_loc_reply", lang)),
     ])
 
     text = (
@@ -1244,7 +1397,7 @@ async def edited_message_handler(message: Message):
                     parse_mode="HTML"
                 )
             elif c["platform"] == "discord":
-                from discord_bot import bot as dc_bot, RELAY_ALLOWED_MENTIONS
+                from discord_bot import bot as dc_bot, edit_discord_relay_copy
                 channel_id = int(c["chat_id"].split(":")[1])
                 ch = dc_bot.get_channel(channel_id)
                 if not ch:
@@ -1252,26 +1405,263 @@ async def edited_message_handler(message: Message):
                         ch = await dc_bot.fetch_channel(channel_id)
                     except Exception:
                         continue
-                m = await ch.fetch_message(int(c["message_id_platform"]))
-                await m.edit(content=clip_text(f"{header}\n{discord_text}".strip(), DISCORD_MSG_LIMIT), allowed_mentions=RELAY_ALLOWED_MENTIONS)
+                await edit_discord_relay_copy(ch, c["message_id_platform"], header, discord_text)
         except Exception:
             pass
 
 @router.message(Command("backup"))
 async def backup_tg_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    lang = get_chat_lang(f"{message.chat.id}:{thread}")
     if not is_admin("telegram", message.from_user.id):
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
     if message.chat.type != "private":
         await message.reply("Use this command in a private chat with the bot")
         return
     try:
-        from aiogram.types import FSInputFile
-        doc = FSInputFile("bridge.db", filename="bridge.db")
+        from aiogram.types import BufferedInputFile
+        from backup_crypto import build_encrypted_backup, encrypted_filename
+        data = build_encrypted_backup("bridge.db")
+        doc = BufferedInputFile(data, filename=encrypted_filename("bridge.db"))
         await bot.send_document(chat_id=message.chat.id, document=doc)
     except Exception as e:
         logger.warning("Failed to send database backup: %s", e)
-        await message.reply("Failed to send database")
+        await message.reply(localized("backup_failed", lang, error=str(e)))
+
+@router.message(Command("locale"))
+async def locale_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    ui_lang = get_chat_lang(chat_key)
+
+    parts = message.text.split(maxsplit=1)
+    arg = parts[1].strip().lower() if len(parts) > 1 and parts[1].strip() else None
+
+    if not arg:
+        lines = [localized("loc_list_header", ui_lang)]
+        for code in available_locales():
+            st = locale_stats(code)
+            lines.append(f"{language_name(code)} ({code}): {locale_bar(code)} {st['percent']}%")
+        lines.append("")
+        lines.append(localized("loc_list_footer", ui_lang))
+        await message.reply("\n".join(lines))
+        return
+
+    if arg not in available_locales():
+        await message.reply(localized("loc_unknown_lang", ui_lang, lang=arg, supported=", ".join(available_locales())))
+        return
+
+    if not rate_limit_ok(("locale-file", "telegram", message.chat.id), limit=1, window_seconds=600):
+        await message.reply(localized("loc_cooldown", ui_lang))
+        return
+
+    path = os.path.join(os.path.dirname(utils.__file__), "i18n", f"{arg}.json")
+    st = locale_stats(arg)
+    caption = localized("loc_file_caption", ui_lang, name=language_name(arg), code=arg, percent=st["percent"])
+    try:
+        from aiogram.types import BufferedInputFile
+        with open(path, "rb") as f:
+            data = f.read()
+        await message.reply_document(BufferedInputFile(data, filename=f"{arg}.json"), caption=caption)
+    except Exception:
+        await message.reply(caption)
+
+@router.message(Command("loc_compare", "loc-compare"))
+async def loc_compare_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    ui_lang = get_chat_lang(f"{message.chat.id}:{thread}")
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        await message.reply("Usage: /loc_compare <key>")
+        return
+    key = parts[1].strip()
+    data = compare_reply(key)
+    if data is None:
+        await message.reply(localized("loc_compare_not_found", ui_lang, key=key))
+        return
+    lines = [localized("loc_compare_header", ui_lang, key=key)]
+    for code in LANG_ORDER:
+        if code not in data:
+            continue
+        status, text = data[code]
+        emoji = LOCALE_STATUS_EMOJI.get(status, "")
+        if text is None:
+            shown = localized("loc_compare_untranslated", ui_lang)
+        else:
+            shown = str(text)
+            if len(shown) > 300:
+                shown = shown[:297] + "..."
+        lines.append(f"{emoji} {language_name(code)}: {shown}")
+    msg = "\n".join(lines)
+    if len(msg) > 3900:
+        msg = msg[:3900]
+    await message.reply(msg)
+
+@router.message(Command("loc_suggest", "loc-suggest"))
+async def loc_suggest_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    ui_lang = get_chat_lang(f"{message.chat.id}:{thread}")
+    parts = message.text.split(maxsplit=3)
+    if len(parts) < 4:
+        await message.reply(localized("loc_suggest_usage", ui_lang))
+        return
+    language = parts[1].strip().lower()
+    rkey = parts[2].strip()
+    text = parts[3]
+    if language not in SUPPORTED_LANGS:
+        await message.reply(localized("loc_unknown_lang", ui_lang, lang=language, supported=", ".join(available_locales())))
+        return
+    if not SUPPORT_CHATS.get("discord") and not SUPPORT_CHATS.get("telegram"):
+        await message.reply(localized("loc_suggest_no_support", ui_lang))
+        return
+
+    msg_code = secrets.token_hex(4)
+    username = message.from_user.full_name if message.from_user else "Unknown"
+    db.add_loc_suggestion(msg_code, "telegram", message.from_user.id, username,
+                          language, rkey, text, ui_lang)
+    try:
+        from discord_bot import post_loc_suggestion
+        await post_loc_suggestion(lang=language, key=rkey, suggestion=text, code=msg_code,
+                                  ui_lang=ui_lang, username=username, user_id=message.from_user.id)
+    except Exception as e:
+        logger.warning("Failed to post loc suggestion: %s", e)
+    await message.reply(localized("loc_suggest_confirm", ui_lang, code=msg_code))
+
+@router.message(Command("loc_reply", "loc-reply"))
+async def loc_reply_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    ui_lang_cmd = get_chat_lang(f"{message.chat.id}:{thread}")
+    if not is_admin("telegram", message.from_user.id):
+        await message.reply(localized("no_permission", ui_lang_cmd))
+        return
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply("Usage: /loc_reply <code> <text>")
+        return
+    code = parts[1].strip()
+    reply_text = parts[2]
+    row = db.get_loc_suggestion(code)
+    if not row:
+        await message.reply(localized("loc_reply_not_found", ui_lang_cmd, code=code))
+        return
+
+    ui_lang = row["ui_lang"] or DEFAULT_LANG
+    title = localized("loc_reply_dm_title", ui_lang)
+    body = localized("loc_reply_dm_body", ui_lang,
+                     suggestion=row["suggestion"], reply=reply_text,
+                     name=language_name(row["lang"]), lang=row["lang"], key=row["rkey"])
+
+    ok = False
+    if row["platform"] == "telegram":
+        try:
+            await bot.send_message(int(row["user_id"]), f"{title}\n\n{body}")
+            ok = True
+        except Exception:
+            ok = False
+    elif row["platform"] == "discord":
+        try:
+            import discord as _discord
+            from discord_bot import bot as dc_bot
+            user = await dc_bot.fetch_user(int(row["user_id"]))
+            await user.send(embed=_discord.Embed(title=title, description=body))
+            ok = True
+        except Exception:
+            ok = False
+
+    try:
+        from discord_bot import post_loc_reply
+        await post_loc_reply(admin=username_of(message.from_user), code=code,
+                             ui_lang=ui_lang, title=title, body=body)
+    except Exception as e:
+        logger.warning("Failed to post loc reply to support: %s", e)
+
+    if ok:
+        db.delete_loc_suggestion(code)
+        await message.reply(localized("loc_reply_sent", ui_lang_cmd))
+    else:
+        await message.reply(localized("loc_reply_failed", ui_lang_cmd))
+
+def username_of(user):
+    if user is None:
+        return "Unknown"
+    if getattr(user, "username", None):
+        return f"@{user.username}"
+    return getattr(user, "full_name", None) or str(getattr(user, "id", "Unknown"))
+
+@router.message(Command("poll"))
+async def poll_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key) or DEFAULT_LANG
+
+    parts_cmd = (message.text or "").split(maxsplit=1)
+    if len(parts_cmd) < 2:
+        await message.reply(localized("poll_usage_telegram", lang))
+        return
+    segments = [s.strip() for s in parts_cmd[1].split("|")]
+    if len(segments) < 4 or not segments[0]:
+        await message.reply(localized("poll_usage_telegram", lang))
+        return
+
+    question = segments[0]
+    time_str = segments[1]
+    options = [s for s in segments[2:] if s][:10]
+    if len(options) < 2:
+        await message.reply(localized("poll_too_few", lang))
+        return
+
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+    if not row:
+        await message.reply(localized("poll_not_in_bridge", lang))
+        return
+    bridge_id = row["bridge_id"]
+
+    from utils import parse_poll_duration
+    try:
+        seconds = parse_poll_duration(time_str)
+    except ValueError:
+        await message.reply(localized("poll_duration_invalid", lang))
+        return
+
+    ends_at = int(time.time()) + seconds
+    poll_id = db.create_poll(bridge_id, question, json.dumps(options, ensure_ascii=False), ends_at)
+    place = message.chat.title or "Telegram"
+    nick = message.from_user.full_name if message.from_user else "Unknown"
+    from discord_bot import publish_poll
+    await publish_poll(
+        poll_id, bridge_id, question, options, ends_at,
+        origin_chat_id=chat_key, origin_platform="telegram",
+        origin_place=place, origin_nick=nick,
+    )
+
+@router.callback_query(lambda c: c.data and c.data.startswith("poll:"))
+async def handle_poll_callback(query: CallbackQuery):
+    try:
+        _, pid_s, idx_s = query.data.split(":")
+        poll_id = int(pid_s)
+        idx = int(idx_s)
+    except Exception:
+        await query.answer()
+        return
+
+    chat = query.message.chat if query.message else None
+    thread = (query.message.message_thread_id or 0) if query.message else 0
+    lang = get_chat_lang(f"{chat.id}:{thread}") if chat else DEFAULT_LANG
+
+    poll = db.get_poll(poll_id)
+    if not poll or poll["closed"] or (poll["ends_at"] and poll["ends_at"] <= int(time.time())):
+        await query.answer(localized("poll_closed", lang), show_alert=True)
+        return
+
+    user_id = str(query.from_user.id)
+    prefix = str(chat.id) if chat else ""
+    if not db.is_user_verified("telegram", user_id, prefix):
+        await query.answer(localized("poll_not_verified", lang), show_alert=True)
+        return
+
+    db.record_poll_vote(poll_id, "telegram", user_id, idx)
+    await query.answer(localized("poll_vote_recorded", lang))
 
 async def main():
     await dp.start_polling(bot)

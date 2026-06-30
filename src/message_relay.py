@@ -119,6 +119,106 @@ def discord_to_telegram_html(text: str):
 def escape_html(text: str):
     return html.escape(text or "")
 
+_DISCORD_TS_RE = re.compile(r"(?:<|&lt;)t:(-?\d+)(?::([tTdDfFsSR]))?(?:>|&gt;)")
+
+def _ts_ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+def convert_discord_timestamps(text, lang="en"):
+    """Replace Discord <t:unix:style> markup with readable, localized text (Telegram
+    can't render it). Rendered in the bot host's local timezone (set the host TZ to
+    the community's). Date order and month/weekday names follow `lang`."""
+    if not text or ("<t:" not in text and "&lt;t:" not in text):
+        return text
+    from datetime import datetime
+    from utils import localized, plural_ru, plural_pl, plural_en
+
+    months = localized("month_names", lang)
+    weekdays = localized("weekday_names", lang)
+    plural = plural_ru if lang in ("ru", "uk") else plural_pl if lang == "pl" else plural_en
+
+    def fmt_time(dt, secs):
+        if lang == "en":
+            hour = dt.hour % 12 or 12
+            ampm = "AM" if dt.hour < 12 else "PM"
+            return f"{hour}:{dt.minute:02d}:{dt.second:02d} {ampm}" if secs else f"{hour}:{dt.minute:02d} {ampm}"
+        return f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}" if secs else f"{dt.hour:02d}:{dt.minute:02d}"
+
+    def fmt_num(dt):
+        if lang == "en":
+            return f"{dt.month:02d}/{dt.day:02d}/{dt.year}"
+        if lang in ("es", "pt"):
+            return f"{dt.day:02d}/{dt.month:02d}/{dt.year}"
+        return f"{dt.day:02d}.{dt.month:02d}.{dt.year}"
+
+    def fmt_long(dt):
+        month = months[dt.month - 1] if isinstance(months, (list, tuple)) and len(months) >= 12 else str(dt.month)
+        if lang == "en":
+            return f"{month} {_ts_ordinal(dt.day)}, {dt.year}"
+        if lang in ("es", "pt"):
+            return f"{dt.day} de {month} de {dt.year}"
+        if lang == "ru":
+            return f"{dt.day} {month} {dt.year} г."
+        if lang == "uk":
+            return f"{dt.day} {month} {dt.year} р."
+        return f"{dt.day} {month} {dt.year}"
+
+    def fmt_relative(unix):
+        delta = unix - int(datetime.now().timestamp())
+        past = delta < 0
+        s = abs(delta)
+        if s < 60:
+            val, key = s, "ts_unit_seconds"
+        elif s < 3600:
+            val, key = s // 60, "ts_unit_minutes"
+        elif s < 86400:
+            val, key = s // 3600, "ts_unit_hours"
+        elif s < 2592000:
+            val, key = s // 86400, "ts_unit_days"
+        elif s < 31536000:
+            val, key = s // 2592000, "ts_unit_months"
+        else:
+            val, key = s // 31536000, "ts_unit_years"
+        forms = localized(key, lang)
+        unit = plural(val, forms) if isinstance(forms, (list, tuple)) else str(forms)
+        tmpl = localized("ts_ago" if past else "ts_in", lang)
+        try:
+            return tmpl.format(value=val, unit=unit)
+        except Exception:
+            return f"{val} {unit}"
+
+    def repl(m):
+        try:
+            unix = int(m.group(1))
+            dt = datetime.fromtimestamp(unix)
+        except Exception:
+            return m.group(0)
+        style = m.group(2) or "f"
+        if style == "d":
+            return fmt_num(dt)
+        if style == "D":
+            return fmt_long(dt)
+        if style == "t":
+            return fmt_time(dt, False)
+        if style == "T":
+            return fmt_time(dt, True)
+        if style == "F":
+            wd = weekdays[dt.weekday()] if isinstance(weekdays, (list, tuple)) and len(weekdays) >= 7 else ""
+            return f"{wd}, {fmt_long(dt)} {fmt_time(dt, False)}"
+        if style == "s":
+            return f"{fmt_num(dt)} {fmt_time(dt, False)}"
+        if style == "S":
+            return f"{fmt_num(dt)} {fmt_time(dt, True)}"
+        if style == "R":
+            return fmt_relative(unix)
+        return f"{fmt_long(dt)} {fmt_time(dt, False)}"
+
+    return _DISCORD_TS_RE.sub(repl, text)
+
 DISCORD_MSG_LIMIT = 2000
 TELEGRAM_MSG_LIMIT = 4096
 
@@ -184,6 +284,7 @@ async def relay_message(
     forward_type=None,
     forward_name=None,
     is_bot_sender=False,
+    avatar_url=None,
 ):
     place_name = clean_display_name(place_name)
     sender_name = clean_display_name(sender_name)
@@ -319,6 +420,11 @@ async def relay_message(
             body_telegram_html=current_telegram_html,
             reply_line=reply_line,
             reply_to_platform_message_id=reply_to_platform_message_id,
+            sender_name=sender_name,
+            place_name=place_name,
+            messenger_name=messenger_name,
+            avatar_url=avatar_url,
+            is_bot_sender=is_bot_sender,
         )
         if not sent_id:
             continue

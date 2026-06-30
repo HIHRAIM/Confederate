@@ -159,6 +159,44 @@ def init():
         message_id INTEGER,
         PRIMARY KEY (chat_id, message_id_platform)
     );
+
+    CREATE TABLE IF NOT EXISTS loc_suggestions (
+        code TEXT PRIMARY KEY,
+        platform TEXT,
+        user_id TEXT,
+        username TEXT,
+        lang TEXT,
+        rkey TEXT,
+        suggestion TEXT,
+        ui_lang TEXT,
+        created_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bridge_id INTEGER,
+        question TEXT,
+        options TEXT,
+        created_at INTEGER,
+        ends_at INTEGER,
+        closed INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS poll_messages (
+        poll_id INTEGER,
+        platform TEXT,
+        chat_id TEXT,
+        message_id TEXT,
+        PRIMARY KEY (poll_id, platform, chat_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS poll_votes (
+        poll_id INTEGER,
+        platform TEXT,
+        user_id TEXT,
+        option_index INTEGER,
+        PRIMARY KEY (poll_id, platform, user_id)
+    );
     """)
     conn.commit()
 
@@ -178,6 +216,9 @@ def init():
     cs_cols = [r["name"] for r in cur.execute("PRAGMA table_info(chat_settings)").fetchall()]
     if "allow_bots" not in cs_cols:
         cur.execute("ALTER TABLE chat_settings ADD COLUMN allow_bots INTEGER DEFAULT 0")
+        conn.commit()
+    if "webhooks" not in cs_cols:
+        cur.execute("ALTER TABLE chat_settings ADD COLUMN webhooks INTEGER DEFAULT 0")
         conn.commit()
 
 def chat_exists(chat_id):
@@ -532,6 +573,21 @@ def set_allow_bots(chat_id, enabled: bool):
     )
     conn.commit()
 
+def get_webhooks_enabled(chat_id):
+    row = cur.execute(
+        "SELECT webhooks FROM chat_settings WHERE chat_id=?",
+        (chat_id,)
+    ).fetchone()
+    return bool(row and row["webhooks"])
+
+def set_webhooks_enabled(chat_id, enabled: bool):
+    cur.execute(
+        "INSERT INTO chat_settings (chat_id, webhooks) VALUES (?, ?)"
+        " ON CONFLICT(chat_id) DO UPDATE SET webhooks=excluded.webhooks",
+        (chat_id, 1 if enabled else 0)
+    )
+    conn.commit()
+
 def is_relay_copy(platform: str, chat_id: str, message_id_platform: str) -> bool:
     """Return True if the given message was sent by the bridge bot as a relay copy."""
     row = cur.execute(
@@ -539,6 +595,111 @@ def is_relay_copy(platform: str, chat_id: str, message_id_platform: str) -> bool
         (platform, chat_id, message_id_platform)
     ).fetchone()
     return row is not None
+
+def add_loc_suggestion(code, platform, user_id, username, lang, rkey, suggestion, ui_lang):
+    cur.execute(
+        "INSERT OR REPLACE INTO loc_suggestions "
+        "(code, platform, user_id, username, lang, rkey, suggestion, ui_lang, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (code, platform, str(user_id), username, lang, rkey, suggestion, ui_lang, int(time.time()))
+    )
+    conn.commit()
+
+def get_loc_suggestion(code):
+    return cur.execute(
+        "SELECT * FROM loc_suggestions WHERE code=?",
+        (code,)
+    ).fetchone()
+
+def delete_loc_suggestion(code):
+    cur.execute("DELETE FROM loc_suggestions WHERE code=?", (code,))
+    conn.commit()
+
+def cleanup_old_loc_suggestions(max_age_seconds=365 * 24 * 3600):
+    """Localization-suggestion dialog codes are kept at most a year."""
+    cutoff = int(time.time()) - max_age_seconds
+    cur.execute(
+        "DELETE FROM loc_suggestions WHERE created_at IS NOT NULL AND created_at < ?",
+        (cutoff,)
+    )
+    conn.commit()
+
+def create_poll(bridge_id, question, options_json, ends_at):
+    c = cur.execute(
+        "INSERT INTO polls (bridge_id, question, options, created_at, ends_at, closed) VALUES (?,?,?,?,?,0)",
+        (bridge_id, question, options_json, int(time.time()), ends_at)
+    )
+    conn.commit()
+    return c.lastrowid
+
+def get_poll(poll_id):
+    return cur.execute("SELECT * FROM polls WHERE id=?", (poll_id,)).fetchone()
+
+def add_poll_message(poll_id, platform, chat_id, message_id):
+    cur.execute(
+        "INSERT OR REPLACE INTO poll_messages (poll_id, platform, chat_id, message_id) VALUES (?,?,?,?)",
+        (poll_id, platform, chat_id, str(message_id))
+    )
+    conn.commit()
+
+def get_poll_messages(poll_id):
+    return cur.execute("SELECT * FROM poll_messages WHERE poll_id=?", (poll_id,)).fetchall()
+
+def get_poll_by_message(platform, chat_id, message_id):
+    row = cur.execute(
+        "SELECT poll_id FROM poll_messages WHERE platform=? AND chat_id=? AND message_id=?",
+        (platform, chat_id, str(message_id))
+    ).fetchone()
+    return row["poll_id"] if row else None
+
+def record_poll_vote(poll_id, platform, user_id, option_index):
+    cur.execute(
+        "INSERT OR REPLACE INTO poll_votes (poll_id, platform, user_id, option_index) VALUES (?,?,?,?)",
+        (poll_id, platform, str(user_id), int(option_index))
+    )
+    conn.commit()
+
+def get_poll_results(poll_id, num_options):
+    rows = cur.execute(
+        "SELECT option_index, COUNT(*) AS cnt FROM poll_votes WHERE poll_id=? GROUP BY option_index",
+        (poll_id,)
+    ).fetchall()
+    counts = [0] * num_options
+    for r in rows:
+        idx = r["option_index"]
+        if idx is not None and 0 <= idx < num_options:
+            counts[idx] = r["cnt"]
+    return counts
+
+def close_poll(poll_id):
+    cur.execute("UPDATE polls SET closed=1 WHERE id=?", (poll_id,))
+    conn.commit()
+
+def get_expired_open_polls():
+    now = int(time.time())
+    return cur.execute(
+        "SELECT * FROM polls WHERE closed=0 AND ends_at IS NOT NULL AND ends_at<=?",
+        (now,)
+    ).fetchall()
+
+def get_open_polls():
+    return cur.execute("SELECT * FROM polls WHERE closed=0").fetchall()
+
+def delete_poll(poll_id):
+    cur.execute("DELETE FROM poll_votes WHERE poll_id=?", (poll_id,))
+    cur.execute("DELETE FROM poll_messages WHERE poll_id=?", (poll_id,))
+    cur.execute("DELETE FROM polls WHERE id=?", (poll_id,))
+    conn.commit()
+
+def cleanup_old_polls(max_age_seconds=7 * 24 * 3600):
+    """Remove closed polls (and their votes/messages) a week after they ended."""
+    cutoff = int(time.time()) - max_age_seconds
+    rows = cur.execute(
+        "SELECT id FROM polls WHERE closed=1 AND ends_at IS NOT NULL AND ends_at < ?",
+        (cutoff,)
+    ).fetchall()
+    for r in rows:
+        delete_poll(r["id"])
 
 def remove_chat_from_bridge(chat_id):
     row = cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()

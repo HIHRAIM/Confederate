@@ -1,0 +1,655 @@
+{
+  "backup_failed": {
+    "status": "verified",
+    "text": "Не удалось создать резервную копию: {error}"
+  },
+  "bot_joined": {
+    "status": "verified",
+    "text": "Бот присоединился к мосту."
+  },
+  "bridge_info.admins_discord": {
+    "status": "verified",
+    "text": "Discord: {admins}"
+  },
+  "bridge_info.admins_telegram": {
+    "status": "verified",
+    "text": "Telegram: {admins}"
+  },
+  "bridge_info.admins_title": {
+    "status": "verified",
+    "text": "Администраторы моста"
+  },
+  "bridge_info.field_chats": {
+    "status": "verified",
+    "text": "Подключённые чаты"
+  },
+  "bridge_info.field_number": {
+    "status": "verified",
+    "text": "Номер"
+  },
+  "bridge_info.not_in_bridge": {
+    "status": "verified",
+    "text": "Этот чат не подключён к мосту."
+  },
+  "bridge_info.tg_template": {
+    "status": "verified",
+    "text": "Информация о мосте\n\nНомер: {bridge_id}\nПодключённые чаты:\n{chats}"
+  },
+  "bridge_info.title": {
+    "status": "verified",
+    "text": "Информация о мосте"
+  },
+  "bridge_info.topic": {
+    "status": "verified",
+    "text": "тема {thread_id}"
+  },
+  "bridge_info.unknown": {
+    "status": "verified",
+    "text": "Неизвестно"
+  },
+  "bridge_join": {
+    "status": "verified",
+    "text": "Чат {channel} из {server} присоединился к мосту."
+  },
+  "bridge_leave": {
+    "status": "verified",
+    "text": "Чат {channel} из {server} исключён из моста."
+  },
+  "consent_body": {
+    "status": "verified",
+    "text": "Этот чат соединён с другими. Твои сообщения будут автоматически пересылаться в связанные чаты. Если ты изменишь или удалишь своё сообщение в течение 30 дней с его отправки, оно автоматически обновится или исчезнет и в других чатах. Нажми «Принимаю», чтобы согласиться с пересылкой и продолжить общение. Подробнее — в описании чата или закреплённом сообщении."
+  },
+  "consent_button": {
+    "status": "verified",
+    "text": "Принимаю"
+  },
+  "consent_title": {
+    "status": "verified",
+    "text": "Внимание: мост сообщений"
+  },
+  "deadtopic.disabled": {
+    "status": "verified",
+    "text": "Автосохранение темы отключено."
+  },
+  "deadtopic.enabled": {
+    "status": "verified",
+    "text": "Автосохранение темы включено. Каждые 6 дней без активности в полночь UTC бот пришлёт и удалит фантомное сообщение."
+  },
+  "deadtopic.phantom_message": {
+    "status": "verified",
+    "text": "Фантомное сообщение для сохранения темы."
+  },
+  "discord_system_event": {
+    "status": "verified",
+    "text": "{name} {action}"
+  },
+  "discord_system_event_action.boosted_server": {
+    "status": "verified",
+    "text": "дал(-а) буст серверу"
+  },
+  "discord_system_event_action.created_thread": {
+    "status": "verified",
+    "text": "создал(-а) ветку"
+  },
+  "discord_system_event_action.joined_server": {
+    "status": "verified",
+    "text": "присоединился(-лась) к серверу"
+  },
+  "discord_system_event_action.pinned_message": {
+    "status": "verified",
+    "text": "закрепил(=а) сообщение"
+  },
+  "file_count": {
+    "status": "verified",
+    "text": "{count} {files} из Telegram"
+  },
+  "file_forms": {
+    "status": "verified",
+    "text": [
+      "файл",
+      "файла",
+      "файлов"
+    ]
+  },
+  "forward_from_chat": {
+    "status": "verified",
+    "text": "(переслано из {name})"
+  },
+  "forward_from_user": {
+    "status": "verified",
+    "text": "(переслано от {name})"
+  },
+  "forward_unknown": {
+    "status": "verified",
+    "text": "(переслано из неизвестного источника)"
+  },
+  "help.cmd_allow_bots": {
+    "status": "verified",
+    "text": "/allow-bots enable|disable — разрешить или запретить пересылку сообщений от ботов"
+  },
+  "help.cmd_allow_bots_tg": {
+    "status": "verified",
+    "text": "/allow_bots enable|disable — разрешить или запретить пересылку сообщений от ботов"
+  },
+  "help.cmd_atb": {
+    "status": "verified",
+    "text": "/atb <id_моста> — привязать этот чат к мосту (админы бота)"
+  },
+  "help.cmd_backup": {
+    "status": "verified",
+    "text": "/backup — получить резервную копию базы данных (админы бота)"
+  },
+  "help.cmd_bridge": {
+    "status": "verified",
+    "text": "/bridge — информация о мосте и подключённых чатах"
+  },
+  "help.cmd_deadchat": {
+    "status": "verified",
+    "text": "/deadchat <роль> <часы> | disable — пинговать роль при неактивности (только Discord)"
+  },
+  "help.cmd_deadtopic": {
+    "status": "verified",
+    "text": "/deadtopic enable|disable — раз в 6 дней без активности отправлять фантомное сообщение для сохранения темы"
+  },
+  "help.cmd_force_leave": {
+    "status": "verified",
+    "text": "/force_leave <платформа> <id> — вывести бота из чата (админы бота)"
+  },
+  "help.cmd_help": {
+    "status": "verified",
+    "text": "/help — показать список команд"
+  },
+  "help.cmd_lang": {
+    "status": "verified",
+    "text": "/lang <код> — установить язык бота (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_list_chats": {
+    "status": "verified",
+    "text": "/list_chats — список всех чатов бота (админы бота)"
+  },
+  "help.cmd_loc_compare": {
+    "status": "verified",
+    "text": "/loc-compare <код> — сравнение реплики по языкам"
+  },
+  "help.cmd_loc_reply": {
+    "status": "verified",
+    "text": "/loc-reply <код> <текст> — ответить на предложение локализации (админы бота)"
+  },
+  "help.cmd_loc_suggest": {
+    "status": "verified",
+    "text": "/loc-suggest <язык> <код> <текст> — предложить вариант локализации"
+  },
+  "help.cmd_locale": {
+    "status": "verified",
+    "text": "/locale [код] — статус локализации или файл выбранного языка"
+  },
+  "help.cmd_newschat": {
+    "status": "verified",
+    "text": "/newschat add <эмодзи> | disable — авто-реакция на сообщения в канале новостей (только Discord)"
+  },
+  "help.cmd_poll": {
+    "status": "verified",
+    "text": "/poll <текст> <время> <варианты> — анонимное голосование во всех чатах моста"
+  },
+  "help.cmd_remadmin": {
+    "status": "verified",
+    "text": "/remadmin <user> — снять админа моста"
+  },
+  "help.cmd_remindrules": {
+    "status": "verified",
+    "text": "/remindrules <время> [сообщений] — периодически публиковать правила во всех чатах моста (например: 2h, 30m)"
+  },
+  "help.cmd_rfb": {
+    "status": "verified",
+    "text": "/rfb — отключить этот чат от моста"
+  },
+  "help.cmd_setadmin": {
+    "status": "verified",
+    "text": "/setadmin <user> — добавить админа моста"
+  },
+  "help.cmd_shadowban": {
+    "status": "verified",
+    "text": "/shadow-ban <user> — скрыть сообщения пользователя от пересылки"
+  },
+  "help.cmd_unverify": {
+    "status": "verified",
+    "text": "/unverify <user> — отозвать верификацию пользователя"
+  },
+  "help.cmd_verify": {
+    "status": "verified",
+    "text": "/verify — подтвердить согласие на пересылку сообщений"
+  },
+  "help.cmd_webhooks": {
+    "status": "verified",
+    "text": "/webhooks enable|disable — показывать пересланные сообщения как вебхуки (аватар и имя отправителя)"
+  },
+  "help.cmd_whois": {
+    "status": "verified",
+    "text": "/whois — информация об авторе сообщения (ответом на relay-сообщение бота)"
+  },
+  "help.section_admins": {
+    "status": "verified",
+    "text": "Для админов моста"
+  },
+  "help.section_bot_admins": {
+    "status": "verified",
+    "text": "Для админов бота"
+  },
+  "help.section_everyone": {
+    "status": "verified",
+    "text": "Для всех"
+  },
+  "help.title": {
+    "status": "verified",
+    "text": "Команды бота"
+  },
+  "loc_compare_header": {
+    "status": "verified",
+    "text": "Сравнение реплики `{key}` по языкам:"
+  },
+  "loc_compare_not_found": {
+    "status": "verified",
+    "text": "Реплика с кодом `{key}` не найдена в локализациях."
+  },
+  "loc_compare_untranslated": {
+    "status": "verified",
+    "text": "(не переведено)"
+  },
+  "loc_cooldown": {
+    "status": "verified",
+    "text": "Этот файл уже запрашивали недавно. Попробуйте позже (не чаще одного раза в 10 минут на сервер/группу)."
+  },
+  "loc_file_caption": {
+    "status": "verified",
+    "text": "Локализация: {name} ({code}). Проверено: {percent}%."
+  },
+  "loc_list_footer": {
+    "status": "verified",
+    "text": "Отправьте /locale <код>, чтобы получить файл локализации."
+  },
+  "loc_list_header": {
+    "status": "verified",
+    "text": "Доступные языки локализации (🟩 — проверено, 🟧 — не проверено, 🟥 — не переведено):"
+  },
+  "loc_reply_dm_body": {
+    "status": "verified",
+    "text": "> {suggestion}\n{reply}\n\nЯзык: {name} / {lang}\nКод: {key}"
+  },
+  "loc_reply_dm_title": {
+    "status": "verified",
+    "text": "Ответ от администратора бота"
+  },
+  "loc_reply_failed": {
+    "status": "verified",
+    "text": "Не удалось отправить личное сообщение пользователю (возможно, закрыты ЛС)."
+  },
+  "loc_reply_not_found": {
+    "status": "verified",
+    "text": "Сообщение с кодом {code} не найдено."
+  },
+  "loc_reply_sent": {
+    "status": "verified",
+    "text": "Ответ отправлен пользователю."
+  },
+  "loc_reply_support_prefix": {
+    "status": "verified",
+    "text": "Ответ администратора {admin} (код {code}):"
+  },
+  "loc_suggest_confirm": {
+    "status": "verified",
+    "text": "Спасибо! Ваше предложение отправлено команде. Код вашего сообщения: {code}"
+  },
+  "loc_suggest_no_support": {
+    "status": "verified",
+    "text": "Канал поддержки не настроен. Обратитесь к администратору бота."
+  },
+  "loc_suggest_support_body": {
+    "status": "verified",
+    "text": "{suggestion}\n\nЯзык: {name} / {lang}\nКод: {key}"
+  },
+  "loc_suggest_usage": {
+    "status": "verified",
+    "text": "Использование: /loc-suggest <язык> <код реплики> <текст>"
+  },
+  "loc_unknown_lang": {
+    "status": "verified",
+    "text": "Неизвестный язык: {lang}. Доступны: {supported}."
+  },
+  "month_names": {
+    "status": "verified",
+    "text": [
+      "января",
+      "февраля",
+      "марта",
+      "апреля",
+      "мая",
+      "июня",
+      "июля",
+      "августа",
+      "сентября",
+      "октября",
+      "ноября",
+      "декабря"
+    ]
+  },
+  "no_permission": {
+    "status": "verified",
+    "text": "У вас нет прав для использования этой команды."
+  },
+  "poll_anonymous": {
+    "status": "verified",
+    "text": "Анонимное голосование"
+  },
+  "poll_closed": {
+    "status": "verified",
+    "text": "Это голосование уже завершено."
+  },
+  "poll_created": {
+    "status": "verified",
+    "text": "Голосование запущено."
+  },
+  "poll_duration_invalid": {
+    "status": "verified",
+    "text": "Неверный формат времени. Примеры: 1h, 2d, 1m. Максимум — 30 дней."
+  },
+  "poll_ends": {
+    "status": "verified",
+    "text": "Голосование завершится: {ends}"
+  },
+  "poll_not_in_bridge": {
+    "status": "verified",
+    "text": "Этот чат не связан ни с одним из мостов."
+  },
+  "poll_not_verified": {
+    "status": "verified",
+    "text": "Голосовать могут только верифицированные пользователи: сначала используйте команду /verify."
+  },
+  "poll_results_header": {
+    "status": "verified",
+    "text": "📊 Результаты голосования: {question}"
+  },
+  "poll_too_few": {
+    "status": "verified",
+    "text": "Нужно минимум 2 варианта ответа."
+  },
+  "poll_total_votes": {
+    "status": "verified",
+    "text": "Всего голосов: {total}"
+  },
+  "poll_usage_discord": {
+    "status": "verified",
+    "text": "Использование: /poll <текст> <время: 1h, 2d; макс 30д> <вариант 1> <вариант 2> [вариант 3] [вариант 4] [вариант 5]"
+  },
+  "poll_usage_telegram": {
+    "status": "verified",
+    "text": "Использование: /poll <текст> | <время: 1h, 2d, 1m; макс 30д> | <вариант 1> | <вариант 2> | … (до 10 вариантов)"
+  },
+  "poll_vote_recorded": {
+    "status": "verified",
+    "text": "Ваш голос учтён."
+  },
+  "reply_unknown": {
+    "status": "verified",
+    "text": "(ответ на неизвестное сообщение)"
+  },
+  "service_event.bot_started": {
+    "status": "verified",
+    "text": "🤖 Бот запущен."
+  },
+  "service_event.bot_stopped": {
+    "status": "verified",
+    "text": "🛑 Бот остановлен."
+  },
+  "service_event.daily_auto_removed_bridge": {
+    "status": "verified",
+    "text": "Мост {bridge_id} удалён из базы данных: в нём не осталось чатов."
+  },
+  "service_event.daily_auto_removed_chat": {
+    "status": "verified",
+    "text": "Автоудаление из моста: чат {chat_key} ({platform}) был недоступен более 24 часов."
+  },
+  "service_event.daily_loop_error": {
+    "status": "verified",
+    "text": "Ошибка цикла daily_check_loop: {error}"
+  },
+  "service_event.daily_missing_dc_channel": {
+    "status": "verified",
+    "text": "Не вижу Discord-чат {chat_key}."
+  },
+  "service_event.daily_missing_tg_chat": {
+    "status": "verified",
+    "text": "Не вижу Telegram-чат {chat_key}."
+  },
+  "service_event.daily_no_dc_manage_perm": {
+    "status": "verified",
+    "text": "Недостаточно прав manage_messages в Discord-чате {chat_key}."
+  },
+  "service_event.daily_no_tg_delete_perm": {
+    "status": "verified",
+    "text": "Недостаточно прав на удаление сообщений в Telegram-чате {chat_key}."
+  },
+  "service_event.daily_tg_perm_check_error": {
+    "status": "verified",
+    "text": "Ошибка проверки прав в Telegram-чате {chat_key}: {error}"
+  },
+  "setadmin_bridge_dm": {
+    "status": "verified",
+    "text": "Вы назначены администратором моста №{bridge_id}."
+  },
+  "setadmin_bridge_done": {
+    "status": "verified",
+    "text": "Пользователь {user_id} назначен администратором моста."
+  },
+  "status_members_forms": {
+    "status": "verified",
+    "text": [
+      "участника",
+      "участника",
+      "участников"
+    ]
+  },
+  "status_servers_forms": {
+    "status": "verified",
+    "text": [
+      "сообщества",
+      "сообществ",
+      "сообществ"
+    ]
+  },
+  "status_template": {
+    "status": "verified",
+    "text": "Объединяет {members} {members_word} из {servers} {servers_word}"
+  },
+  "sticker": {
+    "status": "verified",
+    "text": "[Стикер]"
+  },
+  "ts_ago": {
+    "status": "verified",
+    "text": "{value} {unit} назад"
+  },
+  "ts_in": {
+    "status": "verified",
+    "text": "через {value} {unit}"
+  },
+  "ts_unit_days": {
+    "status": "verified",
+    "text": [
+      "день",
+      "дня",
+      "дней"
+    ]
+  },
+  "ts_unit_hours": {
+    "status": "verified",
+    "text": [
+      "час",
+      "часа",
+      "часов"
+    ]
+  },
+  "ts_unit_minutes": {
+    "status": "verified",
+    "text": [
+      "минуту",
+      "минуты",
+      "минут"
+    ]
+  },
+  "ts_unit_months": {
+    "status": "verified",
+    "text": [
+      "месяц",
+      "месяца",
+      "месяцев"
+    ]
+  },
+  "ts_unit_seconds": {
+    "status": "verified",
+    "text": [
+      "секунду",
+      "секунды",
+      "секунд"
+    ]
+  },
+  "ts_unit_years": {
+    "status": "verified",
+    "text": [
+      "год",
+      "года",
+      "лет"
+    ]
+  },
+  "video_message": {
+    "status": "verified",
+    "text": "[Видеосообщение]"
+  },
+  "voice_message": {
+    "status": "verified",
+    "text": "[Голосовое сообщение]"
+  },
+  "webhooks_disabled": {
+    "status": "verified",
+    "text": "Пересылаемые сообщения в этом канале снова будут приходить обычными сообщениями бота."
+  },
+  "webhooks_enabled": {
+    "status": "verified",
+    "text": "Пересылаемые сообщения в этом канале теперь будут приходить как сообщения вебхуков — с аватаром и именем отправителя."
+  },
+  "webhooks_thread_error": {
+    "status": "verified",
+    "text": "Вебхуки не работают в ветках и темах форумов. Используйте команду в обычном текстовом канале."
+  },
+  "webhooks_usage": {
+    "status": "verified",
+    "text": "Использование: /webhooks enable | /webhooks disable"
+  },
+  "weekday_names": {
+    "status": "verified",
+    "text": [
+      "понедельник",
+      "вторник",
+      "среда",
+      "четверг",
+      "пятница",
+      "суббота",
+      "воскресенье"
+    ]
+  },
+  "whois.dc_template": {
+    "status": "verified",
+    "text": "Никнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nСтатус: {status}\nРежим: {mode}\nДата регистрации Discord: {registered}\nАватар: {avatar}\nБаннер: {banner}"
+  },
+  "whois.discord_left_guild": {
+    "status": "verified",
+    "text": "Неизвестно (пользователь покинул сервер)"
+  },
+  "whois.discord_no_bio": {
+    "status": "verified",
+    "text": "Биография отсутствует"
+  },
+  "whois.fetch_error": {
+    "status": "verified",
+    "text": "Не удалось получить данные пользователя: {error}"
+  },
+  "whois.field_bio": {
+    "status": "verified",
+    "text": "Био"
+  },
+  "whois.field_id": {
+    "status": "verified",
+    "text": "ID"
+  },
+  "whois.field_joined_server": {
+    "status": "verified",
+    "text": "В числе участников сервера с"
+  },
+  "whois.field_mode": {
+    "status": "verified",
+    "text": "Режим"
+  },
+  "whois.field_nickname": {
+    "status": "verified",
+    "text": "Никнейм"
+  },
+  "whois.field_registered": {
+    "status": "verified",
+    "text": "Дата регистрации Discord"
+  },
+  "whois.field_status": {
+    "status": "verified",
+    "text": "Статус"
+  },
+  "whois.field_username": {
+    "status": "verified",
+    "text": "Юзернейм"
+  },
+  "whois.mode_dnd": {
+    "status": "verified",
+    "text": "Не беспокоить"
+  },
+  "whois.mode_idle": {
+    "status": "verified",
+    "text": "Неактивен"
+  },
+  "whois.mode_offline": {
+    "status": "verified",
+    "text": "Офлайн"
+  },
+  "whois.mode_online": {
+    "status": "verified",
+    "text": "В сети"
+  },
+  "whois.not_verified": {
+    "status": "verified",
+    "text": "Эта команда доступна только верифицированным пользователям. Отправьте /verify, чтобы подтвердить согласие на пересылку."
+  },
+  "whois.origin_missing": {
+    "status": "verified",
+    "text": "Исходная запись отсутствует в базе данных."
+  },
+  "whois.origin_not_found": {
+    "status": "verified",
+    "text": "Не удалось определить источник сообщения."
+  },
+  "whois.origin_not_telegram": {
+    "status": "verified",
+    "text": "Источник не Telegram; используйте /whois в соответствующей платформе."
+  },
+  "whois.tg_template": {
+    "status": "verified",
+    "text": "Никнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nБио: {bio}"
+  },
+  "whois.title": {
+    "status": "verified",
+    "text": "Информация о пользователе"
+  },
+  "whois.use_context_menu": {
+    "status": "verified",
+    "text": "Slash-команда не может определить сообщение. Используйте контекстное меню: ПКМ на relay-сообщении → Apps → whois."
+  },
+  "whois.use_reply": {
+    "status": "verified",
+    "text": "Используйте эту команду ответом на relay-сообщение бота."
+  }
+}
