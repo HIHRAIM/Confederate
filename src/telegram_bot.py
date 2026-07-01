@@ -194,7 +194,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
     except Exception:
         return
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
@@ -223,6 +223,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             from discord_bot import deliver_discord_relay
             return await deliver_discord_relay(
                 chat, header=header, body_discord=body_discord, reply_line=reply_line,
+                reply_link_line=reply_link_line,
                 reply_to_platform_message_id=reply_to_platform_message_id,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
@@ -612,7 +613,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             if body_telegram_html:
@@ -644,6 +645,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             from discord_bot import deliver_discord_relay
             return await deliver_discord_relay(
                 chat, header=header, body_discord=body_discord, reply_line=reply_line,
+                reply_link_line=reply_link_line,
                 reply_to_platform_message_id=reply_to_platform_message_id,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
@@ -1405,7 +1407,7 @@ async def edited_message_handler(message: Message):
                         ch = await dc_bot.fetch_channel(channel_id)
                     except Exception:
                         continue
-                await edit_discord_relay_copy(ch, c["message_id_platform"], header, discord_text)
+                await edit_discord_relay_copy(ch, c["message_id_platform"], header, discord_text, message_db_id=row["id"], chat=c)
         except Exception:
             pass
 

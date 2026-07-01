@@ -392,6 +392,14 @@
     "status": "verified",
     "text": "(відповідь на невідоме повідомлення)"
   },
+  "reply_webhook": {
+    "status": "unverified",
+    "text": "(у відповідь на [повідомлення {name}]({url}))"
+  },
+  "reply_webhook_someone": {
+    "status": "unverified",
+    "text": "користувача"
+  },
   "service_event.bot_started": {
     "status": "verified",
     "text": "🤖 Бота запущено."

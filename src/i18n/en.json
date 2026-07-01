@@ -391,6 +391,14 @@
     "status": "unverified",
     "text": "(reply to an unknown message)"
   },
+  "reply_webhook": {
+    "status": "unverified",
+    "text": "(replying to [{name}'s message]({url}))"
+  },
+  "reply_webhook_someone": {
+    "status": "unverified",
+    "text": "someone"
+  },
   "service_event.bot_started": {
     "status": "unverified",
     "text": "🤖 Bot started."

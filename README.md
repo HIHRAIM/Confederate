@@ -137,6 +137,8 @@ All bot-facing strings live in per-language JSON files under `src/i18n/` (`ru`, 
 
 `/webhooks enable` makes incoming relayed messages in that Discord channel appear as **webhook** messages — the webhook's name is `{sender} [{platform} | {server}]` (matching the `[{platform} | {server}] {sender}` header of normal relayed messages) and its avatar is the sender's avatar. One webhook per channel is created and reused, with per-message name/avatar overrides, and edits to an original message are propagated to its webhook copy. Webhooks don't exist in threads/forum posts, so the command refuses there, and the bot needs the **Manage Webhooks** permission (otherwise it silently falls back to normal relay messages).
 
+Webhook messages can't carry a native Discord reply reference, so when the relayed message is a reply, the bot prepends a localized first line — e.g. `(replying to [{sender}'s message](link))` — whose bracketed text links to the replied-to message in the same channel. If the replied-to message can't be resolved, the usual "reply to an unknown message" line is shown instead.
+
 Telegram avatars can't be a webhook avatar directly (the Telegram file URL embeds the bot token and isn't reliably fetched by Discord), so the bot downloads the Telegram photo and re-hosts it on Discord's CDN by uploading it to the first `SERVICE_CHATS["discord"]` channel (cached per user; the previous upload is replaced on refresh). If no service channel is configured/reachable, Telegram senders fall back to the default webhook avatar.
 
 ## Polls

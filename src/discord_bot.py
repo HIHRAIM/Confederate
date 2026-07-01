@@ -145,7 +145,7 @@ def _webhook_username(sender_name, place_name):
 async def deliver_discord_relay(
     chat, *, header, body_discord, reply_line, reply_to_platform_message_id,
     sender_name=None, place_name=None, messenger_name=None, avatar_url=None,
-    is_bot_sender=False,
+    is_bot_sender=False, reply_link_line=None,
 ):
     """Deliver a relayed message into a Discord channel.
 
@@ -170,7 +170,8 @@ async def deliver_discord_relay(
         webhook = await _get_relay_webhook(channel)
         if webhook is not None:
             username = _webhook_username(sender_name, place_name)
-            content = clip_text(body, DISCORD_MSG_LIMIT) or "​"
+            webhook_body = f"{reply_link_line}\n{body}" if reply_link_line else body
+            content = clip_text(webhook_body, DISCORD_MSG_LIMIT) or "​"
             for _ in range(2):
                 try:
                     sent = await webhook.send(
@@ -205,9 +206,13 @@ async def deliver_discord_relay(
     except Exception:
         return None
 
-async def edit_discord_relay_copy(ch, message_id_platform, header, body):
+async def edit_discord_relay_copy(ch, message_id_platform, header, body, message_db_id=None, chat=None):
     """Edit a relayed Discord copy, handling both normal bot messages and the
-    per-sender webhook messages produced when /webhooks is enabled."""
+    per-sender webhook messages produced when /webhooks is enabled.
+
+    A webhook message can't carry native reply/forward references, so those are
+    stored inline as prefix lines in its content; ``message_db_id``/``chat`` let
+    the edit rebuild them instead of dropping them."""
     try:
         m = await ch.fetch_message(int(message_id_platform))
     except Exception:
@@ -215,10 +220,15 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body):
     if getattr(m, "webhook_id", None):
         webhook = await _get_relay_webhook(ch)
         if webhook is not None and webhook.id == m.webhook_id:
+            content_body = body
+            if message_db_id is not None and chat is not None:
+                content_body = message_relay.build_discord_webhook_relay_body(
+                    message_db_id, chat, get_chat_lang(chat["chat_id"]), body
+                )
             try:
                 await webhook.edit_message(
                     m.id,
-                    content=clip_text(body, DISCORD_MSG_LIMIT) or "​",
+                    content=clip_text(content_body, DISCORD_MSG_LIMIT) or "​",
                     allowed_mentions=RELAY_ALLOWED_MENTIONS,
                 )
             except Exception:
@@ -474,10 +484,11 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
     if forward_type and not any((t or "").strip() for t in texts):
         texts = [forward_text or ""]
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "discord":
             return await deliver_discord_relay(
                 chat, header=header, body_discord=body_discord, reply_line=reply_line,
+                reply_link_line=reply_link_line,
                 reply_to_platform_message_id=reply_to_platform_message_id,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
@@ -1229,7 +1240,7 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                         ch = await bot.fetch_channel(channel_id)
                     except Exception:
                         continue
-                await edit_discord_relay_copy(ch, c["message_id_platform"], header, text)
+                await edit_discord_relay_copy(ch, c["message_id_platform"], header, text, message_db_id=row["id"], chat=c)
             elif c["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
                 chat_id, _ = c["chat_id"].split(":")

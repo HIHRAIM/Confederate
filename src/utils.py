@@ -368,6 +368,25 @@ def localized_video_message(lang):
 def localized_reply_unknown(lang):
     return _LOCALE["reply_unknown"].get(lang, _LOCALE["reply_unknown"][DEFAULT_LANG])
 
+def _reply_link_label_name(name):
+    """Sanitize a sender name for use inside a Discord markdown link label:
+    strip brackets/newlines that would break the [label](url) syntax."""
+    return re.sub(r"[\[\]\r\n]+", " ", str(name or "")).strip()
+
+def localized_reply_webhook(name, url, lang):
+    """First line prepended to a webhook relay copy that is a reply, e.g.
+    ``(replying to [Alice's message](link))`` — the bracketed part is a Discord
+    markdown link to the replied-to message in the same channel."""
+    safe_name = _reply_link_label_name(name)
+    if not safe_name:
+        fallback = _LOCALE["reply_webhook_someone"]
+        safe_name = fallback.get(lang, fallback[DEFAULT_LANG])
+    template = _LOCALE["reply_webhook"].get(lang, _LOCALE["reply_webhook"][DEFAULT_LANG])
+    try:
+        return template.format(name=safe_name, url=url)
+    except Exception:
+        return template
+
 def localized_discord_system_event(name, event_key, lang):
     action_table = _LOCALE.get("discord_system_event_action", {}).get(event_key, {})
     action = action_table.get(lang, action_table.get(DEFAULT_LANG, event_key))

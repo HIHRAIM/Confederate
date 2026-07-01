@@ -204,6 +204,18 @@ def init():
     if "origin_sender_id" not in cols:
         cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_id TEXT")
         conn.commit()
+    if "origin_sender_name" not in cols:
+        cur.execute("ALTER TABLE messages ADD COLUMN origin_sender_name TEXT")
+        conn.commit()
+    if "reply_to_message_id" not in cols:
+        cur.execute("ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER")
+        conn.commit()
+    if "forward_type" not in cols:
+        cur.execute("ALTER TABLE messages ADD COLUMN forward_type TEXT")
+        conn.commit()
+    if "forward_name" not in cols:
+        cur.execute("ALTER TABLE messages ADD COLUMN forward_name TEXT")
+        conn.commit()
 
     pending_cols = [r["name"] for r in cur.execute("PRAGMA table_info(pending_consents)").fetchall()]
     if "first_message_id" not in pending_cols:

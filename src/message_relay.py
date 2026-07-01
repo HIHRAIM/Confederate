@@ -256,6 +256,7 @@ def clean_display_name(value, max_len=64):
 from utils import (
     get_chat_lang,
     localized_reply_unknown,
+    localized_reply_webhook,
     localized_file_count_text,
     localized_forward_from_chat,
     localized_forward_from_user,
@@ -264,6 +265,99 @@ from utils import (
     localized_voice_message,
     localized_video_message,
 )
+
+def _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id):
+    """Resolve how a reply should be shown in one target chat.
+
+    Returns ``(reply_line, reply_to_platform_message_id)``:
+      * ``reply_to_platform_message_id`` set → the replied-to message has a copy
+        in this chat, usable for a native reply reference or a link;
+      * ``reply_line`` set (localized "unknown message") → no usable copy here.
+    They are mutually exclusive; both are ``None`` when it isn't a reply.
+    """
+    reply_line = None
+    reply_to_platform_message_id = None
+    if reply_to_msg_db_id:
+        if reply_to_msg_db_id < 0:
+            reply_line = localized_reply_unknown(lang)
+        else:
+            copy_row = db.cur.execute(
+                "SELECT message_id_platform FROM message_copies WHERE message_id=? AND platform=? AND chat_id=?",
+                (reply_to_msg_db_id, chat["platform"], chat["chat_id"])
+            ).fetchone()
+            if copy_row:
+                reply_to_platform_message_id = copy_row["message_id_platform"]
+            else:
+                origin_row = db.cur.execute(
+                    "SELECT origin_platform, origin_chat_id, origin_message_id FROM messages WHERE id=?",
+                    (reply_to_msg_db_id,)
+                ).fetchone()
+                if (origin_row
+                        and origin_row["origin_platform"] == chat["platform"]
+                        and origin_row["origin_chat_id"] == chat["chat_id"]):
+                    reply_to_platform_message_id = origin_row["origin_message_id"]
+                else:
+                    reply_line = localized_reply_unknown(lang)
+    return reply_line, reply_to_platform_message_id
+
+
+def _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_message_id):
+    """Markdown-link "replying to …" first line for a Discord webhook copy (a
+    webhook message can't carry a native reply reference). ``None`` if no link
+    can be formed."""
+    if not reply_to_platform_message_id:
+        return None
+    replied_name = None
+    if reply_to_msg_db_id and reply_to_msg_db_id > 0:
+        nrow = db.cur.execute(
+            "SELECT origin_sender_name FROM messages WHERE id=?",
+            (reply_to_msg_db_id,)
+        ).fetchone()
+        if nrow:
+            replied_name = nrow["origin_sender_name"]
+    try:
+        guild_id, channel_id = chat["chat_id"].split(":")
+    except Exception:
+        return None
+    link = f"https://discord.com/channels/{guild_id}/{channel_id}/{reply_to_platform_message_id}"
+    return localized_reply_webhook(replied_name, link, lang)
+
+
+def _forward_line(forward_type, forward_name, lang):
+    """Localized "forwarded from …" line, or ``None`` when it isn't a forward."""
+    if forward_type == "chat":
+        return localized_forward_from_chat(forward_name or "unknown", lang)
+    if forward_type == "user":
+        return localized_forward_from_user(forward_name or "unknown", lang)
+    if forward_type == "unknown":
+        return localized_forward_unknown(lang)
+    return None
+
+
+def build_discord_webhook_relay_body(message_db_id, chat, lang, body_discord):
+    """Reconstruct a webhook copy's full content (reply + forward prefix lines,
+    then body) so that editing the original keeps the prefixes the initial relay
+    added — a webhook message stores them inline in its content rather than as a
+    native reply reference."""
+    row = db.cur.execute(
+        "SELECT reply_to_message_id, forward_type, forward_name FROM messages WHERE id=?",
+        (message_db_id,)
+    ).fetchone()
+    reply_to_msg_db_id = row["reply_to_message_id"] if row else None
+    forward_type = row["forward_type"] if row else None
+    forward_name = row["forward_name"] if row else None
+
+    body = body_discord
+    fwd_line = _forward_line(forward_type, forward_name, lang)
+    if fwd_line:
+        body = f"{fwd_line}\n{body}".strip()
+
+    reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id)
+    prefix = _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_message_id) or reply_line
+    if prefix:
+        body = f"{prefix}\n{body}"
+    return body
+
 
 async def relay_message(
     *,
@@ -302,10 +396,15 @@ async def relay_message(
     inserted = db.cur.execute(
         """
         INSERT INTO messages
-        (bridge_id, origin_platform, origin_chat_id, origin_message_id, origin_sender_id, created_at)
-        VALUES (?,?,?,?,?,?)
+        (bridge_id, origin_platform, origin_chat_id, origin_message_id, origin_sender_id, origin_sender_name,
+         reply_to_message_id, forward_type, forward_name, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
         """,
-        (bridge_id, origin_platform, origin_chat_id, origin_message_id, str(origin_sender_id), int(time.time()))
+        (bridge_id, origin_platform, origin_chat_id, origin_message_id, str(origin_sender_id), sender_name,
+         reply_to_msg_db_id,
+         None if is_bot_sender else forward_type,
+         None if is_bot_sender else forward_name,
+         int(time.time()))
     )
     msg_id = inserted.lastrowid
     db.conn.commit()
@@ -326,29 +425,15 @@ async def relay_message(
         else:
             header = f"[{messenger_name} | {place_name}] {sender_name}:"
 
-        reply_line = None
-        reply_to_platform_message_id = None
-        if reply_to_msg_db_id:
-            if reply_to_msg_db_id < 0:
-                reply_line = localized_reply_unknown(lang)
-            else:
-                copy_row = db.cur.execute(
-                    "SELECT message_id_platform FROM message_copies WHERE message_id=? AND platform=? AND chat_id=?",
-                    (reply_to_msg_db_id, chat["platform"], chat["chat_id"])
-                ).fetchone()
-                if copy_row:
-                    reply_to_platform_message_id = copy_row["message_id_platform"]
-                else:
-                    origin_row = db.cur.execute(
-                        "SELECT origin_platform, origin_chat_id, origin_message_id FROM messages WHERE id=?",
-                        (reply_to_msg_db_id,)
-                    ).fetchone()
-                    if (origin_row
-                            and origin_row["origin_platform"] == chat["platform"]
-                            and origin_row["origin_chat_id"] == chat["chat_id"]):
-                        reply_to_platform_message_id = origin_row["origin_message_id"]
-                    else:
-                        reply_line = localized_reply_unknown(lang)
+        reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id)
+
+        reply_link_line = None
+        if (chat["platform"] == "discord"
+                and reply_to_platform_message_id
+                and db.get_webhooks_enabled(chat["chat_id"])):
+            reply_link_line = _webhook_reply_link_line(
+                chat, lang, reply_to_msg_db_id, reply_to_platform_message_id
+            )
 
         current_text = text
         current_discord_text = discord_text or current_text
@@ -357,20 +442,8 @@ async def relay_message(
         eff_forward_type = None if is_bot_sender else forward_type
         eff_forward_name = None if is_bot_sender else forward_name
 
-        if eff_forward_type == "chat":
-            fwd_line = localized_forward_from_chat(eff_forward_name or "unknown", lang)
-            current_text = f"{fwd_line}\n{current_text}".strip()
-            current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
-            if current_telegram_html is not None:
-                current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
-        elif eff_forward_type == "user":
-            fwd_line = localized_forward_from_user(eff_forward_name or "unknown", lang)
-            current_text = f"{fwd_line}\n{current_text}".strip()
-            current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
-            if current_telegram_html is not None:
-                current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
-        elif eff_forward_type == "unknown":
-            fwd_line = localized_forward_unknown(lang)
+        fwd_line = _forward_line(eff_forward_type, eff_forward_name, lang)
+        if fwd_line:
             current_text = f"{fwd_line}\n{current_text}".strip()
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
             if current_telegram_html is not None:
@@ -419,6 +492,7 @@ async def relay_message(
             body_discord=current_discord_text,
             body_telegram_html=current_telegram_html,
             reply_line=reply_line,
+            reply_link_line=reply_link_line,
             reply_to_platform_message_id=reply_to_platform_message_id,
             sender_name=sender_name,
             place_name=place_name,
