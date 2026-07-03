@@ -1,7 +1,43 @@
 {
+  "allow_bots_disabled": {
+    "status": "unverified",
+    "text": "Сообщения ботов и вебхуков больше не будут пересылаться из этого чата."
+  },
+  "allow_bots_enabled": {
+    "status": "unverified",
+    "text": "Сообщения ботов и вебхуков теперь будут пересылаться из этого чата."
+  },
+  "allow_bots_usage": {
+    "status": "unverified",
+    "text": "Использование: /allow-bots enable | /allow-bots disable"
+  },
+  "allow_bots_usage_tg": {
+    "status": "unverified",
+    "text": "Использование: /allow_bots enable | /allow_bots disable"
+  },
+  "atb_already_attached": {
+    "status": "unverified",
+    "text": "Этот чат уже подключён к мосту."
+  },
+  "atb_attached": {
+    "status": "unverified",
+    "text": "Чат подключён к мосту {bridge_id}."
+  },
+  "atb_invalid_id": {
+    "status": "unverified",
+    "text": "Неверный ID моста."
+  },
+  "atb_usage": {
+    "status": "unverified",
+    "text": "Использование: /atb <id_моста>"
+  },
   "backup_failed": {
     "status": "verified",
     "text": "Не удалось создать резервную копию: {error}"
+  },
+  "backup_private_only": {
+    "status": "unverified",
+    "text": "Используйте эту команду в личном чате с ботом."
   },
   "bot_joined": {
     "status": "verified",
@@ -55,6 +91,10 @@
     "status": "verified",
     "text": "Чат {channel} из {server} исключён из моста."
   },
+  "chat_not_in_bridge": {
+    "status": "unverified",
+    "text": "Этот чат не подключён ни к одному мосту."
+  },
   "consent_body": {
     "status": "verified",
     "text": "Этот чат соединён с другими. Твои сообщения будут автоматически пересылаться в связанные чаты. Если ты изменишь или удалишь своё сообщение в течение 30 дней с его отправки, оно автоматически обновится или исчезнет и в других чатах. Нажми «Принимаю», чтобы согласиться с пересылкой и продолжить общение. Подробнее — в описании чата или закреплённом сообщении."
@@ -67,6 +107,26 @@
     "status": "verified",
     "text": "Внимание: мост сообщений"
   },
+  "could_not_resolve_user": {
+    "status": "unverified",
+    "text": "Не удалось определить пользователя."
+  },
+  "deadchat_disabled": {
+    "status": "unverified",
+    "text": "Deadchat отключён для этого канала."
+  },
+  "deadchat_invalid_hours": {
+    "status": "unverified",
+    "text": "Укажите длительность в часах (больше 0)."
+  },
+  "deadchat_invalid_role": {
+    "status": "unverified",
+    "text": "role_id должен быть числовым ID роли или 'disable'."
+  },
+  "deadchat_set": {
+    "status": "unverified",
+    "text": "Deadchat настроен: роль <@&{role_id}>, {hours} ч."
+  },
   "deadtopic.disabled": {
     "status": "verified",
     "text": "Автосохранение темы отключено."
@@ -78,6 +138,10 @@
   "deadtopic.phantom_message": {
     "status": "verified",
     "text": "Фантомное сообщение для сохранения темы."
+  },
+  "deadtopic.usage": {
+    "status": "unverified",
+    "text": "Использование: /deadtopic enable | /deadtopic disable"
   },
   "discord_system_event": {
     "status": "verified",
@@ -110,6 +174,30 @@
       "файла",
       "файлов"
     ]
+  },
+  "force_leave_failed": {
+    "status": "unverified",
+    "text": "Не удалось выйти: {error}"
+  },
+  "force_leave_invalid_id": {
+    "status": "unverified",
+    "text": "Неверный ID."
+  },
+  "force_leave_not_member": {
+    "status": "unverified",
+    "text": "Бот не находится на этом сервере."
+  },
+  "force_leave_success_discord": {
+    "status": "unverified",
+    "text": "Бот покинул сервер {guild_id}, данные сервера удалены из базы."
+  },
+  "force_leave_success_telegram": {
+    "status": "unverified",
+    "text": "Бот покинул Telegram-чат {chat_id} (или данные удалены из базы)."
+  },
+  "force_leave_unsupported_platform": {
+    "status": "unverified",
+    "text": "Неподдерживаемая платформа. Используйте 'discord' или 'telegram'."
   },
   "forward_from_chat": {
     "status": "verified",
@@ -219,6 +307,10 @@
     "status": "verified",
     "text": "/verify — подтвердить согласие на пересылку сообщений"
   },
+  "help.cmd_verify_list": {
+    "status": "unverified",
+    "text": "/verify-list enable|disable — публиковать ID (раз)верифицированных пользователей в каналы синхронизации для Confederate Guard (админы бота)"
+  },
   "help.cmd_webhooks": {
     "status": "verified",
     "text": "/webhooks enable|disable — показывать пересланные сообщения как вебхуки (аватар и имя отправителя)"
@@ -243,6 +335,34 @@
     "status": "verified",
     "text": "Команды бота"
   },
+  "lang_save_error": {
+    "status": "unverified",
+    "text": "Не удалось сохранить язык."
+  },
+  "lang_set": {
+    "status": "unverified",
+    "text": "Язык бота для этого чата: {code}"
+  },
+  "lang_usage": {
+    "status": "unverified",
+    "text": "Использование: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "list_chats_discord_header": {
+    "status": "unverified",
+    "text": "**Discord-серверы:**"
+  },
+  "list_chats_no_telegram": {
+    "status": "unverified",
+    "text": "Нет Telegram-чатов в базе."
+  },
+  "list_chats_telegram_header": {
+    "status": "unverified",
+    "text": "**Telegram-группы:**"
+  },
+  "list_chats_too_long": {
+    "status": "unverified",
+    "text": "Список большой — загружаю файл."
+  },
   "loc_compare_header": {
     "status": "verified",
     "text": "Сравнение реплики `{key}` по языкам:"
@@ -254,6 +374,10 @@
   "loc_compare_untranslated": {
     "status": "verified",
     "text": "(не переведено)"
+  },
+  "loc_compare_usage": {
+    "status": "unverified",
+    "text": "Использование: /loc_compare <код реплики>"
   },
   "loc_cooldown": {
     "status": "verified",
@@ -295,6 +419,10 @@
     "status": "verified",
     "text": "Ответ администратора {admin} (код {code}):"
   },
+  "loc_reply_usage": {
+    "status": "unverified",
+    "text": "Использование: /loc_reply <код> <текст>"
+  },
   "loc_suggest_confirm": {
     "status": "verified",
     "text": "Спасибо! Ваше предложение отправлено команде. Код вашего сообщения: {code}"
@@ -331,6 +459,26 @@
       "ноября",
       "декабря"
     ]
+  },
+  "newschat_added": {
+    "status": "unverified",
+    "text": "Эмодзи `{emoji}` добавлен для этого канала."
+  },
+  "newschat_bad_emoji": {
+    "status": "unverified",
+    "text": "Этот эмодзи нельзя использовать как реакцию. Попробуйте скопировать эмодзи или использовать формат `<:name:id>`."
+  },
+  "newschat_disabled": {
+    "status": "unverified",
+    "text": "Newschat отключён для этого канала."
+  },
+  "newschat_specify_emoji": {
+    "status": "unverified",
+    "text": "Укажите эмодзи. Примеры:\n• Юникод: 😀\n• Кастомный: `<:Name:1234567890>`\n• Анимированный: `<a:Name:1234567890>`"
+  },
+  "newschat_usage": {
+    "status": "unverified",
+    "text": "Использование: /newschat add <эмодзи> | /newschat disable"
   },
   "no_permission": {
     "status": "verified",
@@ -388,6 +536,46 @@
     "status": "verified",
     "text": "Ваш голос учтён."
   },
+  "remadmin_done": {
+    "status": "unverified",
+    "text": "Пользователь {user_id} больше не администратор."
+  },
+  "remadmin_usage": {
+    "status": "unverified",
+    "text": "Использование: /remadmin <id_или_имя_пользователя>"
+  },
+  "remindrules_disabled": {
+    "status": "unverified",
+    "text": "Напоминание правил отключено для этого моста."
+  },
+  "remindrules_fetch_failed": {
+    "status": "unverified",
+    "text": "Не удалось получить сообщение по message_id."
+  },
+  "remindrules_invalid_duration": {
+    "status": "unverified",
+    "text": "Первый параметр — длительность, например 2h (2 часа) или 30m (30 минут)."
+  },
+  "remindrules_no_content": {
+    "status": "unverified",
+    "text": "Укажите текст правил в `text` или передайте `message_id` сообщения из этого канала."
+  },
+  "remindrules_reply_required": {
+    "status": "unverified",
+    "text": "Команда должна быть ответом на сообщение с правилами."
+  },
+  "remindrules_saved": {
+    "status": "unverified",
+    "text": "Правила сохранены — будут публиковаться во всех чатах моста каждые {interval}."
+  },
+  "remindrules_usage_discord": {
+    "status": "unverified",
+    "text": "Использование: /remindrules <5h|30m|disable> [сообщений] [message_id] [текст]. Примеры: 2h — каждые 2 часа, 30m — каждые 30 минут."
+  },
+  "remindrules_usage_telegram": {
+    "status": "unverified",
+    "text": "Использование: /remindrules <5h|30m> [сообщений] — ответом на сообщение с правилами."
+  },
   "reply_unknown": {
     "status": "verified",
     "text": "(ответ на неизвестное сообщение)"
@@ -399,6 +587,14 @@
   "reply_webhook_someone": {
     "status": "verified",
     "text": "пользователя"
+  },
+  "rfb_by_id_unsupported": {
+    "status": "unverified",
+    "text": "Удаление по ID в Telegram не поддерживается. Запустите /rfb в том чате/теме, который нужно удалить."
+  },
+  "rfb_removed": {
+    "status": "unverified",
+    "text": "Чат отключён от моста."
   },
   "service_event.bot_started": {
     "status": "verified",
@@ -448,6 +644,18 @@
     "status": "verified",
     "text": "Пользователь {user_id} назначен администратором моста."
   },
+  "setadmin_usage": {
+    "status": "unverified",
+    "text": "Использование: /setadmin <id_или_имя_пользователя>"
+  },
+  "shadowban_done": {
+    "status": "unverified",
+    "text": "Пользователь {user_id} скрыт (shadow-ban) — его сообщения не будут пересылаться."
+  },
+  "shadowban_usage": {
+    "status": "unverified",
+    "text": "Использование: /shadow-ban <id_или_имя_пользователя>"
+  },
   "status_members_forms": {
     "status": "verified",
     "text": [
@@ -471,6 +679,10 @@
   "sticker": {
     "status": "verified",
     "text": "[Стикер]"
+  },
+  "too_many_requests": {
+    "status": "unverified",
+    "text": "Слишком много запросов — попробуйте позже."
   },
   "ts_ago": {
     "status": "verified",
@@ -527,6 +739,46 @@
       "года",
       "лет"
     ]
+  },
+  "unverify_done": {
+    "status": "unverified",
+    "text": "Верификация пользователя {user_id} отозвана."
+  },
+  "verify_already": {
+    "status": "unverified",
+    "text": "Вы уже верифицированы."
+  },
+  "verify_button_not_yours": {
+    "status": "unverified",
+    "text": "Эта кнопка не для вас."
+  },
+  "verify_invalid_data": {
+    "status": "unverified",
+    "text": "Неверные данные."
+  },
+  "verify_list_disabled": {
+    "status": "unverified",
+    "text": "Публикация ID верифицированных/разверифицированных пользователей в каналы синхронизации выключена."
+  },
+  "verify_list_enabled": {
+    "status": "unverified",
+    "text": "Публикация ID верифицированных/разверифицированных пользователей в каналы синхронизации включена."
+  },
+  "verify_list_usage": {
+    "status": "unverified",
+    "text": "Использование: /verify-list enable | /verify-list disable"
+  },
+  "verify_message_sent": {
+    "status": "unverified",
+    "text": "Сообщение для верификации отправлено — проверьте канал."
+  },
+  "verify_send_failed": {
+    "status": "unverified",
+    "text": "Не удалось отправить сообщение для верификации. Возможно, у бота нет прав."
+  },
+  "verify_thanks": {
+    "status": "unverified",
+    "text": "Спасибо — вы подтверждены."
   },
   "video_message": {
     "status": "verified",

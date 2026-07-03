@@ -197,6 +197,11 @@ def init():
         option_index INTEGER,
         PRIMARY KEY (poll_id, platform, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
     """)
     conn.commit()
 
@@ -232,6 +237,21 @@ def init():
     if "webhooks" not in cs_cols:
         cur.execute("ALTER TABLE chat_settings ADD COLUMN webhooks INTEGER DEFAULT 0")
         conn.commit()
+
+def set_verify_list_enabled(enabled):
+    cur.execute(
+        "INSERT OR REPLACE INTO bot_settings (key, value) VALUES ('verify_list_enabled', ?)",
+        ("1" if enabled else "0",)
+    )
+    conn.commit()
+
+def is_verify_list_enabled():
+    """Whether (un)verified user IDs are published to the VERIFIED/UNVERIFIED
+    channels for guard_bot to mirror. Enabled by default."""
+    row = cur.execute(
+        "SELECT value FROM bot_settings WHERE key='verify_list_enabled'"
+    ).fetchone()
+    return row is None or row["value"] == "1"
 
 def chat_exists(chat_id):
     return cur.execute(

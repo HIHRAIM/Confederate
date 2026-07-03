@@ -1,7 +1,43 @@
 {
+  "allow_bots_disabled": {
+    "status": "unverified",
+    "text": "Wiadomości botów i webhooków nie będą już przekazywane z tego czatu."
+  },
+  "allow_bots_enabled": {
+    "status": "unverified",
+    "text": "Wiadomości botów i webhooków będą teraz przekazywane z tego czatu."
+  },
+  "allow_bots_usage": {
+    "status": "unverified",
+    "text": "Użycie: /allow-bots enable | /allow-bots disable"
+  },
+  "allow_bots_usage_tg": {
+    "status": "unverified",
+    "text": "Użycie: /allow_bots enable | /allow_bots disable"
+  },
+  "atb_already_attached": {
+    "status": "unverified",
+    "text": "Ten czat jest już podłączony do mostu."
+  },
+  "atb_attached": {
+    "status": "unverified",
+    "text": "Czat podłączony do mostu {bridge_id}."
+  },
+  "atb_invalid_id": {
+    "status": "unverified",
+    "text": "Nieprawidłowe ID mostu."
+  },
+  "atb_usage": {
+    "status": "unverified",
+    "text": "Użycie: /atb <id_mostu>"
+  },
   "backup_failed": {
     "status": "unverified",
     "text": "Nie udało się utworzyć kopii zapasowej: {error}"
+  },
+  "backup_private_only": {
+    "status": "unverified",
+    "text": "Użyj tej komendy w prywatnym czacie z botem."
   },
   "bot_joined": {
     "status": "unverified",
@@ -55,6 +91,10 @@
     "status": "unverified",
     "text": "Czat {channel} z {server} został odłączony od mostu."
   },
+  "chat_not_in_bridge": {
+    "status": "unverified",
+    "text": "Ten czat nie jest podłączony do żadnego mostu."
+  },
   "consent_body": {
     "status": "unverified",
     "text": "Ten czat jest połączony z innymi. Twoje wiadomości będą automatycznie przesyłane do powiązanych czatów. Jeśli edytujesz lub usuniesz swoją wiadomość w ciągu 30 dni od jej wysłania, automatycznie zaktualizuje się ona lub zniknie również na innych czatach. Kliknij „Akceptuję”, aby wyrazić zgodę na przesyłanie i kontynuować rozmowę. Więcej informacji znajdziesz w opisie czatu lub w przypiętej wiadomości."
@@ -67,6 +107,26 @@
     "status": "unverified",
     "text": "Uwaga: mostek wiadomości"
   },
+  "could_not_resolve_user": {
+    "status": "unverified",
+    "text": "Nie udało się rozpoznać użytkownika."
+  },
+  "deadchat_disabled": {
+    "status": "unverified",
+    "text": "Deadchat wyłączony dla tego kanału."
+  },
+  "deadchat_invalid_hours": {
+    "status": "unverified",
+    "text": "Podaj czas w godzinach (większy niż 0)."
+  },
+  "deadchat_invalid_role": {
+    "status": "unverified",
+    "text": "role_id musi być liczbowym ID roli lub 'disable'."
+  },
+  "deadchat_set": {
+    "status": "unverified",
+    "text": "Deadchat ustawiony: rola <@&{role_id}>, {hours} godz."
+  },
   "deadtopic.disabled": {
     "status": "unverified",
     "text": "Automatyczne zachowanie tematu wyłączone."
@@ -78,6 +138,10 @@
   "deadtopic.phantom_message": {
     "status": "unverified",
     "text": "Wiadomość widmo dla zachowania tematu."
+  },
+  "deadtopic.usage": {
+    "status": "unverified",
+    "text": "Użycie: /deadtopic enable | /deadtopic disable"
   },
   "discord_system_event": {
     "status": "unverified",
@@ -110,6 +174,30 @@
       "pliki",
       "plików"
     ]
+  },
+  "force_leave_failed": {
+    "status": "unverified",
+    "text": "Nie udało się opuścić: {error}"
+  },
+  "force_leave_invalid_id": {
+    "status": "unverified",
+    "text": "Nieprawidłowe ID."
+  },
+  "force_leave_not_member": {
+    "status": "unverified",
+    "text": "Bot nie znajduje się na tym serwerze."
+  },
+  "force_leave_success_discord": {
+    "status": "unverified",
+    "text": "Bot opuścił serwer {guild_id}, dane serwera usunięto z bazy."
+  },
+  "force_leave_success_telegram": {
+    "status": "unverified",
+    "text": "Bot opuścił czat Telegram {chat_id} (lub dane usunięto z bazy)."
+  },
+  "force_leave_unsupported_platform": {
+    "status": "unverified",
+    "text": "Nieobsługiwana platforma. Użyj 'discord' lub 'telegram'."
   },
   "forward_from_chat": {
     "status": "unverified",
@@ -219,6 +307,10 @@
     "status": "unverified",
     "text": "/verify — potwierdzenie zgody na przesyłanie wiadomości"
   },
+  "help.cmd_verify_list": {
+    "status": "unverified",
+    "text": "/verify-list enable|disable — publikować ID (nie)zweryfikowanych użytkowników w kanałach synchronizacji dla Confederate Guard (admini bota)"
+  },
   "help.cmd_webhooks": {
     "status": "unverified",
     "text": "/webhooks enable|disable — pokazywać przesyłane wiadomości jako webhooki (awatar i nazwa nadawcy)"
@@ -243,6 +335,34 @@
     "status": "unverified",
     "text": "Komendy bota"
   },
+  "lang_save_error": {
+    "status": "unverified",
+    "text": "Nie udało się zapisać języka."
+  },
+  "lang_set": {
+    "status": "unverified",
+    "text": "Język bota dla tego czatu: {code}"
+  },
+  "lang_usage": {
+    "status": "unverified",
+    "text": "Użycie: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "list_chats_discord_header": {
+    "status": "unverified",
+    "text": "**Serwery Discord:**"
+  },
+  "list_chats_no_telegram": {
+    "status": "unverified",
+    "text": "Brak czatów Telegram w bazie."
+  },
+  "list_chats_telegram_header": {
+    "status": "unverified",
+    "text": "**Grupy Telegram:**"
+  },
+  "list_chats_too_long": {
+    "status": "unverified",
+    "text": "Lista jest duża — wysyłam plik."
+  },
   "loc_compare_header": {
     "status": "unverified",
     "text": "Porównanie tekstu `{key}` według języków:"
@@ -254,6 +374,10 @@
   "loc_compare_untranslated": {
     "status": "unverified",
     "text": "(nieprzetłumaczone)"
+  },
+  "loc_compare_usage": {
+    "status": "unverified",
+    "text": "Użycie: /loc_compare <kod tekstu>"
   },
   "loc_cooldown": {
     "status": "unverified",
@@ -295,6 +419,10 @@
     "status": "unverified",
     "text": "Odpowiedź administratora {admin} (kod {code}):"
   },
+  "loc_reply_usage": {
+    "status": "unverified",
+    "text": "Użycie: /loc_reply <kod> <tekst>"
+  },
   "loc_suggest_confirm": {
     "status": "unverified",
     "text": "Dziękujemy! Twoja propozycja została wysłana. Kod Twojej wiadomości: {code}"
@@ -331,6 +459,26 @@
       "listopada",
       "grudnia"
     ]
+  },
+  "newschat_added": {
+    "status": "unverified",
+    "text": "Emoji `{emoji}` dodane dla tego kanału."
+  },
+  "newschat_bad_emoji": {
+    "status": "unverified",
+    "text": "Tego emoji nie można użyć jako reakcji. Spróbuj skopiować emoji lub użyć formatu `<:name:id>`."
+  },
+  "newschat_disabled": {
+    "status": "unverified",
+    "text": "Newschat wyłączony dla tego kanału."
+  },
+  "newschat_specify_emoji": {
+    "status": "unverified",
+    "text": "Podaj emoji. Przykłady:\n• Unicode: 😀\n• Niestandardowe: `<:Name:1234567890>`\n• Animowane: `<a:Name:1234567890>`"
+  },
+  "newschat_usage": {
+    "status": "unverified",
+    "text": "Użycie: /newschat add <emoji> | /newschat disable"
   },
   "no_permission": {
     "status": "unverified",
@@ -388,6 +536,46 @@
     "status": "unverified",
     "text": "Twój głos został zapisany."
   },
+  "remadmin_done": {
+    "status": "unverified",
+    "text": "Użytkownik {user_id} nie jest już administratorem."
+  },
+  "remadmin_usage": {
+    "status": "unverified",
+    "text": "Użycie: /remadmin <id_lub_nazwa_użytkownika>"
+  },
+  "remindrules_disabled": {
+    "status": "unverified",
+    "text": "Przypomnienie regulaminu wyłączone dla tego mostu."
+  },
+  "remindrules_fetch_failed": {
+    "status": "unverified",
+    "text": "Nie udało się pobrać wiadomości po message_id."
+  },
+  "remindrules_invalid_duration": {
+    "status": "unverified",
+    "text": "Pierwszy parametr to czas, np. 2h (2 godziny) lub 30m (30 minut)."
+  },
+  "remindrules_no_content": {
+    "status": "unverified",
+    "text": "Podaj tekst regulaminu w `text` lub przekaż `message_id` wiadomości z tego kanału."
+  },
+  "remindrules_reply_required": {
+    "status": "unverified",
+    "text": "Komenda musi być odpowiedzią na wiadomość z regulaminem."
+  },
+  "remindrules_saved": {
+    "status": "unverified",
+    "text": "Regulamin zapisany — będzie publikowany we wszystkich czatach mostu co {interval}."
+  },
+  "remindrules_usage_discord": {
+    "status": "unverified",
+    "text": "Użycie: /remindrules <5h|30m|disable> [wiadomości] [message_id] [tekst]. Przykłady: 2h — co 2 godziny, 30m — co 30 minut."
+  },
+  "remindrules_usage_telegram": {
+    "status": "unverified",
+    "text": "Użycie: /remindrules <5h|30m> [wiadomości] — jako odpowiedź na wiadomość z regulaminem."
+  },
   "reply_unknown": {
     "status": "unverified",
     "text": "(odpowiedź na nieznaną wiadomość)"
@@ -399,6 +587,14 @@
   "reply_webhook_someone": {
     "status": "unverified",
     "text": "użytkownika"
+  },
+  "rfb_by_id_unsupported": {
+    "status": "unverified",
+    "text": "Usuwanie po ID nie jest obsługiwane w Telegramie. Uruchom /rfb w czacie/temacie, który chcesz usunąć."
+  },
+  "rfb_removed": {
+    "status": "unverified",
+    "text": "Czat odłączony od mostu."
   },
   "service_event.bot_started": {
     "status": "unverified",
@@ -448,6 +644,18 @@
     "status": "unverified",
     "text": "Użytkownik {user_id} został mianowany administratorem mostu."
   },
+  "setadmin_usage": {
+    "status": "unverified",
+    "text": "Użycie: /setadmin <id_lub_nazwa_użytkownika>"
+  },
+  "shadowban_done": {
+    "status": "unverified",
+    "text": "Użytkownik {user_id} został ukryty (shadow-ban) — jego wiadomości nie będą przekazywane."
+  },
+  "shadowban_usage": {
+    "status": "unverified",
+    "text": "Użycie: /shadow-ban <id_lub_nazwa_użytkownika>"
+  },
   "status_members_forms": {
     "status": "unverified",
     "text": [
@@ -471,6 +679,10 @@
   "sticker": {
     "status": "unverified",
     "text": "[Naklejka]"
+  },
+  "too_many_requests": {
+    "status": "unverified",
+    "text": "Zbyt wiele żądań — spróbuj później."
   },
   "ts_ago": {
     "status": "unverified",
@@ -527,6 +739,46 @@
       "lata",
       "lat"
     ]
+  },
+  "unverify_done": {
+    "status": "unverified",
+    "text": "Weryfikacja użytkownika {user_id} została cofnięta."
+  },
+  "verify_already": {
+    "status": "unverified",
+    "text": "Jesteś już zweryfikowany."
+  },
+  "verify_button_not_yours": {
+    "status": "unverified",
+    "text": "Ten przycisk nie jest dla ciebie."
+  },
+  "verify_invalid_data": {
+    "status": "unverified",
+    "text": "Nieprawidłowe dane."
+  },
+  "verify_list_disabled": {
+    "status": "unverified",
+    "text": "Publikowanie ID zweryfikowanych/niezweryfikowanych użytkowników w kanałach synchronizacji zostało wyłączone."
+  },
+  "verify_list_enabled": {
+    "status": "unverified",
+    "text": "Publikowanie ID zweryfikowanych/niezweryfikowanych użytkowników w kanałach synchronizacji zostało włączone."
+  },
+  "verify_list_usage": {
+    "status": "unverified",
+    "text": "Użycie: /verify-list enable | /verify-list disable"
+  },
+  "verify_message_sent": {
+    "status": "unverified",
+    "text": "Wiadomość weryfikacyjna wysłana — sprawdź kanał."
+  },
+  "verify_send_failed": {
+    "status": "unverified",
+    "text": "Nie udało się wysłać wiadomości weryfikacyjnej. Bot może nie mieć uprawnień."
+  },
+  "verify_thanks": {
+    "status": "unverified",
+    "text": "Dziękujemy — zostałeś zweryfikowany."
   },
   "video_message": {
     "status": "unverified",

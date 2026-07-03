@@ -274,9 +274,17 @@ async def daily_check_loop():
                             await send_service_event("daily_missing_dc_channel", chat_key=chat_key)
                             inaccessible = True
                         else:
-                            perms = ch.permissions_for(dc.user)
-                            if not perms.manage_messages:
-                                await send_service_event("daily_no_dc_manage_perm", chat_key=chat_key)
+                            guild = getattr(ch, "guild", None)
+                            me = guild.me if guild else None
+                            if me is None and guild is not None:
+                                try:
+                                    me = await guild.fetch_member(dc.user.id)
+                                except Exception:
+                                    me = None
+                            if me is not None:
+                                perms = ch.permissions_for(me)
+                                if not perms.manage_messages:
+                                    await send_service_event("daily_no_dc_manage_perm", chat_key=chat_key)
                     except Exception:
                         continue
 

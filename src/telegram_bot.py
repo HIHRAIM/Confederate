@@ -298,31 +298,31 @@ async def is_telegram_native_admin(chat_id: int, user_id: int):
 
 @router.message(Command("atb"))
 async def atb(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
     if not is_admin("telegram", message.from_user.id):
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     parts = message.text.split()
     if len(parts) < 2:
-        await message.reply("Usage: /atb <bridge_id>")
+        await message.reply(localized("atb_usage", lang))
         return
 
     try:
         bridge_id = int(parts[1])
     except ValueError:
-        await message.reply("Invalid bridge id")
+        await message.reply(localized("atb_invalid_id", lang))
         return
 
-    thread = message.message_thread_id or 0
-    chat_id = f"{message.chat.id}:{thread}"
-
     if db.chat_exists(chat_id):
-        await message.reply("Chat already attached to a bridge")
+        await message.reply(localized("atb_already_attached", lang))
         return
 
     db.attach_chat("telegram", chat_id, bridge_id)
 
-    lang = get_chat_lang(chat_id)
     try:
         await bot.send_message(
             chat_id=int(message.chat.id),
@@ -330,9 +330,9 @@ async def atb(message: Message):
             text=localized_bot_joined(lang)
         )
     except Exception:
-        await message.reply(f"Chat attached to bridge {bridge_id}")
+        await message.reply(localized("atb_attached", lang, bridge_id=bridge_id))
     else:
-        await message.reply(f"Chat attached to bridge {bridge_id}")
+        await message.reply(localized("atb_attached", lang, bridge_id=bridge_id))
 
     channel_or_topic = f"topic {thread}" if thread else (message.chat.title or f"chat {message.chat.id}")
     server_name = message.chat.title or "Private chat"
@@ -373,9 +373,10 @@ async def rfb_handler(message: Message):
     parts = message.text.split()
     thread = message.message_thread_id or 0
     current_chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(current_chat_id)
 
     if len(parts) > 1:
-        await message.reply("Удаление по ID в Telegram не поддерживается. Запустите /rfb в том чате/теме, который нужно удалить.")
+        await message.reply(localized("rfb_by_id_unsupported", lang))
         return
 
     user_id = message.from_user.id
@@ -385,12 +386,12 @@ async def rfb_handler(message: Message):
         allowed = False
 
     if not allowed:
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (current_chat_id,)).fetchone()
     if not row:
-        await message.reply("Chat is not attached to any bridge")
+        await message.reply(localized("chat_not_in_bridge", lang))
         return
 
     bridge_id = row["bridge_id"]
@@ -426,7 +427,7 @@ async def rfb_handler(message: Message):
             except Exception:
                 pass
 
-    await message.reply("Chat removed from bridge")
+    await message.reply(localized("rfb_removed", lang))
 
 @router.message(lambda message: not ((getattr(message, "text", "") or "").startswith("/")))
 async def relay_from_telegram(message: Message):
@@ -700,16 +701,17 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
 @router.message(Command("setadmin"))
 async def setadmin(message: Message):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
-        await message.reply("Usage: /setadmin <user_id_or_username>")
-        return
-
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply(localized("setadmin_usage", lang))
+        return
 
     if not is_admin("telegram", message.from_user.id):
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     identifier = parts[1].strip()
@@ -717,19 +719,18 @@ async def setadmin(message: Message):
     if identifier.startswith("@") or not identifier.isdigit():
         uid = await resolve_telegram_user(identifier)
         if uid is None:
-            await message.reply("Could not resolve username")
+            await message.reply(localized("could_not_resolve_user", lang))
             return
     else:
         uid = int(identifier)
 
     row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
     if not row:
-        await message.reply("Chat is not attached to any bridge")
+        await message.reply(localized("chat_not_in_bridge", lang))
         return
 
     bridge_id = row["bridge_id"]
     db.add_bridge_admin(bridge_id, uid)
-    lang = get_chat_lang(chat_id)
     await message.reply(localized("setadmin_bridge_done", lang, user_id=uid))
     try:
         await bot.send_message(uid, localized("setadmin_bridge_dm", lang, bridge_id=bridge_id))
@@ -738,15 +739,17 @@ async def setadmin(message: Message):
 
 @router.message(Command("remadmin"))
 async def remadmin(message: Message):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
-        await message.reply("Usage: /remadmin <user_id_or_username>")
-        return
-
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply(localized("remadmin_usage", lang))
+        return
+
     if not is_admin("telegram", message.from_user.id):
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     identifier = parts[1].strip()
@@ -754,31 +757,32 @@ async def remadmin(message: Message):
     if identifier.startswith("@") or not identifier.isdigit():
         uid = await resolve_telegram_user(identifier)
         if uid is None:
-            await message.reply("Could not resolve username")
+            await message.reply(localized("could_not_resolve_user", lang))
             return
     else:
         uid = int(identifier)
 
     row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
     if not row:
-        await message.reply("Chat is not attached to any bridge")
+        await message.reply(localized("chat_not_in_bridge", lang))
         return
 
     bridge_id = row["bridge_id"]
     db.remove_bridge_admin(bridge_id, uid)
-    await message.reply(f"User `{uid}` removed from bridge admins")
+    await message.reply(localized("remadmin_done", lang, user_id=uid))
 
 @router.message(Command("lang"))
 async def set_lang_handler(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
     parts = message.text.split()
     if len(parts) != 2:
-        await message.reply("Usage: /lang <ru|en|uk|pl|es|pt>")
+        await message.reply(localized("lang_usage", lang))
         return
 
     code = parts[1].strip().lower()
-
-    thread = message.message_thread_id or 0
-    chat_key = f"{message.chat.id}:{thread}"
 
     has_permission = (
         is_admin("telegram", message.from_user.id)
@@ -786,20 +790,20 @@ async def set_lang_handler(message: Message):
         or await is_telegram_native_admin(message.chat.id, message.from_user.id)
     )
     if not has_permission:
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     try:
         set_chat_lang(chat_key, code)
     except ValueError:
-        await message.reply("Unsupported language. Supported: ru, uk, pl, en, es, pt")
+        await message.reply(localized("loc_unknown_lang", lang, lang=code, supported=", ".join(sorted(SUPPORTED_LANGS))))
         return
     except Exception as e:
         logger.warning("Failed to save language for %s: %s", chat_key, e)
-        await message.reply("Error saving language")
+        await message.reply(localized("lang_save_error", lang))
         return
 
-    await message.reply(f"Language for this topic/thread set to: {code}")
+    await message.reply(localized("lang_set", code, code=code))
 
 @router.my_chat_member()
 async def my_chat_member_update(update: ChatMemberUpdated):
@@ -817,13 +821,17 @@ async def my_chat_member_update(update: ChatMemberUpdated):
 
 @router.message(Command("remindrules"))
 async def remindrules(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
     if not message.reply_to_message:
-        await message.reply("Command must be a reply to a message containing rules")
+        await message.reply(localized("remindrules_reply_required", lang))
         return
 
     parts = message.text.split()
     if len(parts) < 2:
-        await message.reply("Usage: /remindrules <5h|30m> [messages]")
+        await message.reply(localized("remindrules_usage_telegram", lang))
         return
 
     raw = parts[1].strip().lower()
@@ -837,21 +845,16 @@ async def remindrules(message: Message):
         if interval_minutes <= 0:
             raise ValueError
     except ValueError:
-        await message.reply(
-            "First parameter must be a duration: e.g. `2h` (2 hours) or `30m` (30 minutes)"
-        )
+        await message.reply(localized("remindrules_invalid_duration", lang))
         return
 
     messages = int(parts[2]) if len(parts) > 2 else None
-
-    thread = message.message_thread_id or 0
-    chat_id = f"{message.chat.id}:{thread}"
 
     if not (
         is_admin("telegram", message.from_user.id)
         or is_chat_admin("telegram", chat_id, message.from_user.id)
     ):
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     row = db.cur.execute(
@@ -859,7 +862,7 @@ async def remindrules(message: Message):
         (chat_id,)
     ).fetchone()
     if not row:
-        await message.reply("Chat is not attached to any bridge")
+        await message.reply(localized("chat_not_in_bridge", lang))
         return
 
     bridge_id = row["bridge_id"]
@@ -888,7 +891,7 @@ async def remindrules(message: Message):
     db.conn.commit()
 
     human = f"{interval_minutes // 60}h {interval_minutes % 60}m".replace("0h ", "").replace(" 0m", "").strip()
-    await message.reply(f"Rules saved — will be posted to all bridge chats every {human}")
+    await message.reply(localized("remindrules_saved", lang, interval=human))
 
 @router.callback_query(lambda c: c.data and c.data.startswith("verify:"))
 async def handle_verify_callback(query: CallbackQuery):
@@ -897,6 +900,10 @@ async def handle_verify_callback(query: CallbackQuery):
     Only the target user can confirm. On confirm — add verified and remove pending + bot message.
     """
     data = query.data
+    if query.message:
+        lang = get_chat_lang(f"{query.message.chat.id}:{query.message.message_thread_id or 0}")
+    else:
+        lang = DEFAULT_LANG
     try:
         _, payload = data.split(":", 1)
         parts = payload.split("|")
@@ -904,15 +911,15 @@ async def handle_verify_callback(query: CallbackQuery):
         prefix = parts[1]
         target_user_id = parts[2]
     except Exception:
-        await query.answer("Invalid data", show_alert=True)
+        await query.answer(localized("verify_invalid_data", lang), show_alert=True)
         return
 
     if str(query.from_user.id) != str(target_user_id):
-        await query.answer("This button is not for you", show_alert=True)
+        await query.answer(localized("verify_button_not_yours", lang), show_alert=True)
         return
 
     if not db.get_pending_consent("telegram", prefix, target_user_id):
-        await query.answer("Invalid data", show_alert=True)
+        await query.answer(localized("verify_invalid_data", lang), show_alert=True)
         return
 
     db.add_verified_user("telegram", target_user_id, prefix, days_valid=365)
@@ -936,13 +943,7 @@ async def handle_verify_callback(query: CallbackQuery):
     for payload in first_payloads:
         await _relay_serialized_telegram_payload(payload)
 
-    await query.answer("Спасибо — вы подтверждены", show_alert=False)
-
-    try:
-        from discord_bot import announce_verified_user
-        await announce_verified_user(target_user_id)
-    except Exception as e:
-        logger.warning("Failed to publish verified telegram user %s: %s", target_user_id, e)
+    await query.answer(localized("verify_thanks", lang), show_alert=False)
 
 @router.message(Command("verify"))
 async def verify_cmd(message: Message):
@@ -979,40 +980,42 @@ async def verify_cmd(message: Message):
                                       text=consent_text, reply_markup=markup, parse_mode="HTML")
         db.add_pending_consent("telegram", prefix, user_id, str(sent.message_id), chat_key)
     except Exception:
-        await message.reply("Could not send verification message. Bot may lack permissions.")
+        await message.reply(localized("verify_send_failed", lang))
 
 @router.message(Command("unverify"))
 async def unverify_cmd(message: Message):
+    lang = get_chat_lang(f"{message.chat.id}:{message.message_thread_id or 0}")
     parts = message.text.split(maxsplit=1)
 
     if len(parts) < 2 or not parts[1].strip():
         uid = message.from_user.id
     else:
         if not is_admin("telegram", message.from_user.id):
-            await message.reply("No permission")
+            await message.reply(localized("no_permission", lang))
             return
         identifier = parts[1].strip()
         if identifier.startswith("@") or not identifier.isdigit():
             uid = await resolve_telegram_user(identifier)
             if uid is None:
-                await message.reply("Could not resolve username to user id")
+                await message.reply(localized("could_not_resolve_user", lang))
                 return
         else:
             uid = int(identifier)
 
     db.cur.execute("DELETE FROM verified_users WHERE platform='telegram' AND user_id=?", (str(uid),))
     db.conn.commit()
-    await message.reply(f"User {uid} unverified (removed from DB).")
+    await message.reply(localized("unverify_done", lang, user_id=uid))
 
 @router.message(Command("shadow-ban"))
 async def shadow_ban_cmd(message: Message):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
-        await message.reply("Usage: /shadow-ban <user_id_or_username>")
-        return
-
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply(localized("shadowban_usage", lang))
+        return
     allowed = False
     if is_admin("telegram", message.from_user.id):
         allowed = True
@@ -1024,7 +1027,7 @@ async def shadow_ban_cmd(message: Message):
             if str(message.from_user.id) in bridge_admins:
                 allowed = True
     if not allowed:
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     identifier = parts[1].strip()
@@ -1032,13 +1035,13 @@ async def shadow_ban_cmd(message: Message):
     if identifier.startswith("@") or not identifier.isdigit():
         uid = await resolve_telegram_user(identifier)
         if uid is None:
-            await message.reply("Could not resolve username")
+            await message.reply(localized("could_not_resolve_user", lang))
             return
     else:
         uid = int(identifier)
 
     db.add_shadow_ban("telegram", uid)
-    await message.reply(f"User {uid} shadow-banned on Telegram (messages will not be relayed).")
+    await message.reply(localized("shadowban_done", lang, user_id=uid))
 
 @router.message(Command("whois"))
 async def whois_cmd(message: Message):
@@ -1281,13 +1284,14 @@ async def bridge_cmd(message: Message):
 
 @router.message(Command("allow_bots"))
 async def allow_bots_cmd(message: Message):
-    parts = message.text.split()
-    if len(parts) != 2 or parts[1].lower() not in ("enable", "disable"):
-        await message.reply("Usage: /allow_bots enable | /allow_bots disable")
-        return
-
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    parts = message.text.split()
+    if len(parts) != 2 or parts[1].lower() not in ("enable", "disable"):
+        await message.reply(localized("allow_bots_usage_tg", lang))
+        return
 
     has_permission = (
         is_admin("telegram", message.from_user.id)
@@ -1295,15 +1299,15 @@ async def allow_bots_cmd(message: Message):
         or await is_telegram_native_admin(message.chat.id, message.from_user.id)
     )
     if not has_permission:
-        await message.reply("No permission")
+        await message.reply(localized("no_permission", lang))
         return
 
     enabled = parts[1].lower() == "enable"
     db.set_allow_bots(chat_id, enabled)
     if enabled:
-        await message.reply("Bot messages will now be relayed from this chat")
+        await message.reply(localized("allow_bots_enabled", lang))
     else:
-        await message.reply("Bot messages will no longer be relayed from this chat")
+        await message.reply(localized("allow_bots_disabled", lang))
 
 @router.message(Command("help"))
 async def help_cmd(message: Message):
@@ -1327,6 +1331,7 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_bridge", lang)),
         escape_html(localized_help("cmd_whois", lang)),
         escape_html(localized_help("cmd_verify", lang)),
+        escape_html(localized_help("cmd_poll", lang)),
         escape_html(localized_help("cmd_locale", lang)),
         escape_html(localized_help("cmd_loc_compare", lang)),
         escape_html(localized_help("cmd_loc_suggest", lang)),
@@ -1336,20 +1341,25 @@ async def help_cmd(message: Message):
     admins_lines = "\n".join([
         escape_html(localized_help("cmd_rfb", lang)),
         escape_html(localized_help("cmd_setadmin", lang)),
-        escape_html(localized_help("cmd_remadmin", lang)),
         escape_html(localized_help("cmd_lang", lang)),
         escape_html(localized_help("cmd_remindrules", lang)),
         escape_html(localized_help("cmd_shadowban", lang)),
         escape_html(localized_help("cmd_unverify", lang)),
         escape_html(localized_help("cmd_allow_bots_tg", lang)),
-        escape_html(localized_help("cmd_deadtopic", lang)),
+    ])
+
+    bot_admins_lines = "\n".join([
+        escape_html(localized_help("cmd_atb", lang)),
+        escape_html(localized_help("cmd_remadmin", lang)),
+        escape_html(localized_help("cmd_backup", lang)),
         escape_html(localized_help("cmd_loc_reply", lang)),
     ])
 
     text = (
         f"<b>{localized_help('title', lang)}</b>\n\n"
         f"<b>{localized_help('section_everyone', lang)}</b>\n{everyone_lines}\n\n"
-        f"<b>{localized_help('section_admins', lang)}</b>\n{admins_lines}"
+        f"<b>{localized_help('section_admins', lang)}</b>\n{admins_lines}\n\n"
+        f"<b>{localized_help('section_bot_admins', lang)}</b>\n{bot_admins_lines}"
     )
     await _reply_autodelete(text)
 
@@ -1419,7 +1429,7 @@ async def backup_tg_cmd(message: Message):
         await message.reply(localized("no_permission", lang))
         return
     if message.chat.type != "private":
-        await message.reply("Use this command in a private chat with the bot")
+        await message.reply(localized("backup_private_only", lang))
         return
     try:
         from aiogram.types import BufferedInputFile
@@ -1475,7 +1485,7 @@ async def loc_compare_cmd(message: Message):
     ui_lang = get_chat_lang(f"{message.chat.id}:{thread}")
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
-        await message.reply("Usage: /loc_compare <key>")
+        await message.reply(localized("loc_compare_usage", ui_lang))
         return
     key = parts[1].strip()
     data = compare_reply(key)
@@ -1539,7 +1549,7 @@ async def loc_reply_cmd(message: Message):
         return
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
-        await message.reply("Usage: /loc_reply <code> <text>")
+        await message.reply(localized("loc_reply_usage", ui_lang_cmd))
         return
     code = parts[1].strip()
     reply_text = parts[2]

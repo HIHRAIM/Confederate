@@ -33,7 +33,7 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 
 4. **Create config file**
    - Copy `config.example.py` to `config.py`.
-   - Set environment variables (the example config reads tokens from env):
+   - Set environment variables (the example config reads tokens from env), or copy `src/.env.example` to `src/.env` and fill it in — the config loads it automatically (already-set environment variables take precedence):
      - `DISCORD_BOT_TOKEN` — your Discord bot token.
      - `TELEGRAM_BOT_TOKEN` — your Telegram bot token.
    - Edit `config.py`:
@@ -41,8 +41,10 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
      - `SERVICE_CHATS["discord"]` and `SERVICE_CHATS["telegram"]` — chat IDs where the bot sends startup/shutdown and health events. Telegram format: `"-1000000000000:0"` (chat\_id:thread\_id); Discord format: numeric channel ID.
      - `BACKUP_CHATS["discord"]` and `BACKUP_CHATS["telegram"]` — chat IDs where the bot sends automatic database backups every 12 hours. Same format as `SERVICE_CHATS`.
      - `SUPPORT_CHATS["discord"]` and `SUPPORT_CHATS["telegram"]` — chats that receive localization suggestions submitted via `/loc-suggest` (Discord as an embed, Telegram as a message). Same format as `SERVICE_CHATS`.
-     - `VERIFIED` — set of Discord channel IDs where a user's ID is published once they accept the forwarding consent. **guard_bot** reads the same channel(s) to add them to its cross-server verified database. Use the same ID in both bots' configs.
-     - `UNVERIFIED` — set of Discord channel IDs where a user's ID is published when they unverify themselves (`/unverify`). **guard_bot** reads the same channel(s) to remove them from its verified database. Use the same ID in both bots' configs.
+     - `VERIFIED` — set of Discord channel IDs where a **Discord** user's ID is published once they accept the forwarding consent. **guard_bot** reads the same channel(s) to add them to its cross-server verified database. Only Discord user IDs are published — Telegram verifications stay local to bridge_bot. Use the same ID in both bots' configs.
+     - `UNVERIFIED` — set of Discord channel IDs where a **Discord** user's ID is published when they unverify themselves (`/unverify`). **guard_bot** reads the same channel(s) to remove them from its verified database. Use the same ID in both bots' configs.
+
+   > The `VERIFIED`/`UNVERIFIED` mechanic is only needed when the bot runs alongside [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard). If you don't run Confederate Guard, leave the sets empty or turn the publishing off at runtime with `/verify-list disable` (it is enabled by default).
 
 > **Presence intent:** `/whois` reports a member's online status (online/idle/dnd), which requires the privileged **Presence Intent** — enable it for the bot in the Discord Developer Portal, otherwise the bot will not start.
 
@@ -90,6 +92,7 @@ Permission roles used below:
 | `/help` | Show command reference | ✅ | ✅ | ✅ |
 | `/shadow-ban <user>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify [user]` | Unverify yourself (no argument), or another user (Bot Admins). Discord usage also notifies guard_bot via the `UNVERIFIED` channel | ✅ | ✅ | ✅ |
+| `/verify-list <enable\|disable>` | Toggle publishing of (un)verified Discord user IDs to the `VERIFIED`/`UNVERIFIED` sync channels (enabled by default; only needed alongside Confederate Guard) | ❌ | ❌ | ✅ |
 | `/loc-reply <code> <text>` | Reply (via DM) to a user's localization suggestion | ❌ | ❌ | ✅ |
 | `/list_chats` | List all Discord guilds and Telegram groups known to the bot | ❌ | ❌ | ✅ |
 | `/force_leave <platform> <id>` | Force bot to leave a guild/chat and clean up DB records | ❌ | ❌ | ✅ |
@@ -141,6 +144,10 @@ Webhook messages can't carry a native Discord reply reference, so when the relay
 
 Telegram avatars can't be a webhook avatar directly (the Telegram file URL embeds the bot token and isn't reliably fetched by Discord), so the bot downloads the Telegram photo and re-hosts it on Discord's CDN by uploading it to the first `SERVICE_CHATS["discord"]` channel (cached per user; the previous upload is replaced on refresh). If no service channel is configured/reachable, Telegram senders fall back to the default webhook avatar.
 
+## Forwarded messages
+
+Relayed copies of forwarded messages get a localized attribution prefix. On Telegram the forward origin comes straight from the Telegram API. On Discord, forward snapshots intentionally omit the original author, so the bot resolves the original message through the forward reference: if it can read the source channel, the prefix is “(forwarded from {user's nickname})”; otherwise, if the source server is known to the bot, “(forwarded from {server name})”; otherwise “(forwarded from unknown source)”.
+
 ## Polls
 
 `/poll` starts an **anonymous** poll that is posted (with vote buttons) to every chat in the bridge. Only **verified** users (who accepted the forwarding consent) can vote; each user has one vote that they can change. On Discord, options are separate arguments (up to 5); on Telegram, the question, duration and options are separated by `|` (up to 10 options). Duration units: `1h`, `2d`, `1w`, `1m` (= 30 days); capped at 30 days.
@@ -153,7 +160,9 @@ When the timer expires the bot posts the results to every bridge chat, replying 
 
 ## Cross-bot verification sync
 
-When a user accepts the forwarding consent, their ID is posted to the `VERIFIED` Discord channel; when they `/unverify` themselves on Discord, their ID is posted to `UNVERIFIED`. **guard_bot** watches the same channels to mirror users into / out of its cross-server verified database.
+When a **Discord** user accepts the forwarding consent, their ID is posted to the `VERIFIED` Discord channel; when they `/unverify` themselves on Discord, their ID is posted to `UNVERIFIED`. **guard_bot** watches the same channels to mirror users into / out of its cross-server verified database. Only Discord user IDs are published to these channels — Telegram verifications are tracked only in bridge_bot's own database, since guard_bot's database holds Discord IDs.
+
+This sync is only useful when the bot runs together with [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard). Bot Admins can toggle the publishing at runtime with `/verify-list enable|disable` (enabled by default; the setting is stored in the database and survives restarts).
 
 ---
 

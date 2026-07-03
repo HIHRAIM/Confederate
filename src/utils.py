@@ -137,6 +137,7 @@ DEFAULT_LANG = "en"
 
 import os as _i18n_os
 import json as _i18n_json
+import logging as _i18n_logging
 
 _I18N_DIR = _i18n_os.path.join(_i18n_os.path.dirname(__file__), "i18n")
 
@@ -254,7 +255,12 @@ def compare_reply(key):
 
 def localized(_key, locale, **kwargs):
     """Generic flat-key accessor (used by the localization commands)."""
-    table = _LOCALE.get(_key, {})
+    table = _LOCALE.get(_key)
+    if table is None:
+        _i18n_logging.getLogger("bridge.i18n").warning(
+            "Missing localization key %r — i18n files are older than the code?", _key
+        )
+        table = {}
     template = table.get(locale, table.get(DEFAULT_LANG, _key))
     if isinstance(template, (list, tuple)):
         return template

@@ -1,22 +1,58 @@
 {
+  "allow_bots_disabled": {
+    "status": "unverified",
+    "text": "Bot and webhook messages will no longer be relayed from this chat."
+  },
+  "allow_bots_enabled": {
+    "status": "unverified",
+    "text": "Bot and webhook messages will now be relayed from this chat."
+  },
+  "allow_bots_usage": {
+    "status": "unverified",
+    "text": "Usage: /allow-bots enable | /allow-bots disable"
+  },
+  "allow_bots_usage_tg": {
+    "status": "unverified",
+    "text": "Usage: /allow_bots enable | /allow_bots disable"
+  },
+  "atb_already_attached": {
+    "status": "unverified",
+    "text": "This chat is already attached to a bridge."
+  },
+  "atb_attached": {
+    "status": "unverified",
+    "text": "Chat attached to bridge {bridge_id}."
+  },
+  "atb_invalid_id": {
+    "status": "unverified",
+    "text": "Invalid bridge ID."
+  },
+  "atb_usage": {
+    "status": "unverified",
+    "text": "Usage: /atb <bridge_id>"
+  },
   "backup_failed": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Failed to build the backup: {error}"
+  },
+  "backup_private_only": {
+    "status": "unverified",
+    "text": "Use this command in a private chat with the bot."
   },
   "bot_joined": {
     "status": "unverified",
     "text": "Bot joined the bridge."
   },
   "bridge_info.admins_discord": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Discord: {admins}"
   },
   "bridge_info.admins_telegram": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Telegram: {admins}"
   },
   "bridge_info.admins_title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Bridge administrators"
   },
   "bridge_info.field_chats": {
@@ -55,6 +91,10 @@
     "status": "unverified",
     "text": "Chat {channel} from {server} was disconnected from the bridge."
   },
+  "chat_not_in_bridge": {
+    "status": "unverified",
+    "text": "This chat is not attached to any bridge."
+  },
   "consent_body": {
     "status": "unverified",
     "text": "This chat is connected to others. Your messages will be automatically forwarded to linked chats. If you edit or delete your message within 30 days of sending, it will automatically update or disappear in the other chats as well. Click \"Accept\" to agree to the forwarding and continue chatting. For more details, check the chat description or the pinned message."
@@ -67,6 +107,26 @@
     "status": "unverified",
     "text": "Notice: Message Bridge"
   },
+  "could_not_resolve_user": {
+    "status": "unverified",
+    "text": "Could not resolve the user."
+  },
+  "deadchat_disabled": {
+    "status": "unverified",
+    "text": "Deadchat disabled for this channel."
+  },
+  "deadchat_invalid_hours": {
+    "status": "unverified",
+    "text": "Specify the duration in hours (greater than 0)."
+  },
+  "deadchat_invalid_role": {
+    "status": "unverified",
+    "text": "role_id must be a numeric role ID or 'disable'."
+  },
+  "deadchat_set": {
+    "status": "unverified",
+    "text": "Deadchat set: role <@&{role_id}>, {hours} h."
+  },
   "deadtopic.disabled": {
     "status": "unverified",
     "text": "Dead topic prevention disabled."
@@ -78,6 +138,10 @@
   "deadtopic.phantom_message": {
     "status": "unverified",
     "text": "Phantom message to preserve the topic."
+  },
+  "deadtopic.usage": {
+    "status": "unverified",
+    "text": "Usage: /deadtopic enable | /deadtopic disable"
   },
   "discord_system_event": {
     "status": "unverified",
@@ -110,6 +174,30 @@
       "files"
     ]
   },
+  "force_leave_failed": {
+    "status": "unverified",
+    "text": "Failed to leave: {error}"
+  },
+  "force_leave_invalid_id": {
+    "status": "unverified",
+    "text": "Invalid ID."
+  },
+  "force_leave_not_member": {
+    "status": "unverified",
+    "text": "The bot is not a member of that server."
+  },
+  "force_leave_success_discord": {
+    "status": "unverified",
+    "text": "The bot left server {guild_id} and its data was removed from the database."
+  },
+  "force_leave_success_telegram": {
+    "status": "unverified",
+    "text": "The bot left Telegram chat {chat_id} (or its data was cleaned from the database)."
+  },
+  "force_leave_unsupported_platform": {
+    "status": "unverified",
+    "text": "Unsupported platform. Use 'discord' or 'telegram'."
+  },
   "forward_from_chat": {
     "status": "unverified",
     "text": "(forwarded from {name})"
@@ -131,11 +219,11 @@
     "text": "/allow_bots enable|disable — allow or block relay of bot messages"
   },
   "help.cmd_atb": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/atb <bridge_id> — attach this chat to a bridge (bot admins)"
   },
   "help.cmd_backup": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/backup — get a database backup (bot admins)"
   },
   "help.cmd_bridge": {
@@ -151,11 +239,11 @@
     "text": "/deadtopic enable|disable — send a phantom message every 6 days of inactivity to keep the topic alive"
   },
   "help.cmd_force_leave": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/force_leave <platform> <id> — make the bot leave a chat (bot admins)"
   },
   "help.cmd_help": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/help — show this command list"
   },
   "help.cmd_lang": {
@@ -163,23 +251,23 @@
     "text": "/lang <code> — set bot language (ru, uk, pl, en, es, pt)"
   },
   "help.cmd_list_chats": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/list_chats — list all chats the bot is in (bot admins)"
   },
   "help.cmd_loc_compare": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/loc-compare <code> — compare a reply across languages"
   },
   "help.cmd_loc_reply": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/loc-reply <code> <text> — reply to a localization suggestion (bot admins)"
   },
   "help.cmd_loc_suggest": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/loc-suggest <lang> <code> <text> — suggest a localization"
   },
   "help.cmd_locale": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/locale [code] — localization status, or a language's file"
   },
   "help.cmd_newschat": {
@@ -187,7 +275,7 @@
     "text": "/newschat add <emoji> | disable — auto-react to messages in a news channel (Discord only)"
   },
   "help.cmd_poll": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/poll <text> <time> <options> — anonymous poll across all bridge chats"
   },
   "help.cmd_remadmin": {
@@ -218,8 +306,12 @@
     "status": "unverified",
     "text": "/verify — confirm consent to message forwarding"
   },
+  "help.cmd_verify_list": {
+    "status": "unverified",
+    "text": "/verify-list enable|disable — publish IDs of (un)verified users to the sync channels for Confederate Guard (bot admins)"
+  },
   "help.cmd_webhooks": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/webhooks enable|disable — show relayed messages as webhooks (sender avatar and name)"
   },
   "help.cmd_whois": {
@@ -231,16 +323,44 @@
     "text": "For Bridge Admins"
   },
   "help.section_bot_admins": {
-    "status": "verified",
+    "status": "unverified",
     "text": "For Bot Admins"
   },
   "help.section_everyone": {
-    "status": "verified",
+    "status": "unverified",
     "text": "For everyone"
   },
   "help.title": {
     "status": "unverified",
     "text": "Bot commands"
+  },
+  "lang_save_error": {
+    "status": "unverified",
+    "text": "Failed to save the language."
+  },
+  "lang_set": {
+    "status": "unverified",
+    "text": "Bot language for this chat is now: {code}"
+  },
+  "lang_usage": {
+    "status": "unverified",
+    "text": "Usage: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "list_chats_discord_header": {
+    "status": "unverified",
+    "text": "**Discord servers:**"
+  },
+  "list_chats_no_telegram": {
+    "status": "unverified",
+    "text": "No Telegram chats in the database."
+  },
+  "list_chats_telegram_header": {
+    "status": "unverified",
+    "text": "**Telegram groups:**"
+  },
+  "list_chats_too_long": {
+    "status": "unverified",
+    "text": "The list is long — uploading a file."
   },
   "loc_compare_header": {
     "status": "unverified",
@@ -254,13 +374,17 @@
     "status": "unverified",
     "text": "(untranslated)"
   },
+  "loc_compare_usage": {
+    "status": "unverified",
+    "text": "Usage: /loc_compare <reply code>"
+  },
   "loc_cooldown": {
     "status": "unverified",
     "text": "This file was requested recently. Try again later (at most once every 10 minutes per server/group)."
   },
   "loc_file_caption": {
     "status": "unverified",
-    "text": "Localization: {name} ({code}). unverified: {percent}%."
+    "text": "Localization: {name} ({code}). Verified: {percent}%."
   },
   "loc_list_footer": {
     "status": "unverified",
@@ -268,7 +392,7 @@
   },
   "loc_list_header": {
     "status": "unverified",
-    "text": "Available localization languages (🟩 unverified, 🟧 ununverified, 🟥 untranslated):"
+    "text": "Available localization languages (🟩 verified, 🟧 unverified, 🟥 untranslated):"
   },
   "loc_reply_dm_body": {
     "status": "unverified",
@@ -291,8 +415,12 @@
     "text": "The reply has been sent to the user."
   },
   "loc_reply_support_prefix": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Reply from admin {admin} (code {code}):"
+  },
+  "loc_reply_usage": {
+    "status": "unverified",
+    "text": "Usage: /loc_reply <code> <text>"
   },
   "loc_suggest_confirm": {
     "status": "unverified",
@@ -315,7 +443,7 @@
     "text": "Unknown language: {lang}. Available: {supported}."
   },
   "month_names": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "January",
       "February",
@@ -331,61 +459,121 @@
       "December"
     ]
   },
+  "newschat_added": {
+    "status": "unverified",
+    "text": "Emoji `{emoji}` added for this channel."
+  },
+  "newschat_bad_emoji": {
+    "status": "unverified",
+    "text": "That emoji cannot be used as a reaction. Try copying/pasting an emoji or using the `<:name:id>` format."
+  },
+  "newschat_disabled": {
+    "status": "unverified",
+    "text": "Newschat disabled for this channel."
+  },
+  "newschat_specify_emoji": {
+    "status": "unverified",
+    "text": "Specify an emoji. Examples:\n• Unicode: 😀\n• Custom: `<:Name:1234567890>`\n• Animated: `<a:Name:1234567890>`"
+  },
+  "newschat_usage": {
+    "status": "unverified",
+    "text": "Usage: /newschat add <emoji> | /newschat disable"
+  },
   "no_permission": {
     "status": "unverified",
     "text": "You don't have permission to use this command."
   },
   "poll_anonymous": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Anonymous poll"
   },
   "poll_closed": {
-    "status": "verified",
+    "status": "unverified",
     "text": "This poll is already closed."
   },
   "poll_created": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Poll started."
   },
   "poll_duration_invalid": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Invalid time format. Examples: 1h, 2d, 1m. Maximum is 30 days."
   },
   "poll_ends": {
-    "status": "verified",
+    "status": "unverified",
     "text": "The poll ends: {ends}"
   },
   "poll_not_in_bridge": {
-    "status": "verified",
+    "status": "unverified",
     "text": "This chat is not part of any bridge."
   },
   "poll_not_verified": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Only verified users (who consented to message forwarding) can vote."
   },
   "poll_results_header": {
-    "status": "verified",
+    "status": "unverified",
     "text": "📊 Poll results: {question}"
   },
   "poll_too_few": {
-    "status": "verified",
+    "status": "unverified",
     "text": "At least 2 options are required."
   },
   "poll_total_votes": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Total votes: {total}"
   },
   "poll_usage_discord": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Usage: /poll <text> <time: 1h, 2d; max 30d> <option 1> <option 2> [option 3] [option 4] [option 5]"
   },
   "poll_usage_telegram": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Usage: /poll <text> | <time: 1h, 2d, 1m; max 30d> | <option 1> | <option 2> | … (up to 10 options)"
   },
   "poll_vote_recorded": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Your vote has been recorded."
+  },
+  "remadmin_done": {
+    "status": "unverified",
+    "text": "User {user_id} is no longer an admin."
+  },
+  "remadmin_usage": {
+    "status": "unverified",
+    "text": "Usage: /remadmin <user_id_or_username>"
+  },
+  "remindrules_disabled": {
+    "status": "unverified",
+    "text": "Rules reminder disabled for this bridge."
+  },
+  "remindrules_fetch_failed": {
+    "status": "unverified",
+    "text": "Could not fetch the message by message_id."
+  },
+  "remindrules_invalid_duration": {
+    "status": "unverified",
+    "text": "The first parameter must be a duration, e.g. 2h (2 hours) or 30m (30 minutes)."
+  },
+  "remindrules_no_content": {
+    "status": "unverified",
+    "text": "Provide the rules text via `text`, or pass the `message_id` of a message in this channel."
+  },
+  "remindrules_reply_required": {
+    "status": "unverified",
+    "text": "The command must be a reply to the message containing the rules."
+  },
+  "remindrules_saved": {
+    "status": "unverified",
+    "text": "Rules saved — they will be posted to all bridge chats every {interval}."
+  },
+  "remindrules_usage_discord": {
+    "status": "unverified",
+    "text": "Usage: /remindrules <5h|30m|disable> [messages] [message_id] [text]. Examples: 2h — every 2 hours, 30m — every 30 minutes."
+  },
+  "remindrules_usage_telegram": {
+    "status": "unverified",
+    "text": "Usage: /remindrules <5h|30m> [messages] — as a reply to the message containing the rules."
   },
   "reply_unknown": {
     "status": "unverified",
@@ -398,6 +586,14 @@
   "reply_webhook_someone": {
     "status": "unverified",
     "text": "someone"
+  },
+  "rfb_by_id_unsupported": {
+    "status": "unverified",
+    "text": "Removal by ID is not supported on Telegram. Run /rfb in the chat/topic you want to remove."
+  },
+  "rfb_removed": {
+    "status": "unverified",
+    "text": "Chat removed from the bridge."
   },
   "service_event.bot_started": {
     "status": "unverified",
@@ -447,8 +643,20 @@
     "status": "unverified",
     "text": "User {user_id} has been made a bridge admin."
   },
+  "setadmin_usage": {
+    "status": "unverified",
+    "text": "Usage: /setadmin <user_id_or_username>"
+  },
+  "shadowban_done": {
+    "status": "unverified",
+    "text": "User {user_id} shadow-banned — their messages will not be relayed."
+  },
+  "shadowban_usage": {
+    "status": "unverified",
+    "text": "Usage: /shadow-ban <user_id_or_username>"
+  },
   "status_members_forms": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "member",
       "members",
@@ -456,7 +664,7 @@
     ]
   },
   "status_servers_forms": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "community",
       "communities",
@@ -464,62 +672,106 @@
     ]
   },
   "status_template": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Connects {members} {members_word} across {servers} {servers_word}"
   },
   "sticker": {
     "status": "unverified",
     "text": "[Sticker]"
   },
+  "too_many_requests": {
+    "status": "unverified",
+    "text": "Too many requests — try again later."
+  },
   "ts_ago": {
-    "status": "verified",
+    "status": "unverified",
     "text": "{value} {unit} ago"
   },
   "ts_in": {
-    "status": "verified",
+    "status": "unverified",
     "text": "in {value} {unit}"
   },
   "ts_unit_days": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "day",
       "days"
     ]
   },
   "ts_unit_hours": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "hour",
       "hours"
     ]
   },
   "ts_unit_minutes": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "minute",
       "minutes"
     ]
   },
   "ts_unit_months": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "month",
       "months"
     ]
   },
   "ts_unit_seconds": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "second",
       "seconds"
     ]
   },
   "ts_unit_years": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "year",
       "years"
     ]
+  },
+  "unverify_done": {
+    "status": "unverified",
+    "text": "User {user_id} unverified."
+  },
+  "verify_already": {
+    "status": "unverified",
+    "text": "You are already verified."
+  },
+  "verify_button_not_yours": {
+    "status": "unverified",
+    "text": "This button is not for you."
+  },
+  "verify_invalid_data": {
+    "status": "unverified",
+    "text": "Invalid data."
+  },
+  "verify_list_disabled": {
+    "status": "unverified",
+    "text": "Publishing of verified/unverified user IDs to the sync channels is disabled."
+  },
+  "verify_list_enabled": {
+    "status": "unverified",
+    "text": "Publishing of verified/unverified user IDs to the sync channels is enabled."
+  },
+  "verify_list_usage": {
+    "status": "unverified",
+    "text": "Usage: /verify-list enable | /verify-list disable"
+  },
+  "verify_message_sent": {
+    "status": "unverified",
+    "text": "Verification message sent — check the channel."
+  },
+  "verify_send_failed": {
+    "status": "unverified",
+    "text": "Could not send the verification message. The bot may lack permissions."
+  },
+  "verify_thanks": {
+    "status": "unverified",
+    "text": "Thank you — you are verified."
   },
   "video_message": {
     "status": "unverified",
@@ -546,7 +798,7 @@
     "text": "Usage: /webhooks enable | /webhooks disable"
   },
   "weekday_names": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "Monday",
       "Tuesday",
@@ -622,7 +874,7 @@
     "text": "Online"
   },
   "whois.not_verified": {
-    "status": "verified",
+    "status": "unverified",
     "text": "This command is only available to verified users. Send /verify to confirm consent to forwarding."
   },
   "whois.origin_missing": {

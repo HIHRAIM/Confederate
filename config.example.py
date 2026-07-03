@@ -1,5 +1,8 @@
 import os
 
+from env_loader import load_env
+load_env()
+
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
