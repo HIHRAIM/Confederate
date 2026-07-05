@@ -96,7 +96,7 @@ def _telegram_html_mention(user) -> str:
 
 def _count_telegram_files(message: Message) -> int:
     count = 0
-    if getattr(message, "document", None):
+    if getattr(message, "document", None) and not getattr(message, "animation", None):
         count += 1
     if getattr(message, "photo", None):
         count += 1
@@ -771,15 +771,15 @@ async def remadmin(message: Message):
     db.remove_bridge_admin(bridge_id, uid)
     await message.reply(localized("remadmin_done", lang, user_id=uid))
 
-@router.message(Command("lang"))
-async def set_lang_handler(message: Message):
+@router.message(Command("locallang"))
+async def locallang_handler(message: Message):
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_key)
 
     parts = message.text.split()
     if len(parts) != 2:
-        await message.reply(localized("lang_usage", lang))
+        await message.reply(localized("locallang_usage", lang))
         return
 
     code = parts[1].strip().lower()
@@ -804,6 +804,94 @@ async def set_lang_handler(message: Message):
         return
 
     await message.reply(localized("lang_set", code, code=code))
+
+@router.message(Command("lang"))
+async def lang_handler(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.reply(localized("lang_usage", lang))
+        return
+
+    code = parts[1].strip().lower()
+
+    allowed = is_admin("telegram", message.from_user.id)
+    if not allowed:
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+        if row and str(message.from_user.id) in db.get_bridge_admins(row["bridge_id"]):
+            allowed = True
+    if not allowed:
+        await message.reply(localized("no_permission", lang))
+        return
+
+    try:
+        set_chat_lang(str(message.chat.id), code)
+    except ValueError:
+        await message.reply(localized("loc_unknown_lang", lang, lang=code, supported=", ".join(sorted(SUPPORTED_LANGS))))
+        return
+    except Exception as e:
+        logger.warning("Failed to save language for %s: %s", message.chat.id, e)
+        await message.reply(localized("lang_save_error", lang))
+        return
+
+    await message.reply(localized("lang_set_server", code, code=code))
+
+@router.message(Command("mention"))
+async def mention_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_key = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_key)
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        await message.reply(localized("mention_usage", lang))
+        return
+
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+    if not row:
+        await message.reply(localized("chat_not_in_bridge", lang))
+        return
+    bridge_id = row["bridge_id"]
+
+    from discord_bot import bot as dc_bot, resolve_discord_user, send_bridge_mention
+
+    target = parts[1].strip()
+    uid = None
+    if target.isdigit():
+        uid = int(target)
+    else:
+        for c in db.get_bridge_chats(bridge_id):
+            if c["platform"] != "discord":
+                continue
+            guild = dc_bot.get_guild(int(c["chat_id"].split(":")[0]))
+            if guild is None:
+                continue
+            uid = await resolve_discord_user(guild, target)
+            if uid is not None:
+                break
+    if uid is None:
+        await message.reply(localized("could_not_resolve_user", lang))
+        return
+
+    if not rate_limit_ok(("mention-target", str(uid)), limit=1, window_seconds=3600):
+        await message.reply(localized("mention_cooldown", lang))
+        return
+
+    sender = message.from_user.full_name if message.from_user else "Unknown"
+    ok = await send_bridge_mention(
+        bridge_id, "telegram", chat_key, uid,
+        sender_name=sender,
+        place_name=message.chat.title or "Private chat",
+        messenger_name="Telegram",
+        avatar_url=(await get_telegram_avatar_url(message.from_user.id)) if message.from_user else None,
+    )
+    if ok:
+        await message.reply(localized("mention_sent", lang))
+    else:
+        await message.reply(localized("mention_no_discord", lang))
 
 @router.my_chat_member()
 async def my_chat_member_update(update: ChatMemberUpdated):
@@ -1331,6 +1419,7 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_bridge", lang)),
         escape_html(localized_help("cmd_whois", lang)),
         escape_html(localized_help("cmd_verify", lang)),
+        escape_html(localized_help("cmd_mention", lang)),
         escape_html(localized_help("cmd_poll", lang)),
         escape_html(localized_help("cmd_locale", lang)),
         escape_html(localized_help("cmd_loc_compare", lang)),
@@ -1342,6 +1431,7 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_rfb", lang)),
         escape_html(localized_help("cmd_setadmin", lang)),
         escape_html(localized_help("cmd_lang", lang)),
+        escape_html(localized_help("cmd_locallang", lang)),
         escape_html(localized_help("cmd_remindrules", lang)),
         escape_html(localized_help("cmd_shadowban", lang)),
         escape_html(localized_help("cmd_unverify", lang)),

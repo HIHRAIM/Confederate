@@ -248,8 +248,8 @@
     "text": "/help — показати список команд"
   },
   "help.cmd_lang": {
-    "status": "verified",
-    "text": "/lang <код> — встановити мову бота (ru, uk, pl, en, es, pt)"
+    "status": "unverified",
+    "text": "/lang <код> — встановити мову бота за замовчуванням для всього сервера/групи (адміни мосту)"
   },
   "help.cmd_list_chats": {
     "status": "verified",
@@ -270,6 +270,14 @@
   "help.cmd_locale": {
     "status": "verified",
     "text": "/locale [код] — статус локалізації або файл обраної мови"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <код> — встановити мову бота для цього каналу/теми (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — згадати Discord-користувача з іншої спільноти мосту (кулдаун 1 година на користувача)"
   },
   "help.cmd_newschat": {
     "status": "verified",
@@ -342,6 +350,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Мова бота для цього чату: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Мова бота за замовчуванням для цього сервера/групи: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -442,6 +454,26 @@
   "loc_unknown_lang": {
     "status": "verified",
     "text": "Невідома мова: {lang}. Доступні: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Використання: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "Цього користувача нещодавно вже згадували. Згадувати користувача можна раз на годину."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "У цьому мості немає Discord-чатів, куди можна надіслати згадку."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Згадку надіслано."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Використання: /mention <id_або_імʼя_користувача>"
   },
   "month_names": {
     "status": "unverified",

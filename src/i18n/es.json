@@ -248,7 +248,7 @@
   },
   "help.cmd_lang": {
     "status": "unverified",
-    "text": "/lang <código> — establecer el idioma del bot (ru, uk, pl, en, es, pt)"
+    "text": "/lang <código> — establecer el idioma predeterminado del bot para todo el servidor/grupo (admins del puente)"
   },
   "help.cmd_list_chats": {
     "status": "unverified",
@@ -269,6 +269,14 @@
   "help.cmd_locale": {
     "status": "unverified",
     "text": "/locale [código] — estado de localización o archivo de un idioma"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <código> — establecer el idioma del bot para este canal/tema (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — mencionar a un usuario de Discord de otra comunidad del puente (1 hora de espera por usuario)"
   },
   "help.cmd_newschat": {
     "status": "unverified",
@@ -341,6 +349,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Idioma del bot para este chat: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Idioma predeterminado del bot para este servidor/grupo: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -441,6 +453,26 @@
   "loc_unknown_lang": {
     "status": "unverified",
     "text": "Idioma desconocido: {lang}. Disponibles: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Uso: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "Este usuario ya fue mencionado recientemente. Un usuario puede ser mencionado una vez por hora."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "Este puente no tiene chats de Discord adonde enviar la mención."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Mención enviada."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Uso: /mention <id_o_nombre_de_usuario>"
   },
   "month_names": {
     "status": "unverified",

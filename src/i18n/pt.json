@@ -248,7 +248,7 @@
   },
   "help.cmd_lang": {
     "status": "unverified",
-    "text": "/lang <código> — definir o idioma do bot (ru, uk, pl, en, es, pt)"
+    "text": "/lang <código> — definir o idioma padrão do bot para todo o servidor/grupo (admins da ponte)"
   },
   "help.cmd_list_chats": {
     "status": "unverified",
@@ -269,6 +269,14 @@
   "help.cmd_locale": {
     "status": "unverified",
     "text": "/locale [código] — status da localização ou arquivo de um idioma"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <código> — definir o idioma do bot para este canal/tópico (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — mencionar um usuário do Discord de outra comunidade da ponte (1 hora de espera por usuário)"
   },
   "help.cmd_newschat": {
     "status": "unverified",
@@ -341,6 +349,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Idioma do bot para este chat: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Idioma padrão do bot para este servidor/grupo: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -441,6 +453,26 @@
   "loc_unknown_lang": {
     "status": "unverified",
     "text": "Idioma desconhecido: {lang}. Disponíveis: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Uso: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "Este usuário já foi mencionado recentemente. Um usuário pode ser mencionado uma vez por hora."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "Esta ponte não tem chats do Discord para onde enviar a menção."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Menção enviada."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Uso: /mention <id_ou_nome_de_usuário>"
   },
   "month_names": {
     "status": "unverified",

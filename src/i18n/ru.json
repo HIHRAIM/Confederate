@@ -248,8 +248,8 @@
     "text": "/help — показать список команд"
   },
   "help.cmd_lang": {
-    "status": "verified",
-    "text": "/lang <код> — установить язык бота (ru, uk, pl, en, es, pt)"
+    "status": "unverified",
+    "text": "/lang <код> — установить язык бота по умолчанию для всего сервера/группы (админы моста)"
   },
   "help.cmd_list_chats": {
     "status": "verified",
@@ -270,6 +270,14 @@
   "help.cmd_locale": {
     "status": "verified",
     "text": "/locale [код] — статус локализации или файл выбранного языка"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <код> — установить язык бота для этого канала/темы (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — упомянуть Discord-пользователя из другого сообщества моста (кулдаун 1 час на пользователя)"
   },
   "help.cmd_newschat": {
     "status": "verified",
@@ -342,6 +350,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Язык бота для этого чата: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Язык бота по умолчанию для этого сервера/группы: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -442,6 +454,26 @@
   "loc_unknown_lang": {
     "status": "verified",
     "text": "Неизвестный язык: {lang}. Доступны: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Использование: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "Этого пользователя недавно уже упоминали. Упоминать пользователя можно раз в час."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "В этом мосте нет Discord-чатов, куда можно отправить упоминание."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Упоминание отправлено."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Использование: /mention <id_или_имя_пользователя>"
   },
   "month_names": {
     "status": "verified",

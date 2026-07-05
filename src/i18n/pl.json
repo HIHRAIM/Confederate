@@ -249,7 +249,7 @@
   },
   "help.cmd_lang": {
     "status": "unverified",
-    "text": "/lang <kod> — ustawić język bota (ru, uk, pl, en, es, pt)"
+    "text": "/lang <kod> — ustawić domyślny język bota dla całego serwera/grupy (admini mostu)"
   },
   "help.cmd_list_chats": {
     "status": "unverified",
@@ -270,6 +270,14 @@
   "help.cmd_locale": {
     "status": "unverified",
     "text": "/locale [kod] — status lokalizacji lub plik wybranego języka"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <kod> — ustawić język bota dla tego kanału/tematu (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — wspomnieć użytkownika Discord z innej społeczności mostu (1 godzina odnowienia na użytkownika)"
   },
   "help.cmd_newschat": {
     "status": "unverified",
@@ -342,6 +350,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Język bota dla tego czatu: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Domyślny język bota dla tego serwera/grupy: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -442,6 +454,26 @@
   "loc_unknown_lang": {
     "status": "unverified",
     "text": "Nieznany język: {lang}. Dostępne: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Użycie: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "Ten użytkownik był już niedawno wspominany. Użytkownika można wspominać raz na godzinę."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "Ten most nie ma czatów Discord, do których można wysłać wzmiankę."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Wzmianka wysłana."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Użycie: /mention <id_lub_nazwa_użytkownika>"
   },
   "month_names": {
     "status": "unverified",

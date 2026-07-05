@@ -248,7 +248,7 @@
   },
   "help.cmd_lang": {
     "status": "unverified",
-    "text": "/lang <code> — set bot language (ru, uk, pl, en, es, pt)"
+    "text": "/lang <code> — set the default bot language for the whole server/group (bridge admins)"
   },
   "help.cmd_list_chats": {
     "status": "unverified",
@@ -269,6 +269,14 @@
   "help.cmd_locale": {
     "status": "unverified",
     "text": "/locale [code] — localization status, or a language's file"
+  },
+  "help.cmd_locallang": {
+    "status": "unverified",
+    "text": "/locallang <code> — set bot language for this channel/topic (ru, uk, pl, en, es, pt)"
+  },
+  "help.cmd_mention": {
+    "status": "unverified",
+    "text": "/mention <user> — mention a Discord user from another bridge community (1-hour cooldown per user)"
   },
   "help.cmd_newschat": {
     "status": "unverified",
@@ -341,6 +349,10 @@
   "lang_set": {
     "status": "unverified",
     "text": "Bot language for this chat is now: {code}"
+  },
+  "lang_set_server": {
+    "status": "unverified",
+    "text": "Default bot language for this server/group is now: {code}"
   },
   "lang_usage": {
     "status": "unverified",
@@ -441,6 +453,26 @@
   "loc_unknown_lang": {
     "status": "unverified",
     "text": "Unknown language: {lang}. Available: {supported}."
+  },
+  "locallang_usage": {
+    "status": "unverified",
+    "text": "Usage: /locallang <ru|uk|pl|en|es|pt>"
+  },
+  "mention_cooldown": {
+    "status": "unverified",
+    "text": "This user has already been mentioned recently. A user can be mentioned once per hour."
+  },
+  "mention_no_discord": {
+    "status": "unverified",
+    "text": "This bridge has no Discord chats to send the mention to."
+  },
+  "mention_sent": {
+    "status": "unverified",
+    "text": "Mention sent."
+  },
+  "mention_usage": {
+    "status": "unverified",
+    "text": "Usage: /mention <user_id_or_username>"
   },
   "month_names": {
     "status": "unverified",

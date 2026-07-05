@@ -242,6 +242,47 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body, message
     except Exception:
         pass
 
+async def send_bridge_mention(bridge_id, origin_platform, origin_chat_id, target_uid,
+                              sender_name, place_name, messenger_name, avatar_url=None):
+    """Post a relay-style message containing ``<@target_uid>`` into one Discord
+    chat of the bridge (used by /mention to call a user from another community).
+
+    The chat is picked at random among the bridge's Discord chats, excluding the
+    origin chat when there are others; chats whose guild actually has the target
+    as a member are preferred, so the ping lands where it can reach the user.
+    Returns True if the message was sent.
+    """
+    import random
+
+    chats = [c for c in db.get_bridge_chats(bridge_id) if c["platform"] == "discord"]
+    if origin_platform == "discord" and len(chats) > 1:
+        chats = [c for c in chats if c["chat_id"] != origin_chat_id]
+    if not chats:
+        return False
+
+    def _has_member(chat):
+        try:
+            guild = bot.get_guild(int(chat["chat_id"].split(":")[0]))
+            return bool(guild and guild.get_member(int(target_uid)))
+        except Exception:
+            return False
+
+    preferred = [c for c in chats if _has_member(c)]
+    chat = random.choice(preferred or chats)
+
+    sender_name = clean_display_name(sender_name)
+    place_name = clean_display_name(place_name)
+    sent = await deliver_discord_relay(
+        chat,
+        header=_discord_relay_header(messenger_name, place_name, sender_name, False),
+        body_discord=f"<@{target_uid}>",
+        reply_line=None,
+        reply_to_platform_message_id=None,
+        sender_name=sender_name, place_name=place_name,
+        messenger_name=messenger_name, avatar_url=avatar_url,
+    )
+    return sent is not None
+
 async def resolve_discord_user(guild: discord.Guild, identifier: str):
     identifier = identifier.strip()
     if identifier.startswith("<@") and identifier.endswith(">"):
@@ -1898,8 +1939,9 @@ async def remindrules(
         ephemeral=True
     )
 
-@bot.tree.command(name="lang", description="set bot language (ru, uk, pl, en, es, pt)")
-async def lang_command(interaction: discord.Interaction, code: str):
+@bot.tree.command(name="locallang", description="set bot language for this channel/thread (ru, uk, pl, en, es, pt)")
+@app_commands.describe(code="Language code (ru, uk, pl, en, es, pt)")
+async def locallang_command(interaction: discord.Interaction, code: str):
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_key)
 
@@ -1921,6 +1963,81 @@ async def lang_command(interaction: discord.Interaction, code: str):
         return
 
     await interaction.response.send_message(localized("lang_set", code, code=code), ephemeral=True)
+
+@bot.tree.command(name="lang", description="set the default bot language for the whole server (bridge admins)")
+@app_commands.describe(code="Language code (ru, uk, pl, en, es, pt)")
+async def lang_command(interaction: discord.Interaction, code: str):
+    chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_key)
+
+    allowed = is_admin("discord", interaction.user.id)
+    if not allowed:
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+        if row and str(interaction.user.id) in db.get_bridge_admins(row["bridge_id"]):
+            allowed = True
+    if not allowed:
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    code = code.strip().lower()
+    try:
+        set_chat_lang(str(interaction.guild_id), code)
+    except Exception:
+        await interaction.response.send_message(
+            localized("loc_unknown_lang", lang, lang=code, supported=", ".join(sorted(SUPPORTED_LANGS))),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(localized("lang_set_server", code, code=code), ephemeral=True)
+
+@bot.tree.command(name="mention", description="mention a user from another bridge community (1-hour cooldown per user)")
+@app_commands.describe(target="User ID or username")
+async def mention_cmd(interaction: discord.Interaction, target: str):
+    chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_key)
+
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_key,)).fetchone()
+    if not row:
+        await interaction.response.send_message(localized("chat_not_in_bridge", lang), ephemeral=True)
+        return
+    bridge_id = row["bridge_id"]
+
+    target = target.strip()
+    if target.isdigit():
+        uid = int(target)
+    else:
+        uid = await resolve_discord_user(interaction.guild, target)
+        if uid is None:
+            for c in db.get_bridge_chats(bridge_id):
+                if c["platform"] != "discord" or c["chat_id"] == chat_key:
+                    continue
+                guild = bot.get_guild(int(c["chat_id"].split(":")[0]))
+                if guild is None:
+                    continue
+                uid = await resolve_discord_user(guild, target)
+                if uid is not None:
+                    break
+    if uid is None:
+        await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+        return
+
+    if not rate_limit_ok(("mention-target", str(uid)), limit=1, window_seconds=3600):
+        await interaction.response.send_message(localized("mention_cooldown", lang), ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    ok = await send_bridge_mention(
+        bridge_id, "discord", chat_key, uid,
+        sender_name=interaction.user.display_name or str(interaction.user),
+        place_name=interaction.guild.name if interaction.guild else "Discord",
+        messenger_name="Discord",
+        avatar_url=str(interaction.user.display_avatar.url),
+    )
+    if ok:
+        await interaction.followup.send(localized("mention_sent", lang), ephemeral=True)
+    else:
+        await interaction.followup.send(localized("mention_no_discord", lang), ephemeral=True)
 
 @bot.tree.command(name="list_chats", description="list all chats the bot is in (bot admins)")
 async def list_chats(interaction: discord.Interaction):
@@ -2971,6 +3088,7 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_bridge", lang),
         localized_help("cmd_whois", lang),
         localized_help("cmd_verify", lang),
+        localized_help("cmd_mention", lang),
         localized_help("cmd_poll", lang),
         localized_help("cmd_locale", lang),
         localized_help("cmd_loc_compare", lang),
@@ -2982,6 +3100,7 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_rfb", lang),
         localized_help("cmd_setadmin", lang),
         localized_help("cmd_lang", lang),
+        localized_help("cmd_locallang", lang),
         localized_help("cmd_remindrules", lang),
         localized_help("cmd_shadowban", lang),
         localized_help("cmd_allow_bots", lang),

@@ -319,16 +319,18 @@ def find_message_db_id_by_media_member(chat_id, platform_message_id):
 
 def set_chat_lang(chat_id, lang_code):
     cur.execute(
-        "INSERT OR REPLACE INTO chat_settings (chat_id, lang) VALUES (?,?)",
+        "INSERT INTO chat_settings (chat_id, lang) VALUES (?,?)"
+        " ON CONFLICT(chat_id) DO UPDATE SET lang=excluded.lang",
         (chat_id, lang_code)
     )
     conn.commit()
 
 def get_chat_lang(chat_id):
     """
-    Lookup language for given chat_id. First try exact chat_id (channel/thread),
-    then fallback to group/server-level key '<group_id>:0' (so lang is preserved
-    for whole Discord server or whole Telegram chat).
+    Lookup language for given chat_id. Resolution order:
+      1. exact chat_id (channel/thread/topic — set with /locallang),
+      2. bare community prefix (guild id / group chat id — set with /lang),
+      3. legacy '<group_id>:0' key (old group-wide behavior).
     If not found → returns None.
     """
     row = cur.execute(
@@ -340,24 +342,25 @@ def get_chat_lang(chat_id):
 
     if ":" in chat_id:
         prefix = chat_id.split(":", 1)[0]
-        group_key = f"{prefix}:0"
-        row = cur.execute(
-            "SELECT lang FROM chat_settings WHERE chat_id=?",
-            (group_key,)
-        ).fetchone()
-        if row and row["lang"]:
-            return row["lang"]
+        for fallback_key in (prefix, f"{prefix}:0"):
+            row = cur.execute(
+                "SELECT lang FROM chat_settings WHERE chat_id=?",
+                (fallback_key,)
+            ).fetchone()
+            if row and row["lang"]:
+                return row["lang"]
 
     return None
 
 def remove_chat_settings_for_prefix(prefix):
     """
-    Remove chat_settings rows where chat_id LIKE '<prefix>:%'
+    Remove chat_settings rows where chat_id LIKE '<prefix>:%', plus the bare
+    '<prefix>' row holding the community-wide /lang setting.
     prefix example: guild_id for discord, chat.id for telegram
     """
     cur.execute(
-        "DELETE FROM chat_settings WHERE chat_id LIKE ?",
-        (f"{prefix}:%",)
+        "DELETE FROM chat_settings WHERE chat_id LIKE ? OR chat_id=?",
+        (f"{prefix}:%", str(prefix))
     )
     conn.commit()
 
@@ -398,21 +401,22 @@ def add_verified_user(platform, user_id, prefix, days_valid=365):
     )
     conn.commit()
 
-def is_user_verified(platform, user_id, prefix):
+def is_user_verified(platform, user_id, prefix=None):
     """
-    Возвращает True, если для данной платформы и user_id есть запись,
-    которая либо привязана к конкретному prefix, либо глобальная (prefix='*'),
-    и срок ещё не истёк.
+    Возвращает True, если у пользователя есть непросроченная запись верификации
+    на данной платформе. Согласие на пересылку одно на всю платформу, поэтому
+    prefix (чат/сервер, где оно было дано) на проверку не влияет — параметр
+    оставлен только для совместимости сигнатуры.
     """
     now = int(time.time())
     row = cur.execute(
         """
         SELECT expires_at FROM verified_users
-        WHERE platform=? AND user_id=? AND (prefix=? OR prefix=?)
+        WHERE platform=? AND user_id=?
         ORDER BY expires_at DESC
         LIMIT 1
         """,
-        (platform, str(user_id), str(prefix), "*")
+        (platform, str(user_id))
     ).fetchone()
     if not row:
         return False
