@@ -608,6 +608,10 @@
     "status": "unverified",
     "text": "Użycie: /remindrules <5h|30m> [wiadomości] — jako odpowiedź na wiadomość z regulaminem."
   },
+  "reply_external": {
+    "status": "unverified",
+    "text": "(odpowiedź na wiadomość z innego czatu)"
+  },
   "reply_unknown": {
     "status": "unverified",
     "text": "(odpowiedź na nieznaną wiadomość)"

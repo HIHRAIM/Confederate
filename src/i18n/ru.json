@@ -608,6 +608,10 @@
     "status": "unverified",
     "text": "Использование: /remindrules <5h|30m> [сообщений] — ответом на сообщение с правилами."
   },
+  "reply_external": {
+    "status": "verified",
+    "text": "(отвечая на сообщение из другого чата)"
+  },
   "reply_unknown": {
     "status": "verified",
     "text": "(ответ на неизвестное сообщение)"

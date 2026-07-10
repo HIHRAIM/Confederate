@@ -2439,7 +2439,6 @@ async def whois_context_menu(interaction: discord.Interaction, message: discord.
     """Context menu (правая кнопка → Apps → whois): показывает автора пересланного сообщения."""
     await _whois_lookup(interaction, target_message=message)
 
-
 @bot.tree.command(name="whois", description="info about the message author (reply to a bot relay message)")
 async def whois_command(interaction: discord.Interaction):
     """

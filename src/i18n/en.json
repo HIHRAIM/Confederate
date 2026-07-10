@@ -607,6 +607,10 @@
     "status": "unverified",
     "text": "Usage: /remindrules <5h|30m> [messages] — as a reply to the message containing the rules."
   },
+  "reply_external": {
+    "status": "unverified",
+    "text": "(replying to a message from another chat)"
+  },
   "reply_unknown": {
     "status": "unverified",
     "text": "(reply to an unknown message)"

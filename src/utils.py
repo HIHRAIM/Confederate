@@ -374,6 +374,9 @@ def localized_video_message(lang):
 def localized_reply_unknown(lang):
     return _LOCALE["reply_unknown"].get(lang, _LOCALE["reply_unknown"][DEFAULT_LANG])
 
+def localized_reply_external(lang):
+    return _LOCALE["reply_external"].get(lang, _LOCALE["reply_external"][DEFAULT_LANG])
+
 def _reply_link_label_name(name):
     """Sanitize a sender name for use inside a Discord markdown link label:
     strip brackets/newlines that would break the [label](url) syntax."""

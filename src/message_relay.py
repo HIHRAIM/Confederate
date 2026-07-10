@@ -101,11 +101,11 @@ def discord_to_telegram_html(text: str):
         escaped,
     )
     escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*\*([^*\n]+)\*\*", r"<b>\1</b>", escaped)
-    escaped = re.sub(r"__([^_\n]+)__", r"<u>\1</u>", escaped)
-    escaped = re.sub(r"~~([^~\n]+)~~", r"<s>\1</s>", escaped)
-    escaped = re.sub(r"\|\|([^|\n]+)\|\|", r"<tg-spoiler>\1</tg-spoiler>", escaped)
-    escaped = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"__([^_]+)__", r"<u>\1</u>", escaped)
+    escaped = re.sub(r"~~([^~]+)~~", r"<s>\1</s>", escaped)
+    escaped = re.sub(r"\|\|([^|]+)\|\|", r"<tg-spoiler>\1</tg-spoiler>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
 
     lines = escaped.splitlines()
     converted = []
@@ -256,6 +256,7 @@ def clean_display_name(value, max_len=64):
 from utils import (
     get_chat_lang,
     localized_reply_unknown,
+    localized_reply_external,
     localized_reply_webhook,
     localized_file_count_text,
     localized_forward_from_chat,
@@ -300,7 +301,6 @@ def _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id):
                     reply_line = localized_reply_unknown(lang)
     return reply_line, reply_to_platform_message_id
 
-
 def _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_message_id):
     """Markdown-link "replying to …" first line for a Discord webhook copy (a
     webhook message can't carry a native reply reference). ``None`` if no link
@@ -322,7 +322,6 @@ def _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_m
     link = f"https://discord.com/channels/{guild_id}/{channel_id}/{reply_to_platform_message_id}"
     return localized_reply_webhook(replied_name, link, lang)
 
-
 def _forward_line(forward_type, forward_name, lang):
     """Localized "forwarded from …" line, or ``None`` when it isn't a forward."""
     if forward_type == "chat":
@@ -332,7 +331,6 @@ def _forward_line(forward_type, forward_name, lang):
     if forward_type == "unknown":
         return localized_forward_unknown(lang)
     return None
-
 
 def build_discord_webhook_relay_body(message_db_id, chat, lang, body_discord):
     """Reconstruct a webhook copy's full content (reply + forward prefix lines,
@@ -358,7 +356,6 @@ def build_discord_webhook_relay_body(message_db_id, chat, lang, body_discord):
         body = f"{prefix}\n{body}"
     return body
 
-
 async def relay_message(
     *,
     bridge_id,
@@ -377,6 +374,7 @@ async def relay_message(
     telegram_file_count=None,
     forward_type=None,
     forward_name=None,
+    external_reply=False,
     is_bot_sender=False,
     avatar_url=None,
 ):
@@ -448,6 +446,13 @@ async def relay_message(
             current_discord_text = f"{fwd_line}\n{current_discord_text}".strip()
             if current_telegram_html is not None:
                 current_telegram_html = f"{escape_html(fwd_line)}\n{current_telegram_html}".strip()
+
+        if external_reply:
+            ext_line = localized_reply_external(lang)
+            current_text = f"{ext_line}\n{current_text}".strip()
+            current_discord_text = f"{ext_line}\n{current_discord_text}".strip()
+            if current_telegram_html is not None:
+                current_telegram_html = f"{escape_html(ext_line)}\n{current_telegram_html}".strip()
         if telegram_file_count is not None:
             marker = localized_file_count_text(telegram_file_count, lang)
             current_text = current_text.replace(

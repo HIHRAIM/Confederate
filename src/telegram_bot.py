@@ -156,7 +156,25 @@ def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None
 
     return [base_text], relay_file_count
 
-def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_msg_db_id, forward_type, forward_name):
+def _relay_variants_for_text(text, base_text, discord_text, telegram_html):
+    """Pair a relay text item with its Discord-markdown and Telegram-HTML forms.
+
+    `_build_telegram_relay_texts` may append a file-count/link suffix to the
+    message's text or caption. The formatted variants only cover the original
+    text, so re-attach the suffix to both of them; that way caption/text
+    formatting survives even when a suffix is present (a plain `text == base`
+    check would otherwise drop it). Marker-only items (stickers, voice, …) have
+    no base text and carry no formatting."""
+    if base_text and text.startswith(base_text):
+        suffix = text[len(base_text):]
+        d = (discord_text or "") + suffix
+        h = (telegram_html + escape_html(suffix)) if telegram_html is not None else None
+        return d, h
+    if text == base_text:
+        return discord_text, telegram_html
+    return text, None
+
+def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_msg_db_id, forward_type, forward_name, external_reply=False):
     texts, relay_file_count = _build_telegram_relay_texts(message)
     source_text = getattr(message, "text", None)
     source_caption = getattr(message, "caption", None)
@@ -165,7 +183,7 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         tg_html_source = getattr(message, "html_text", None)
         discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
     elif source_caption is not None:
-        tg_html_source = getattr(message, "html_caption", None)
+        tg_html_source = getattr(message, "html_text", None)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
     else:
         discord_text = texts[0] if texts else ""
@@ -180,6 +198,7 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         "reply_to_msg_db_id": reply_to_msg_db_id,
         "forward_type": forward_type,
         "forward_name": forward_name,
+        "external_reply": external_reply,
         "texts": texts,
         "relay_file_count": relay_file_count,
         "base_text": (getattr(message, "text", "") or getattr(message, "caption", "") or ""),
@@ -233,8 +252,9 @@ async def _relay_serialized_telegram_payload(payload_json: str):
     base_text = payload.get("base_text", "")
     avatar_url = await _telegram_relay_avatar_url(payload["bridge_id"], payload.get("origin_sender_id"))
     for text in payload.get("texts", []):
-        current_discord_text = payload.get("discord_text", "") if text == base_text else text
-        current_telegram_html = payload.get("telegram_html") if text == base_text else None
+        current_discord_text, current_telegram_html = _relay_variants_for_text(
+            text, base_text, payload.get("discord_text", ""), payload.get("telegram_html")
+        )
         await message_relay.relay_message(
             bridge_id=payload["bridge_id"],
             origin_platform="telegram",
@@ -252,6 +272,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             telegram_file_count=payload.get("relay_file_count"),
             forward_type=payload.get("forward_type"),
             forward_name=payload.get("forward_name"),
+            external_reply=payload.get("external_reply", False),
             avatar_url=avatar_url,
         )
 
@@ -484,6 +505,11 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     is_forward = forward_type is not None
 
+    is_external_reply = (
+        getattr(message, "external_reply", None) is not None
+        and not getattr(message, "reply_to_message", None)
+    )
+
     pending_reply_to_msg_db_id = None
     if (
         not is_forward
@@ -584,6 +610,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
+                        external_reply=is_external_reply,
                     )
                 )
             except Exception:
@@ -602,6 +629,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
+                        external_reply=is_external_reply,
                     )
                 )
             return
@@ -660,12 +688,13 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         tg_html_source = getattr(message, "html_text", None)
         discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
     elif source_caption is not None:
-        tg_html_source = getattr(message, "html_caption", None)
+        tg_html_source = getattr(message, "html_text", None)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
     else:
         discord_text = texts[0] if texts else ""
 
     telegram_html = tg_html_source
+    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
 
     avatar_url = await _telegram_relay_avatar_url(
         bridge_id, message.from_user.id if message.from_user else None
@@ -673,8 +702,9 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     relayed_db_id = None
     for text in texts:
-        current_discord_text = discord_text if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else text
-        current_telegram_html = telegram_html if text == (getattr(message, "text", "") or getattr(message, "caption", "") or "") else None
+        current_discord_text, current_telegram_html = _relay_variants_for_text(
+            text, base_text, discord_text, telegram_html
+        )
         relayed_db_id = await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="telegram",
@@ -692,6 +722,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             telegram_file_count=relay_file_count,
             forward_type=forward_type,
             forward_name=forward_name,
+            external_reply=is_external_reply,
             is_bot_sender=is_bot_sender,
             avatar_url=avatar_url,
         )
@@ -1476,7 +1507,7 @@ async def edited_message_handler(message: Message):
         telegram_html = getattr(message, "html_text", None)
     else:
         discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
-        telegram_html = getattr(message, "html_caption", None)
+        telegram_html = getattr(message, "html_text", None)
 
     header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(message.from_user.full_name if message.from_user else 'Unknown')}:"
 
@@ -1486,16 +1517,18 @@ async def edited_message_handler(message: Message):
             if c["platform"] == "telegram":
                 chat_id_str, th = c["chat_id"].split(":")
                 target_lang = get_chat_lang(c["chat_id"])
-                localized_text = rendered_text
+                edit_plain, edit_html = _relay_variants_for_text(
+                    rendered_text, base_text, discord_text, telegram_html
+                )
                 if relay_file_count is not None:
-                    localized_text = localized_text.replace(
-                        f"__TG_FILES_{relay_file_count}__",
-                        localized_file_count_text(relay_file_count, target_lang)
-                    )
+                    marker = localized_file_count_text(relay_file_count, target_lang)
+                    edit_plain = edit_plain.replace(f"__TG_FILES_{relay_file_count}__", marker)
+                    if edit_html is not None:
+                        edit_html = edit_html.replace(f"__TG_FILES_{relay_file_count}__", escape_html(marker))
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(header, telegram_html or escape_html(discord_text), discord_text),
+                    text=build_telegram_text(header, edit_html or escape_html(edit_plain), edit_plain),
                     parse_mode="HTML"
                 )
             elif c["platform"] == "discord":
