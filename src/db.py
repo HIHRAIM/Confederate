@@ -77,6 +77,25 @@ def init():
         PRIMARY KEY (platform, chat_id, user_id)
     );
 
+    CREATE TABLE IF NOT EXISTS server_admins (
+        platform TEXT NOT NULL,
+        server_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT,
+        added_by TEXT,
+        added_at INTEGER,
+        PRIMARY KEY (platform, server_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS localizers (
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT,
+        added_by TEXT,
+        added_at INTEGER,
+        PRIMARY KEY (platform, user_id)
+    );
+
     CREATE TABLE IF NOT EXISTS dead_chats (
         chat_id TEXT PRIMARY KEY,
         role_id TEXT,
@@ -132,6 +151,15 @@ def init():
         bridge_id INTEGER,
         user_id TEXT,
         PRIMARY KEY (bridge_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS server_bridge_admins (
+        platform TEXT NOT NULL,
+        server_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        added_by TEXT,
+        added_at INTEGER,
+        PRIMARY KEY (platform, server_id, user_id)
     );
 
     CREATE TABLE IF NOT EXISTS shadow_bans (
@@ -202,6 +230,94 @@ def init():
         key TEXT PRIMARY KEY,
         value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS appeals (
+        user_id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        bridge_id INTEGER NOT NULL,
+        lang TEXT,
+        created_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'open',
+        verdict_at INTEGER,
+        verdict_by TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS appeal_consuls (
+        thread_id TEXT NOT NULL,
+        consul_user_id TEXT NOT NULL,
+        ord INTEGER NOT NULL,
+        PRIMARY KEY (thread_id, consul_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS consul_names (
+        user_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        normalized TEXT NOT NULL,
+        set_by TEXT,
+        set_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS server_file_consents (
+        platform TEXT NOT NULL,
+        server_id TEXT NOT NULL,
+        enabled_by TEXT,
+        enabled_at INTEGER,
+        PRIMARY KEY (platform, server_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bridge_file_consents (
+        bridge_id INTEGER PRIMARY KEY,
+        enabled_by TEXT,
+        enabled_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS gallery_uploads (
+        message_id INTEGER PRIMARY KEY,
+        channel_id TEXT,
+        gallery_message_id TEXT,
+        urls TEXT,
+        source_message_ids TEXT,
+        file_ids TEXT,
+        created_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS user_privacy (
+        platform TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        hide_whois INTEGER NOT NULL DEFAULT 0,
+        hide_avatar INTEGER NOT NULL DEFAULT 0,
+        block_mention INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER,
+        PRIMARY KEY (platform, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS feeds (
+        kind TEXT NOT NULL,
+        source TEXT NOT NULL,
+        chat_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        source_id TEXT,
+        title TEXT,
+        last_post_id TEXT,
+        live INTEGER NOT NULL DEFAULT 0,
+        added_by TEXT,
+        added_at INTEGER,
+        PRIMARY KEY (kind, source, chat_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS server_webhooks (
+        server_id TEXT PRIMARY KEY,
+        enabled_by TEXT,
+        enabled_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS bridge_webhooks (
+        server_id TEXT NOT NULL,
+        bridge_id INTEGER NOT NULL,
+        enabled_by TEXT,
+        enabled_at INTEGER,
+        PRIMARY KEY (server_id, bridge_id)
+    );
     """)
     conn.commit()
 
@@ -228,6 +344,11 @@ def init():
         conn.commit()
     if "first_message_payload" not in pending_cols:
         cur.execute("ALTER TABLE pending_consents ADD COLUMN first_message_payload TEXT")
+        conn.commit()
+
+    copy_cols = [r["name"] for r in cur.execute("PRAGMA table_info(message_copies)").fetchall()]
+    if "kind" not in copy_cols:
+        cur.execute("ALTER TABLE message_copies ADD COLUMN kind TEXT DEFAULT 'main'")
         conn.commit()
 
     cs_cols = [r["name"] for r in cur.execute("PRAGMA table_info(chat_settings)").fetchall()]
@@ -362,6 +483,12 @@ def remove_chat_settings_for_prefix(prefix):
         "DELETE FROM chat_settings WHERE chat_id LIKE ? OR chat_id=?",
         (f"{prefix}:%", str(prefix))
     )
+    cur.execute(
+        "DELETE FROM feeds WHERE chat_id LIKE ? OR chat_id=?",
+        (f"{prefix}:%", str(prefix))
+    )
+    cur.execute("DELETE FROM server_webhooks WHERE server_id=?", (str(prefix),))
+    cur.execute("DELETE FROM bridge_webhooks WHERE server_id=?", (str(prefix),))
     conn.commit()
 
 def get_telegram_chat_count():
@@ -508,7 +635,123 @@ def add_bridge_admin(bridge_id, user_id):
     conn.commit()
 
 def get_bridge_admins(bridge_id):
-    return [r["user_id"] for r in cur.execute("SELECT user_id FROM bridge_admins WHERE bridge_id=?", (bridge_id,)).fetchall()]
+    """Everyone holding Bridge Admin rights in this bridge — granted for the
+    bridge itself with `/setadmin scope: local`, or across a server/group with
+    plain `/setadmin`, which covers the bridges it joins later too."""
+    ids = {r["user_id"] for r in cur.execute(
+        "SELECT user_id FROM bridge_admins WHERE bridge_id=?", (bridge_id,)
+    ).fetchall()}
+    for chat in get_bridge_chats(bridge_id):
+        server_id = chat_server_id(chat["platform"], chat["chat_id"])
+        if not server_id:
+            continue
+        ids.update(r["user_id"] for r in cur.execute(
+            "SELECT user_id FROM server_bridge_admins WHERE platform=? AND server_id=?",
+            (chat["platform"], server_id)
+        ).fetchall())
+    return sorted(ids)
+
+def server_bridge_ids(platform, server_id):
+    """The bridges a server/group takes part in."""
+    return [r["bridge_id"] for r in cur.execute(
+        "SELECT DISTINCT bridge_id FROM chats"
+        " WHERE platform=? AND (chat_id LIKE ? OR chat_id=?)",
+        (platform, f"{server_id}:%", str(server_id))
+    ).fetchall() if r["bridge_id"] is not None]
+
+def add_server_bridge_admin(platform, server_id, user_id, added_by=None):
+    """Bridge Admin rights across a whole server/group: every bridge it takes
+    part in now, and every bridge it joins later.
+
+    The bridges it is in right now also get an ordinary `bridge_admins` row, so
+    the per-bridge and per-chat lookups elsewhere see the grant immediately."""
+    cur.execute(
+        "INSERT INTO server_bridge_admins (platform, server_id, user_id, added_by, added_at)"
+        " VALUES (?,?,?,?,strftime('%s','now'))"
+        " ON CONFLICT(platform, server_id, user_id) DO UPDATE SET"
+        " added_by=excluded.added_by, added_at=excluded.added_at",
+        (platform, str(server_id), str(user_id),
+         str(added_by) if added_by is not None else None)
+    )
+    for bridge_id in server_bridge_ids(platform, server_id):
+        add_bridge_admin(bridge_id, user_id)
+    conn.commit()
+
+def remove_server_bridge_admin(platform, server_id, user_id) -> bool:
+    existed = cur.execute(
+        "SELECT 1 FROM server_bridge_admins WHERE platform=? AND server_id=? AND user_id=?",
+        (platform, str(server_id), str(user_id))
+    ).fetchone() is not None
+    cur.execute(
+        "DELETE FROM server_bridge_admins WHERE platform=? AND server_id=? AND user_id=?",
+        (platform, str(server_id), str(user_id))
+    )
+    for bridge_id in server_bridge_ids(platform, server_id):
+        remove_bridge_admin(bridge_id, user_id)
+    conn.commit()
+    return existed
+
+def is_server_bridge_admin(platform, server_id, user_id) -> bool:
+    return cur.execute(
+        "SELECT 1 FROM server_bridge_admins WHERE platform=? AND server_id=? AND user_id=?",
+        (platform, str(server_id), str(user_id))
+    ).fetchone() is not None
+
+def add_server_admin(platform, server_id, user_id, username=None, added_by=None):
+    """Delegate server-wide Local Admin rights (set with /setlocaladmin).
+    The username, when known, is kept for the control panel's username login."""
+    cur.execute(
+        "INSERT INTO server_admins (platform, server_id, user_id, username, added_by, added_at)"
+        " VALUES (?,?,?,?,?,strftime('%s','now'))"
+        " ON CONFLICT(platform, server_id, user_id) DO UPDATE SET"
+        " username=COALESCE(excluded.username, server_admins.username)",
+        (platform, str(server_id), str(user_id), username,
+         str(added_by) if added_by is not None else None)
+    )
+    conn.commit()
+
+def remove_server_admin(platform, server_id, user_id):
+    cur.execute(
+        "DELETE FROM server_admins WHERE platform=? AND server_id=? AND user_id=?",
+        (platform, str(server_id), str(user_id))
+    )
+    conn.commit()
+
+def is_server_admin(platform, server_id, user_id):
+    return cur.execute(
+        "SELECT 1 FROM server_admins WHERE platform=? AND server_id=? AND user_id=?",
+        (platform, str(server_id), str(user_id))
+    ).fetchone() is not None
+
+def add_localizer(platform, user_id, username=None, added_by=None):
+    """Grant localizer status (set with /localizer-add): the user may edit
+    this bot's localization through the control panel.  The username, when
+    known, is kept for the panel's username login."""
+    cur.execute(
+        "INSERT INTO localizers (platform, user_id, username, added_by, added_at)"
+        " VALUES (?,?,?,?,strftime('%s','now'))"
+        " ON CONFLICT(platform, user_id) DO UPDATE SET"
+        " username=COALESCE(excluded.username, localizers.username)",
+        (platform, str(user_id), username,
+         str(added_by) if added_by is not None else None)
+    )
+    conn.commit()
+
+def remove_localizer(platform, user_id):
+    """Revoke a delegated localizer status.  Returns True when a row existed
+    (admins are localizers implicitly and have no row to remove)."""
+    removed = cur.execute(
+        "DELETE FROM localizers WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).rowcount
+    conn.commit()
+    return removed > 0
+
+def is_localizer(platform, user_id):
+    return cur.execute(
+        "SELECT 1 FROM localizers WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).fetchone() is not None
 
 def remove_bridge_admin(bridge_id, user_id):
     cur.execute(
@@ -539,6 +782,20 @@ def attach_chat(platform, chat_id, bridge_id):
             "INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id) VALUES (?,?,?)",
             (platform, chat_id, r["user_id"])
         )
+    server_id = chat_server_id(platform, chat_id)
+    if server_id:
+        for r in cur.execute(
+            "SELECT user_id FROM server_bridge_admins WHERE platform=? AND server_id=?",
+            (platform, server_id)
+        ).fetchall():
+            cur.execute(
+                "INSERT OR IGNORE INTO bridge_admins (bridge_id, user_id) VALUES(?,?)",
+                (bridge_id, r["user_id"])
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO chat_admins (platform, chat_id, user_id) VALUES (?,?,?)",
+                (platform, chat_id, r["user_id"])
+            )
     conn.commit()
 
 def add_shadow_ban(platform, user_id):
@@ -610,11 +867,31 @@ def set_allow_bots(chat_id, enabled: bool):
     conn.commit()
 
 def get_webhooks_enabled(chat_id):
+    """Whether relayed copies in this Discord chat arrive as webhook messages.
+
+    Three scopes answer yes, widest first: the whole server (`/webhooks enable`),
+    the server's chats in one bridge (`/webhooks enable local`), and the single
+    channel rows written by older versions of the command. Never cached — a chat
+    may have joined its bridge a minute ago."""
     row = cur.execute(
         "SELECT webhooks FROM chat_settings WHERE chat_id=?",
         (chat_id,)
     ).fetchone()
-    return bool(row and row["webhooks"])
+    if row and row["webhooks"]:
+        return True
+
+    server_id = chat_server_id("discord", chat_id)
+    if not server_id:
+        return False
+    if get_server_webhooks(server_id):
+        return True
+
+    bridge = cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (str(chat_id),)
+    ).fetchone()
+    if bridge and bridge["bridge_id"] is not None:
+        return get_bridge_webhooks(server_id, bridge["bridge_id"])
+    return False
 
 def set_webhooks_enabled(chat_id, enabled: bool):
     cur.execute(
@@ -623,6 +900,304 @@ def set_webhooks_enabled(chat_id, enabled: bool):
         (chat_id, 1 if enabled else 0)
     )
     conn.commit()
+
+def set_server_file_consent(platform, server_id, enabled: bool, enabled_by=None):
+    """Server/group-wide consent to the GALLERY file re-upload (`/allow-files`).
+    Covers every chat of that Discord server or Telegram group, including ones
+    attached to a bridge later."""
+    if enabled:
+        cur.execute(
+            "INSERT INTO server_file_consents (platform, server_id, enabled_by, enabled_at)"
+            " VALUES (?,?,?,strftime('%s','now'))"
+            " ON CONFLICT(platform, server_id) DO UPDATE SET"
+            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at",
+            (platform, str(server_id), str(enabled_by) if enabled_by is not None else None)
+        )
+    else:
+        cur.execute(
+            "DELETE FROM server_file_consents WHERE platform=? AND server_id=?",
+            (platform, str(server_id))
+        )
+    conn.commit()
+
+def get_server_file_consent(platform, server_id) -> bool:
+    return cur.execute(
+        "SELECT 1 FROM server_file_consents WHERE platform=? AND server_id=?",
+        (platform, str(server_id))
+    ).fetchone() is not None
+
+def set_bridge_file_consent(bridge_id, enabled: bool, enabled_by=None):
+    """Bridge-wide consent to the GALLERY file re-upload (`/allow-files local`).
+    Covers every chat of the bridge, including ones attached later."""
+    if enabled:
+        cur.execute(
+            "INSERT INTO bridge_file_consents (bridge_id, enabled_by, enabled_at)"
+            " VALUES (?,?,strftime('%s','now'))"
+            " ON CONFLICT(bridge_id) DO UPDATE SET"
+            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at",
+            (int(bridge_id), str(enabled_by) if enabled_by is not None else None)
+        )
+    else:
+        cur.execute("DELETE FROM bridge_file_consents WHERE bridge_id=?", (int(bridge_id),))
+    conn.commit()
+
+def get_bridge_file_consent(bridge_id) -> bool:
+    return cur.execute(
+        "SELECT 1 FROM bridge_file_consents WHERE bridge_id=?",
+        (int(bridge_id),)
+    ).fetchone() is not None
+
+def chat_server_id(platform, chat_id):
+    """The server/group a chat belongs to: guild id for Discord, group id for
+    Telegram. ``None`` for DM chats (appeal bridges), which belong to no server
+    and can therefore never carry a server-wide consent."""
+    chat_id = str(chat_id)
+    if chat_id.startswith("dm:"):
+        return None
+    return chat_id.split(":", 1)[0] or None
+
+def bridge_file_relay_enabled(bridge_id) -> bool:
+    """Whether Telegram files may be re-uploaded to GALLERY for this bridge.
+
+    Every chat of the bridge must be covered — by the bridge-wide consent or by
+    its own server/group consent — because the mechanic both takes files out of
+    one chat and posts public CDN links into all the others. Never cached: a
+    chat may have joined the bridge a minute ago."""
+    if get_bridge_file_consent(bridge_id):
+        return True
+
+    chats = get_bridge_chats(bridge_id)
+    if not chats:
+        return False
+
+    for c in chats:
+        server_id = chat_server_id(c["platform"], c["chat_id"])
+        if not server_id or not get_server_file_consent(c["platform"], server_id):
+            return False
+    return True
+
+def add_gallery_upload(message_id, channel_id, gallery_message_id, urls_json,
+                       source_message_ids_json, file_ids_json=None):
+    """Record the GALLERY message holding a relayed message's re-uploaded files,
+    together with the CDN links handed out in its copies. The Telegram file ids
+    are kept so that an edit can tell a changed attachment from a changed
+    caption and leave working links alone."""
+    cur.execute(
+        "INSERT OR REPLACE INTO gallery_uploads"
+        " (message_id, channel_id, gallery_message_id, urls, source_message_ids, file_ids, created_at)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (int(message_id), str(channel_id), str(gallery_message_id),
+         urls_json, source_message_ids_json, file_ids_json, int(time.time()))
+    )
+    conn.commit()
+
+def get_gallery_upload(message_id):
+    return cur.execute(
+        "SELECT * FROM gallery_uploads WHERE message_id=?",
+        (int(message_id),)
+    ).fetchone()
+
+def delete_gallery_upload(message_id):
+    cur.execute("DELETE FROM gallery_uploads WHERE message_id=?", (int(message_id),))
+    conn.commit()
+
+PRIVACY_FLAGS = ("hide_whois", "hide_avatar", "block_mention")
+
+def get_user_privacy(platform, user_id):
+    """The user's `/privacy` switches as a plain dict. Users who never touched
+    the command have no row — everything is off, which is the behaviour the bot
+    had before `/privacy` existed."""
+    row = cur.execute(
+        "SELECT * FROM user_privacy WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).fetchone()
+    if not row:
+        return {flag: False for flag in PRIVACY_FLAGS}
+    return {flag: bool(row[flag]) for flag in PRIVACY_FLAGS}
+
+def get_privacy_flag(platform, user_id, flag) -> bool:
+    if flag not in PRIVACY_FLAGS:
+        raise ValueError(f"unknown privacy flag: {flag}")
+    row = cur.execute(
+        f"SELECT {flag} FROM user_privacy WHERE platform=? AND user_id=?",
+        (platform, str(user_id))
+    ).fetchone()
+    return bool(row and row[flag])
+
+def set_privacy_flag(platform, user_id, flag, enabled: bool):
+    if flag not in PRIVACY_FLAGS:
+        raise ValueError(f"unknown privacy flag: {flag}")
+    cur.execute(
+        f"INSERT INTO user_privacy (platform, user_id, {flag}, updated_at)"
+        f" VALUES (?,?,?,strftime('%s','now'))"
+        f" ON CONFLICT(platform, user_id) DO UPDATE SET"
+        f" {flag}=excluded.{flag}, updated_at=excluded.updated_at",
+        (platform, str(user_id), 1 if enabled else 0)
+    )
+    conn.commit()
+
+def toggle_privacy_flag(platform, user_id, flag) -> bool:
+    """Flip one switch and return its new value."""
+    enabled = not get_privacy_flag(platform, user_id, flag)
+    set_privacy_flag(platform, user_id, flag, enabled)
+    return enabled
+
+def add_feed(kind, source, platform, chat_id, source_id=None, title=None,
+             last_post_id=None, live=False, added_by=None):
+    """Attach an outside source (a Bluesky account, a YouTube or Telegram channel) to a chat.
+
+    `last_post_id` is the newest post at the moment of attaching, stored so the
+    feed starts with what comes next instead of replaying the backlog. `live`
+    marks a source that pushes its posts to the bot — a Telegram channel the bot
+    administrates — and is therefore never polled."""
+    cur.execute(
+        "INSERT INTO feeds (kind, source, chat_id, platform, source_id, title,"
+        " last_post_id, live, added_by, added_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,strftime('%s','now'))"
+        " ON CONFLICT(kind, source, chat_id) DO UPDATE SET"
+        " platform=excluded.platform, source_id=excluded.source_id,"
+        " title=excluded.title, live=excluded.live,"
+        " added_by=excluded.added_by, added_at=excluded.added_at",
+        (kind, source.lower(), str(chat_id), platform,
+         str(source_id) if source_id is not None else None, title,
+         str(last_post_id) if last_post_id is not None else None,
+         1 if live else 0,
+         str(added_by) if added_by is not None else None)
+    )
+    conn.commit()
+
+def remove_feed(kind, source, chat_id) -> bool:
+    if not cur.execute(
+        "SELECT 1 FROM feeds WHERE kind=? AND source=? AND chat_id=?",
+        (kind, source.lower(), str(chat_id))
+    ).fetchone():
+        return False
+    cur.execute(
+        "DELETE FROM feeds WHERE kind=? AND source=? AND chat_id=?",
+        (kind, source.lower(), str(chat_id))
+    )
+    conn.commit()
+    return True
+
+def feed_targets(platform, chat_id):
+    """The chats a feed attached in `chat_id` delivers to.
+
+    Every chat of its bridge when the chat has one — including chats that join
+    the bridge later, since this is resolved on each post — and otherwise the
+    chat it was attached in, on its own."""
+    row = cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (str(chat_id),)
+    ).fetchone()
+    if row and row["bridge_id"] is not None:
+        chats = get_bridge_chats(row["bridge_id"])
+        if chats:
+            return chats
+    return [{"platform": platform, "chat_id": str(chat_id)}]
+
+def find_feed(kind, source, chat_id):
+    """The feed row that already delivers `source` into `chat_id` — attached
+    there, or in another chat of the same bridge. Used to keep one bridge from
+    following the same source twice and posting everything double."""
+    source = source.lower()
+    row = cur.execute(
+        "SELECT * FROM feeds WHERE kind=? AND source=? AND chat_id=?",
+        (kind, source, str(chat_id))
+    ).fetchone()
+    if row:
+        return row
+
+    bridge = cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (str(chat_id),)
+    ).fetchone()
+    if not bridge or bridge["bridge_id"] is None:
+        return None
+    for chat in get_bridge_chats(bridge["bridge_id"]):
+        row = cur.execute(
+            "SELECT * FROM feeds WHERE kind=? AND source=? AND chat_id=?",
+            (kind, source, chat["chat_id"])
+        ).fetchone()
+        if row:
+            return row
+    return None
+
+def get_bridge_feeds(bridge_id):
+    """Feeds attached in any chat of a bridge, for `/bridge`."""
+    return cur.execute(
+        "SELECT f.* FROM feeds f JOIN chats c ON c.chat_id = f.chat_id"
+        " WHERE c.bridge_id=? ORDER BY f.kind, f.source",
+        (int(bridge_id),)
+    ).fetchall()
+
+def get_all_feeds(kind=None):
+    if kind is None:
+        return cur.execute("SELECT * FROM feeds ORDER BY kind, source").fetchall()
+    return cur.execute(
+        "SELECT * FROM feeds WHERE kind=? ORDER BY source", (kind,)
+    ).fetchall()
+
+def get_feeds_by_source_id(kind, source_id):
+    """Every attachment of one source, found by the id its platform uses — how a
+    live Telegram channel post is matched to the chats waiting for it."""
+    return cur.execute(
+        "SELECT * FROM feeds WHERE kind=? AND source_id=?", (kind, str(source_id))
+    ).fetchall()
+
+def set_feed_last_post(kind, source, chat_id, last_post_id, title=None):
+    if title is None:
+        cur.execute(
+            "UPDATE feeds SET last_post_id=? WHERE kind=? AND source=? AND chat_id=?",
+            (str(last_post_id), kind, source.lower(), str(chat_id))
+        )
+    else:
+        cur.execute(
+            "UPDATE feeds SET last_post_id=?, title=? WHERE kind=? AND source=? AND chat_id=?",
+            (str(last_post_id), title, kind, source.lower(), str(chat_id))
+        )
+    conn.commit()
+
+def set_server_webhooks(server_id, enabled: bool, enabled_by=None):
+    """Server-wide `/webhooks`: every chat of that Discord server, in any bridge,
+    including ones attached later."""
+    if enabled:
+        cur.execute(
+            "INSERT INTO server_webhooks (server_id, enabled_by, enabled_at)"
+            " VALUES (?,?,strftime('%s','now'))"
+            " ON CONFLICT(server_id) DO UPDATE SET"
+            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at",
+            (str(server_id), str(enabled_by) if enabled_by is not None else None)
+        )
+    else:
+        cur.execute("DELETE FROM server_webhooks WHERE server_id=?", (str(server_id),))
+    conn.commit()
+
+def get_server_webhooks(server_id) -> bool:
+    return cur.execute(
+        "SELECT 1 FROM server_webhooks WHERE server_id=?", (str(server_id),)
+    ).fetchone() is not None
+
+def set_bridge_webhooks(server_id, bridge_id, enabled: bool, enabled_by=None):
+    """`/webhooks enable local`: the server's chats in one bridge only."""
+    if enabled:
+        cur.execute(
+            "INSERT INTO bridge_webhooks (server_id, bridge_id, enabled_by, enabled_at)"
+            " VALUES (?,?,?,strftime('%s','now'))"
+            " ON CONFLICT(server_id, bridge_id) DO UPDATE SET"
+            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at",
+            (str(server_id), int(bridge_id),
+             str(enabled_by) if enabled_by is not None else None)
+        )
+    else:
+        cur.execute(
+            "DELETE FROM bridge_webhooks WHERE server_id=? AND bridge_id=?",
+            (str(server_id), int(bridge_id))
+        )
+    conn.commit()
+
+def get_bridge_webhooks(server_id, bridge_id) -> bool:
+    return cur.execute(
+        "SELECT 1 FROM bridge_webhooks WHERE server_id=? AND bridge_id=?",
+        (str(server_id), int(bridge_id))
+    ).fetchone() is not None
 
 def is_relay_copy(platform: str, chat_id: str, message_id_platform: str) -> bool:
     """Return True if the given message was sent by the bridge bot as a relay copy."""
@@ -737,6 +1312,143 @@ def cleanup_old_polls(max_age_seconds=7 * 24 * 3600):
     for r in rows:
         delete_poll(r["id"])
 
+APPEAL_BRIDGE_ID_FLOOR = 100000
+
+def next_appeal_bridge_id():
+    row = cur.execute(
+        "SELECT MAX(id) AS mx FROM bridges WHERE id >= ?",
+        (APPEAL_BRIDGE_ID_FLOOR,)
+    ).fetchone()
+    if row and row["mx"] is not None:
+        return int(row["mx"]) + 1
+    return APPEAL_BRIDGE_ID_FLOOR
+
+def create_appeal(user_id, thread_id, bridge_id, lang):
+    """Open an appeal for a user, replacing any previous (resolved) record."""
+    cur.execute(
+        "INSERT OR REPLACE INTO appeals "
+        "(user_id, thread_id, bridge_id, lang, created_at, status, verdict_at, verdict_by) "
+        "VALUES (?,?,?,?,?,'open',NULL,NULL)",
+        (str(user_id), str(thread_id), int(bridge_id), lang, int(time.time()))
+    )
+    conn.commit()
+
+def get_appeal(user_id):
+    return cur.execute(
+        "SELECT * FROM appeals WHERE user_id=?",
+        (str(user_id),)
+    ).fetchone()
+
+def get_open_appeal(user_id):
+    return cur.execute(
+        "SELECT * FROM appeals WHERE user_id=? AND status='open'",
+        (str(user_id),)
+    ).fetchone()
+
+def get_appeal_by_thread(thread_id):
+    return cur.execute(
+        "SELECT * FROM appeals WHERE thread_id=?",
+        (str(thread_id),)
+    ).fetchone()
+
+def resolve_appeal(user_id, status, verdict_by):
+    """Mark an open appeal as 'pardoned' or 'condemned'. Returns True if a row changed."""
+    c = cur.execute(
+        "UPDATE appeals SET status=?, verdict_at=?, verdict_by=? WHERE user_id=? AND status='open'",
+        (status, int(time.time()), str(verdict_by), str(user_id))
+    )
+    conn.commit()
+    return c.rowcount > 0
+
+def has_any_appeal(user_id):
+    """Whether the user ever filed an appeal (any status) — used by the
+    Purgatorium 7-day kick sweep."""
+    return get_appeal(user_id) is not None
+
+def delete_appeal(user_id):
+    row = get_appeal(user_id)
+    if row:
+        cur.execute("DELETE FROM appeal_consuls WHERE thread_id=?", (row["thread_id"],))
+    cur.execute("DELETE FROM appeals WHERE user_id=?", (str(user_id),))
+    conn.commit()
+    return row
+
+def get_open_appeals():
+    return cur.execute("SELECT * FROM appeals WHERE status='open'").fetchall()
+
+def get_resolved_appeals_older_than(max_age_seconds):
+    cutoff = int(time.time()) - max_age_seconds
+    return cur.execute(
+        "SELECT * FROM appeals WHERE status != 'open' AND verdict_at IS NOT NULL AND verdict_at < ?",
+        (cutoff,)
+    ).fetchall()
+
+def get_consul_ord(thread_id, consul_user_id):
+    """Stable per-thread anonymization index of a consul (0 → 'Consul A', ...).
+
+    The first time a consul writes in an appeal thread they get the next free
+    index; afterwards the same index is always returned.
+    """
+    row = cur.execute(
+        "SELECT ord FROM appeal_consuls WHERE thread_id=? AND consul_user_id=?",
+        (str(thread_id), str(consul_user_id))
+    ).fetchone()
+    if row:
+        return row["ord"]
+    nxt = cur.execute(
+        "SELECT COALESCE(MAX(ord) + 1, 0) AS nxt FROM appeal_consuls WHERE thread_id=?",
+        (str(thread_id),)
+    ).fetchone()["nxt"]
+    cur.execute(
+        "INSERT INTO appeal_consuls (thread_id, consul_user_id, ord) VALUES (?,?,?)",
+        (str(thread_id), str(consul_user_id), nxt)
+    )
+    conn.commit()
+    return nxt
+
+def set_consul_name(user_id, name, normalized, set_by=None):
+    """Store a consul's `/setname` alias — the fixed signature appellants see
+    instead of 'Consul A/B/…'. One alias per consul, shared by every appeal.
+
+    Deliberately not touched by `delete_appeal`, unlike `appeal_consuls`: the
+    alias has to outlive the appeals it was used in."""
+    cur.execute(
+        "INSERT INTO consul_names (user_id, name, normalized, set_by, set_at)"
+        " VALUES (?,?,?,?,strftime('%s','now'))"
+        " ON CONFLICT(user_id) DO UPDATE SET"
+        " name=excluded.name, normalized=excluded.normalized,"
+        " set_by=excluded.set_by, set_at=excluded.set_at",
+        (str(user_id), name, normalized,
+         str(set_by) if set_by is not None else None)
+    )
+    conn.commit()
+
+def get_consul_name(user_id):
+    row = cur.execute(
+        "SELECT name FROM consul_names WHERE user_id=?",
+        (str(user_id),)
+    ).fetchone()
+    return row["name"] if row else None
+
+def remove_consul_name(user_id):
+    """Drop a consul's alias, sending them back to the anonymized label.
+    Returns True when there was one."""
+    removed = cur.execute(
+        "DELETE FROM consul_names WHERE user_id=?",
+        (str(user_id),)
+    ).rowcount
+    conn.commit()
+    return removed > 0
+
+def find_consul_name_owner(normalized):
+    """Who already holds this alias, compared case-insensitively. ``None`` when
+    it is free."""
+    row = cur.execute(
+        "SELECT user_id FROM consul_names WHERE normalized=?",
+        (normalized,)
+    ).fetchone()
+    return row["user_id"] if row else None
+
 def remove_chat_from_bridge(chat_id):
     row = cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
     if not row:
@@ -755,6 +1467,7 @@ def remove_chat_from_bridge(chat_id):
         cur.execute("DELETE FROM bridges WHERE id=?", (bridge_id,))
         cur.execute("DELETE FROM bridge_admins WHERE bridge_id=?", (bridge_id,))
         cur.execute("DELETE FROM bridge_rules WHERE bridge_id=?", (bridge_id,))
+        cur.execute("DELETE FROM bridge_webhooks WHERE bridge_id=?", (bridge_id,))
         bridge_deleted = True
 
     conn.commit()

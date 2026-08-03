@@ -1,34 +1,146 @@
 {
   "allow_bots_disabled": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Сообщения ботов и вебхуков больше не будут пересылаться из этого чата."
   },
   "allow_bots_enabled": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Сообщения ботов и вебхуков теперь будут пересылаться из этого чата."
   },
   "allow_bots_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /allow-bots enable | /allow-bots disable"
   },
   "allow_bots_usage_tg": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /allow_bots enable | /allow_bots disable"
   },
+  "allow_files_bridge_disabled": {
+    "status": "verified",
+    "text": "Файлы, отправленные в Telegram, больше не перезаливаются в Discord для чатов этого моста."
+  },
+  "allow_files_bridge_enabled": {
+    "status": "verified",
+    "text": "Файлы, отправленные в Telegram, теперь перезаливаются в Discord и раздаются ссылками — для всех чатов этого моста, включая присоединённые позже. Работает только там, где это разрешено в каждом чате моста."
+  },
+  "allow_files_disabled": {
+    "status": "verified",
+    "text": "Файлы, отправленные в Telegram, больше не перезаливаются в Discord для чатов этого сервера."
+  },
+  "allow_files_enabled": {
+    "status": "verified",
+    "text": "Файлы, отправленные в Telegram, теперь перезаливаются в Discord и раздаются ссылками — для всех чатов этого сервера, в любых мостах. Работает только там, где это разрешено в каждом чате моста."
+  },
+  "allow_files_no_permission": {
+    "status": "verified",
+    "text": "Изменять настройку перезалива файлов могут только администраторы моста и администраторы бота."
+  },
+  "allow_files_usage": {
+    "status": "verified",
+    "text": "Использование: /allow-files enable | /allow-files disable — для всего сервера; добавьте `local` (/allow-files enable local), чтобы охватить только текущий мост."
+  },
+  "allow_files_usage_tg": {
+    "status": "verified",
+    "text": "Использование: /allow_files enable | /allow_files disable — для всей группы; добавьте `local` (/allow_files enable local), чтобы охватить только текущий мост."
+  },
+  "appeal_already_open": {
+    "status": "verified",
+    "text": "У вас уже есть открытая апелляция. Просто пишите мне в ЛС — ваши сообщения доходят до консулов."
+  },
+  "appeal_already_resolved": {
+    "status": "verified",
+    "text": "Эта апелляция уже рассмотрена."
+  },
+  "appeal_btn_condemn": {
+    "status": "verified",
+    "text": "Бессрочный бан"
+  },
+  "appeal_btn_pardon": {
+    "status": "verified",
+    "text": "Глобальный разбан"
+  },
+  "appeal_confirm_btn": {
+    "status": "verified",
+    "text": "Подтвердить"
+  },
+  "appeal_confirm_condemn": {
+    "status": "verified",
+    "text": "Навсегда забанить пользователя на этом сервере (без записи в базу данных) и закрыть апелляцию?"
+  },
+  "appeal_confirm_pardon": {
+    "status": "verified",
+    "text": "Снять ВСЕ сетевые баны этого пользователя и закрыть апелляцию?"
+  },
+  "appeal_consul_letters": {
+    "status": "verified",
+    "text": "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
+  },
+  "appeal_consul_name": {
+    "status": "verified",
+    "text": "Консул {letter}"
+  },
+  "appeal_created": {
+    "status": "verified",
+    "text": "Апелляция создана — проверьте личные сообщения."
+  },
+  "appeal_created_dm": {
+    "status": "verified",
+    "text": "Ваша апелляция подана. Опишите свою ситуацию прямо здесь: каждое сообщение, отправленное мне в ЛС, пересылается консулам, а их ответы будут появляться здесь."
+  },
+  "appeal_dm_closed": {
+    "status": "verified",
+    "text": "Я не могу отправлять вам личные сообщения, поэтому апелляция не открыта. Разрешите личные сообщения от участников сервера в настройках конфиденциальности и снова отправьте /appeal."
+  },
+  "appeal_dm_place": {
+    "status": "verified",
+    "text": "ЛС"
+  },
+  "appeal_failed": {
+    "status": "verified",
+    "text": "Не удалось открыть апелляцию. Попробуйте позже или обратитесь к персоналу сервера."
+  },
+  "appeal_not_member": {
+    "status": "verified",
+    "text": "Апелляции подаются через сервер апелляций. Сначала присоединитесь к нему, затем снова отправьте /appeal: {invite}"
+  },
+  "appeal_note_condemned": {
+    "status": "verified",
+    "text": "Вердикт: апелляция отклонена. Пользователь уведомлён и навсегда забанен на этом сервере."
+  },
+  "appeal_note_pardoned": {
+    "status": "verified",
+    "text": "Вердикт: апелляция удовлетворена. Запрос на глобальный разбан отправлен Confederate Guard; пользователь уведомлён и исключён с этого сервера."
+  },
+  "appeal_thread_info": {
+    "status": "verified",
+    "text": "Апелляция {mention} ({username}, ID {id}). Сообщения в этой ветке пересылаются в ЛС пользователя; отправители показываются ему анонимно как консулы."
+  },
+  "appeal_user_condemned": {
+    "status": "verified",
+    "text": "Ваша апелляция рассмотрена и отклонена. Решение окончательное."
+  },
+  "appeal_user_pardoned": {
+    "status": "verified",
+    "text": "Ваша апелляция удовлетворена: сетевой бан снят. Вы исключены с этого сервера, он вам больше не нужен."
+  },
+  "appeal_verdict_done": {
+    "status": "verified",
+    "text": "Готово."
+  },
   "atb_already_attached": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Этот чат уже подключён к мосту."
   },
   "atb_attached": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Чат подключён к мосту {bridge_id}."
   },
   "atb_invalid_id": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Неверный ID моста."
   },
   "atb_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /atb <id_моста>"
   },
   "backup_failed": {
@@ -36,7 +148,7 @@
     "text": "Не удалось создать резервную копию: {error}"
   },
   "backup_private_only": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Используйте эту команду в личном чате с ботом."
   },
   "bot_joined": {
@@ -58,6 +170,10 @@
   "bridge_info.field_chats": {
     "status": "verified",
     "text": "Подключённые чаты"
+  },
+  "bridge_info.field_feeds": {
+    "status": "verified",
+    "text": "Присоединённые ленты"
   },
   "bridge_info.field_number": {
     "status": "verified",
@@ -91,8 +207,44 @@
     "status": "verified",
     "text": "Чат {channel} из {server} исключён из моста."
   },
+  "bskyfeed_already_attached": {
+    "status": "verified",
+    "text": "@{account} уже присоединён сюда."
+  },
+  "bskyfeed_attached": {
+    "status": "verified",
+    "text": "Аккаунт Bluesky {name} (@{account}) присоединён к {where}. Его новые посты будут приходить туда, включая чаты, которые присоединятся позже."
+  },
+  "bskyfeed_invalid_account": {
+    "status": "verified",
+    "text": "Это не аккаунт Bluesky. Укажите хэндл, @хэндл, ссылку на профиль или DID."
+  },
+  "bskyfeed_not_attached": {
+    "status": "verified",
+    "text": "@{account} сюда не присоединён."
+  },
+  "bskyfeed_rem_usage": {
+    "status": "verified",
+    "text": "Использование: /rembskyfeed <аккаунт Bluesky> — хэндл, @хэндл, ссылка на профиль или DID."
+  },
+  "bskyfeed_removed": {
+    "status": "verified",
+    "text": "Посты @{account} больше сюда не пересылаются."
+  },
+  "bskyfeed_throttled": {
+    "status": "verified",
+    "text": "Bluesky сейчас ограничивает запросы бота, поэтому прочитать @{account} не удалось. Попробуйте через несколько минут."
+  },
+  "bskyfeed_unreachable": {
+    "status": "verified",
+    "text": "Не удалось прочитать @{account}. Возможно, аккаунт не существует или удалён, либо Bluesky сейчас не отвечает."
+  },
+  "bskyfeed_usage": {
+    "status": "verified",
+    "text": "Использование: /setbskyfeed <аккаунт Bluesky> — хэндл, @хэндл, ссылка на профиль или DID."
+  },
   "chat_not_in_bridge": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Этот чат не подключён ни к одному мосту."
   },
   "consent_body": {
@@ -108,23 +260,23 @@
     "text": "Внимание: мост сообщений"
   },
   "could_not_resolve_user": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Не удалось определить пользователя."
   },
   "deadchat_disabled": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Deadchat отключён для этого канала."
   },
   "deadchat_invalid_hours": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Укажите длительность в часах (больше 0)."
   },
   "deadchat_invalid_role": {
-    "status": "unverified",
+    "status": "verified",
     "text": "role_id должен быть числовым ID роли или 'disable'."
   },
   "deadchat_set": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Deadchat настроен: роль <@&{role_id}>, {hours} ч."
   },
   "deadtopic.disabled": {
@@ -133,14 +285,14 @@
   },
   "deadtopic.enabled": {
     "status": "verified",
-    "text": "Автосохранение темы включено. Каждые 6 дней без активности в полночь UTC бот пришлёт и удалит фантомное сообщение."
+    "text": "Автосохранение темы включено. Каждые 6 дней без активности в полночь UTC бот отправит и удалит фантомное сообщение."
   },
   "deadtopic.phantom_message": {
     "status": "verified",
     "text": "Фантомное сообщение для сохранения темы."
   },
   "deadtopic.usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /deadtopic enable | /deadtopic disable"
   },
   "discord_system_event": {
@@ -161,11 +313,31 @@
   },
   "discord_system_event_action.pinned_message": {
     "status": "verified",
-    "text": "закрепил(=а) сообщение"
+    "text": "закрепил(-а) сообщение"
+  },
+  "feed_scope_bridge": {
+    "status": "verified",
+    "text": "мосту {bridge_id} и всем его чатам"
+  },
+  "feed_scope_chat": {
+    "status": "verified",
+    "text": "этому чату (он ещё не в мосту — как только присоединится, посты пойдут во все чаты моста)"
+  },
+  "feed_stale_note": {
+    "status": "verified",
+    "text": "Внимание: самый свежий пост, который источник отдаёт для @{account}, — от {date}. Похоже, источник давно не обновлялся; пока это так, пересылать отсюда нечего."
   },
   "file_count": {
     "status": "verified",
     "text": "{count} {files} из Telegram"
+  },
+  "file_count_bluesky": {
+    "status": "verified",
+    "text": "{count} {files} из Bluesky"
+  },
+  "file_count_youtube": {
+    "status": "verified",
+    "text": "{count} {files} из YouTube"
   },
   "file_forms": {
     "status": "verified",
@@ -176,27 +348,27 @@
     ]
   },
   "force_leave_failed": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Не удалось выйти: {error}"
   },
   "force_leave_invalid_id": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Неверный ID."
   },
   "force_leave_not_member": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Бот не находится на этом сервере."
   },
   "force_leave_success_discord": {
-    "status": "unverified",
-    "text": "Бот покинул сервер {guild_id}, данные сервера удалены из базы."
+    "status": "verified",
+    "text": "Бот покинул сервер {guild_id}, данные сервера удалены из базы данных."
   },
   "force_leave_success_telegram": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Бот покинул Telegram-чат {chat_id} (или данные удалены из базы)."
   },
   "force_leave_unsupported_platform": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Неподдерживаемая платформа. Используйте 'discord' или 'telegram'."
   },
   "forward_from_chat": {
@@ -211,6 +383,10 @@
     "status": "verified",
     "text": "(переслано из неизвестного источника)"
   },
+  "group_only": {
+    "status": "verified",
+    "text": "Эта команда доступна только в группе."
+  },
   "help.cmd_allow_bots": {
     "status": "verified",
     "text": "/allow-bots enable|disable — разрешить или запретить пересылку сообщений от ботов"
@@ -218,6 +394,18 @@
   "help.cmd_allow_bots_tg": {
     "status": "verified",
     "text": "/allow_bots enable|disable — разрешить или запретить пересылку сообщений от ботов"
+  },
+  "help.cmd_allow_files": {
+    "status": "verified",
+    "text": "/allow-files enable|disable [local] — разрешить или запретить перезалив файлов из Telegram в Discord (для сервера, либо `local` — для текущего моста)"
+  },
+  "help.cmd_allow_files_tg": {
+    "status": "verified",
+    "text": "/allow_files enable|disable [local] — разрешить или запретить перезалив файлов из Telegram в Discord (для группы, либо `local` — для текущего моста)"
+  },
+  "help.cmd_appeal": {
+    "status": "verified",
+    "text": "/appeal — подать апелляцию на бан (после входа на сервер апелляций)"
   },
   "help.cmd_atb": {
     "status": "verified",
@@ -248,7 +436,7 @@
     "text": "/help — показать список команд"
   },
   "help.cmd_lang": {
-    "status": "unverified",
+    "status": "verified",
     "text": "/lang <код> — установить язык бота по умолчанию для всего сервера/группы (админы моста)"
   },
   "help.cmd_list_chats": {
@@ -257,7 +445,7 @@
   },
   "help.cmd_loc_compare": {
     "status": "verified",
-    "text": "/loc-compare <код> — сравнение реплики по языкам"
+    "text": "/loc-compare <код> — сравнение переводов реплики на разные языки"
   },
   "help.cmd_loc_reply": {
     "status": "verified",
@@ -271,12 +459,28 @@
     "status": "verified",
     "text": "/locale [код] — статус локализации или файл выбранного языка"
   },
+  "help.cmd_localizer_add": {
+    "status": "verified",
+    "text": "/localizer-add <пользователь> — выдать статус локализатора: правка локализации через панель управления (админы бота)"
+  },
+  "help.cmd_localizer_add_tg": {
+    "status": "verified",
+    "text": "/localizer-add <ID | @username | ответ> — выдать статус локализатора: правка локализации через панель управления (админы бота)"
+  },
+  "help.cmd_localizer_rem": {
+    "status": "verified",
+    "text": "/localizer-rem <пользователь> — отозвать делегированный статус локализатора (админы бота)"
+  },
+  "help.cmd_localizer_rem_tg": {
+    "status": "verified",
+    "text": "/localizer-rem <ID | @username | ответ> — отозвать делегированный статус локализатора (админы бота)"
+  },
   "help.cmd_locallang": {
-    "status": "unverified",
+    "status": "verified",
     "text": "/locallang <код> — установить язык бота для этого канала/темы (ru, uk, pl, en, es, pt)"
   },
   "help.cmd_mention": {
-    "status": "unverified",
+    "status": "verified",
     "text": "/mention <user> — упомянуть Discord-пользователя из другого сообщества моста (кулдаун 1 час на пользователя)"
   },
   "help.cmd_newschat": {
@@ -287,13 +491,33 @@
     "status": "verified",
     "text": "/poll <текст> <время> <варианты> — анонимное голосование во всех чатах моста"
   },
+  "help.cmd_privacy": {
+    "status": "verified",
+    "text": "/privacy — решить, что бот может рассказывать о вас"
+  },
   "help.cmd_remadmin": {
     "status": "verified",
-    "text": "/remadmin <user> — снять админа моста"
+    "text": "/remadmin <user> [local] — снять админа мостов на всём сервере/группе или только в этом мосту"
+  },
+  "help.cmd_rembskyfeed": {
+    "status": "verified",
+    "text": "/rembskyfeed <аккаунт> — отключить аккаунт Bluesky от этого моста"
   },
   "help.cmd_remindrules": {
     "status": "verified",
     "text": "/remindrules <время> [сообщений] — периодически публиковать правила во всех чатах моста (например: 2h, 30m)"
+  },
+  "help.cmd_remlocaladmin": {
+    "status": "verified",
+    "text": "/remlocaladmin <пользователь> — отозвать делегированные права локального администратора (админы бота)"
+  },
+  "help.cmd_remtgfeed": {
+    "status": "verified",
+    "text": "/remtgfeed <канал> — отключить канал Telegram от этого моста"
+  },
+  "help.cmd_remytfeed": {
+    "status": "verified",
+    "text": "/remytfeed <канал> — отключить канал YouTube от этого моста"
   },
   "help.cmd_rfb": {
     "status": "verified",
@@ -301,7 +525,27 @@
   },
   "help.cmd_setadmin": {
     "status": "verified",
-    "text": "/setadmin <user> — добавить админа моста"
+    "text": "/setadmin <user> [local] — назначить админа мостов во всех мостах этого сервера/группы или только в этом мосту"
+  },
+  "help.cmd_setbskyfeed": {
+    "status": "verified",
+    "text": "/setbskyfeed <аккаунт> — присоединить публичный аккаунт Bluesky к этому мосту"
+  },
+  "help.cmd_setlocaladmin": {
+    "status": "verified",
+    "text": "/setlocaladmin <пользователь> — делегировать права локального администратора всего сервера/группы (админы бота)"
+  },
+  "help.cmd_setname": {
+    "status": "verified",
+    "text": "/setname [name] [user] — задать псевдоним, который апеллянты видят вместо «Консул А» (для консулов; без имени — сброс, параметр `user` только для админов бота)"
+  },
+  "help.cmd_settgfeed": {
+    "status": "verified",
+    "text": "/settgfeed <канал> — присоединить публичный канал Telegram к этому мосту"
+  },
+  "help.cmd_setytfeed": {
+    "status": "verified",
+    "text": "/setytfeed <канал> — присоединить публичный канал YouTube к этому мосту"
   },
   "help.cmd_shadowban": {
     "status": "verified",
@@ -316,12 +560,12 @@
     "text": "/verify — подтвердить согласие на пересылку сообщений"
   },
   "help.cmd_verify_list": {
-    "status": "unverified",
+    "status": "verified",
     "text": "/verify-list enable|disable — публиковать ID (раз)верифицированных пользователей в каналы синхронизации для Confederate Guard (админы бота)"
   },
   "help.cmd_webhooks": {
     "status": "verified",
-    "text": "/webhooks enable|disable — показывать пересланные сообщения как вебхуки (аватар и имя отправителя)"
+    "text": "/webhooks enable|disable [scope: local] — показывать пересланные сообщения как вебхуки (аватар и имя отправителя), для всего сервера или только для этого моста"
   },
   "help.cmd_whois": {
     "status": "verified",
@@ -329,11 +573,11 @@
   },
   "help.section_admins": {
     "status": "verified",
-    "text": "Для админов моста"
+    "text": "Для администраторов моста"
   },
   "help.section_bot_admins": {
     "status": "verified",
-    "text": "Для админов бота"
+    "text": "Для администраторов бота"
   },
   "help.section_everyone": {
     "status": "verified",
@@ -344,40 +588,40 @@
     "text": "Команды бота"
   },
   "lang_save_error": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Не удалось сохранить язык."
   },
   "lang_set": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Язык бота для этого чата: {code}"
   },
   "lang_set_server": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Язык бота по умолчанию для этого сервера/группы: {code}"
   },
   "lang_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /lang <ru|uk|pl|en|es|pt>"
   },
   "list_chats_discord_header": {
-    "status": "unverified",
+    "status": "verified",
     "text": "**Discord-серверы:**"
   },
   "list_chats_no_telegram": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Нет Telegram-чатов в базе."
   },
   "list_chats_telegram_header": {
-    "status": "unverified",
+    "status": "verified",
     "text": "**Telegram-группы:**"
   },
   "list_chats_too_long": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Список большой — загружаю файл."
   },
   "loc_compare_header": {
     "status": "verified",
-    "text": "Сравнение реплики `{key}` по языкам:"
+    "text": "Сравнение реплики `{key}` на разных языках:"
   },
   "loc_compare_not_found": {
     "status": "verified",
@@ -388,7 +632,7 @@
     "text": "(не переведено)"
   },
   "loc_compare_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /loc_compare <код реплики>"
   },
   "loc_cooldown": {
@@ -432,7 +676,7 @@
     "text": "Ответ администратора {admin} (код {code}):"
   },
   "loc_reply_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /loc_reply <код> <текст>"
   },
   "loc_suggest_confirm": {
@@ -455,24 +699,56 @@
     "status": "verified",
     "text": "Неизвестный язык: {lang}. Доступны: {supported}."
   },
+  "localizer_add_already": {
+    "status": "verified",
+    "text": "Пользователь {user_id} уже является локализатором этого бота."
+  },
+  "localizer_add_dm": {
+    "status": "verified",
+    "text": "Вам выдан статус локализатора: теперь вы можете редактировать локализацию этого бота через его панель управления."
+  },
+  "localizer_add_done": {
+    "status": "verified",
+    "text": "Пользователь {user_id} теперь является локализатором этого бота и может редактировать его локализацию через панель управления."
+  },
+  "localizer_add_usage": {
+    "status": "verified",
+    "text": "Использование: /localizer-add <ID или @username>, либо ответьте командой на сообщение пользователя."
+  },
+  "localizer_rem_done": {
+    "status": "verified",
+    "text": "Пользователь {user_id} больше не является локализатором этого бота."
+  },
+  "localizer_rem_not": {
+    "status": "verified",
+    "text": "У пользователя {user_id} нет делегированного статуса локализатора. (Админы являются локализаторами автоматически, и эта команда их не снимает.)"
+  },
+  "localizer_rem_usage": {
+    "status": "verified",
+    "text": "Использование: /localizer-rem <ID или @username>, либо ответьте командой на сообщение пользователя."
+  },
   "locallang_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /locallang <ru|uk|pl|en|es|pt>"
   },
   "mention_cooldown": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Этого пользователя недавно уже упоминали. Упоминать пользователя можно раз в час."
   },
   "mention_no_discord": {
-    "status": "unverified",
+    "status": "verified",
     "text": "В этом мосте нет Discord-чатов, куда можно отправить упоминание."
   },
+  "mention_opted_out": {
+    "status": "verified",
+    "text": "Этот пользователь отключил упоминания из других сообществ."
+  },
   "mention_sent": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Упоминание отправлено."
   },
   "mention_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /mention <id_или_имя_пользователя>"
   },
   "month_names": {
@@ -493,23 +769,23 @@
     ]
   },
   "newschat_added": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Эмодзи `{emoji}` добавлен для этого канала."
   },
   "newschat_bad_emoji": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Этот эмодзи нельзя использовать как реакцию. Попробуйте скопировать эмодзи или использовать формат `<:name:id>`."
   },
   "newschat_disabled": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Newschat отключён для этого канала."
   },
   "newschat_specify_emoji": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Укажите эмодзи. Примеры:\n• Юникод: 😀\n• Кастомный: `<:Name:1234567890>`\n• Анимированный: `<a:Name:1234567890>`"
   },
   "newschat_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /newschat add <эмодзи> | /newschat disable"
   },
   "no_permission": {
@@ -568,45 +844,101 @@
     "status": "verified",
     "text": "Ваш голос учтён."
   },
+  "privacy_btn_block_mention": {
+    "status": "verified",
+    "text": "Упоминания"
+  },
+  "privacy_btn_hide_avatar": {
+    "status": "verified",
+    "text": "Аватар"
+  },
+  "privacy_btn_hide_whois": {
+    "status": "verified",
+    "text": "Whois"
+  },
+  "privacy_header": {
+    "status": "verified",
+    "text": "Здесь вы решаете, что бот может рассказывать о вас. Нажмите кнопку, чтобы включить или выключить защиту — настройка действует во всех чатах всех мостов."
+  },
+  "privacy_not_yours": {
+    "status": "verified",
+    "text": "Это меню другого пользователя. Отправьте /privacy, чтобы открыть своё."
+  },
+  "privacy_opt_block_mention": {
+    "status": "verified",
+    "text": "Без упоминаний — другие сообщества не смогут позвать меня командой /mention"
+  },
+  "privacy_opt_hide_avatar": {
+    "status": "verified",
+    "text": "Скрыть мой аватар — копии моих сообщений через вебхуки будут с нейтральной картинкой"
+  },
+  "privacy_opt_hide_whois": {
+    "status": "verified",
+    "text": "Скрыть меня от whois — никто не сможет узнать обо мне больше, чем никнейм и аватар"
+  },
+  "privacy_state_off": {
+    "status": "verified",
+    "text": "выключено"
+  },
+  "privacy_state_on": {
+    "status": "verified",
+    "text": "включено"
+  },
+  "privacy_title": {
+    "status": "verified",
+    "text": "Приватность"
+  },
   "remadmin_done": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Пользователь {user_id} больше не администратор."
   },
   "remadmin_usage": {
-    "status": "unverified",
-    "text": "Использование: /remadmin <id_или_имя_пользователя>"
+    "status": "verified",
+    "text": "Использование: /remadmin <id_или_имя_пользователя> — во всех мостах этого сервера/группы; добавьте `local` — только в этом мосту."
   },
   "remindrules_disabled": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Напоминание правил отключено для этого моста."
   },
   "remindrules_fetch_failed": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Не удалось получить сообщение по message_id."
   },
   "remindrules_invalid_duration": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Первый параметр — длительность, например 2h (2 часа) или 30m (30 минут)."
   },
   "remindrules_no_content": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Укажите текст правил в `text` или передайте `message_id` сообщения из этого канала."
   },
   "remindrules_reply_required": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Команда должна быть ответом на сообщение с правилами."
   },
   "remindrules_saved": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Правила сохранены — будут публиковаться во всех чатах моста каждые {interval}."
   },
   "remindrules_usage_discord": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /remindrules <5h|30m|disable> [сообщений] [message_id] [текст]. Примеры: 2h — каждые 2 часа, 30m — каждые 30 минут."
   },
   "remindrules_usage_telegram": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /remindrules <5h|30m> [сообщений] — ответом на сообщение с правилами."
+  },
+  "remlocaladmin_done": {
+    "status": "verified",
+    "text": "Пользователь {user_id} лишён прав локального администратора этого сервера/группы."
+  },
+  "remlocaladmin_not_admin": {
+    "status": "verified",
+    "text": "Пользователь {user_id} не является локальным администратором этого сервера/группы."
+  },
+  "remlocaladmin_usage": {
+    "status": "verified",
+    "text": "Использование: /remlocaladmin <ID или @username>, либо ответьте командой /remlocaladmin на сообщение пользователя."
   },
   "reply_external": {
     "status": "verified",
@@ -625,11 +957,11 @@
     "text": "пользователя"
   },
   "rfb_by_id_unsupported": {
-    "status": "unverified",
-    "text": "Удаление по ID в Telegram не поддерживается. Запустите /rfb в том чате/теме, который нужно удалить."
+    "status": "verified",
+    "text": "Удаление по ID в Telegram не поддерживается. Запустите /rfb в конкретном чате или теме."
   },
   "rfb_removed": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Чат отключён от моста."
   },
   "service_event.bot_started": {
@@ -672,24 +1004,92 @@
     "status": "verified",
     "text": "Ошибка проверки прав в Telegram-чате {chat_key}: {error}"
   },
+  "service_event.feed_error": {
+    "status": "verified",
+    "text": "Не удалось прочитать подключённый источник @{account}: {error}"
+  },
+  "service_event.feed_stale": {
+    "status": "verified",
+    "text": "Подключённый источник @{account} не обновлялся с {date} — оттуда давно ничего не приходит."
+  },
   "setadmin_bridge_dm": {
     "status": "verified",
-    "text": "Вы назначены администратором моста №{bridge_id}."
+    "text": "Вас назначили администратором моста №{bridge_id} на {place}."
   },
   "setadmin_bridge_done": {
     "status": "verified",
-    "text": "Пользователь {user_id} назначен администратором моста."
+    "text": "Пользователь {user_id} назначен администратором моста №{bridge_id}."
+  },
+  "setadmin_server_dm": {
+    "text": "Вас назначили администратором мостов на {place}. Права действуют во всех мостах, в которых участвует {place}, — и в нынешних, и в тех, к которым сервер/группа присоединится позже.",
+    "status": "verified"
+  },
+  "setadmin_server_done": {
+    "text": "Пользователь {user_id} назначен администратором мостов на {place} — во всех мостах, в которых участвует этот сервер/группа, включая будущие.",
+    "status": "verified"
   },
   "setadmin_usage": {
-    "status": "unverified",
-    "text": "Использование: /setadmin <id_или_имя_пользователя>"
+    "status": "verified",
+    "text": "Использование: /setadmin <id_или_имя_пользователя> — во всех мостах этого сервера/группы; добавьте `local` — только в этом мосту."
+  },
+  "setlocaladmin_already": {
+    "status": "verified",
+    "text": "Пользователь {user_id} уже является локальным администратором этого сервера/группы."
+  },
+  "setlocaladmin_dm": {
+    "status": "verified",
+    "text": "Вы назначены администратором мостов сервера {server}."
+  },
+  "setlocaladmin_done": {
+    "status": "verified",
+    "text": "Пользователю {user_id} выданы права локального администратора всего этого сервера/группы."
+  },
+  "setlocaladmin_usage": {
+    "status": "verified",
+    "text": "Использование: /setlocaladmin <ID или @username>, либо ответьте командой /setlocaladmin на сообщение пользователя."
+  },
+  "setname_done": {
+    "status": "verified",
+    "text": "Ваш псевдоним теперь **{name}**. Апеллянты будут видеть его вместо «Консул А» во всех апелляциях — нынешних и будущих."
+  },
+  "setname_done_other": {
+    "status": "verified",
+    "text": "Псевдоним {user} теперь **{name}**. Апеллянты будут видеть его во всех апелляциях — нынешних и будущих."
+  },
+  "setname_reserved": {
+    "status": "verified",
+    "text": "Такой псевдоним похож на служебную подпись бота («Консул А» и подобные). Выберите другой."
+  },
+  "setname_reset": {
+    "status": "verified",
+    "text": "Псевдоним сброшен. Апеллянты снова будут видеть вас как «Консул А», «Консул Б» и так далее."
+  },
+  "setname_reset_other": {
+    "status": "verified",
+    "text": "Псевдоним {user} сброшен. Апеллянты снова будут видеть его как «Консул А», «Консул Б» и так далее."
+  },
+  "setname_taken": {
+    "status": "verified",
+    "text": "Этот псевдоним уже занят другим консулом. Выберите другой."
+  },
+  "setname_target_not_consul": {
+    "status": "verified",
+    "text": "Этот пользователь не консул, псевдоним ему задать нельзя."
+  },
+  "setname_too_long": {
+    "status": "verified",
+    "text": "Псевдоним слишком длинный: не больше {limit} символов."
+  },
+  "setname_user_forbidden": {
+    "status": "verified",
+    "text": "Менять псевдоним другого консула могут только администраторы бота. Чтобы сменить свой, вызовите /setname без параметра `user`."
   },
   "shadowban_done": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Пользователь {user_id} скрыт (shadow-ban) — его сообщения не будут пересылаться."
   },
   "shadowban_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /shadow-ban <id_или_имя_пользователя>"
   },
   "status_members_forms": {
@@ -716,8 +1116,48 @@
     "status": "verified",
     "text": "[Стикер]"
   },
+  "tgfeed_already_attached": {
+    "status": "verified",
+    "text": "@{account} уже присоединён сюда."
+  },
+  "tgfeed_attached": {
+    "status": "verified",
+    "text": "Канал Telegram {name} (@{account}) присоединён к {where}. Его новые посты будут приходить туда, включая чаты, которые присоединятся позже — бот читает публичную веб-версию канала, так как он не в числе его администраторов."
+  },
+  "tgfeed_attached_live": {
+    "status": "verified",
+    "text": "Канал Telegram {name} (@{account}) присоединён к {where}. Бот — администратор канала, поэтому посты будут приходить сразу после публикации, включая чаты, которые присоединятся позже."
+  },
+  "tgfeed_invalid_channel": {
+    "status": "verified",
+    "text": "Это не канал Telegram. Укажите то, что идёт после t.me/, @имя или ссылку на канал."
+  },
+  "tgfeed_not_attached": {
+    "status": "verified",
+    "text": "@{account} сюда не присоединён."
+  },
+  "tgfeed_rem_usage": {
+    "status": "verified",
+    "text": "Использование: /remtgfeed <канал в Telegram> — то, что идёт после t.me/, @имя или ссылка."
+  },
+  "tgfeed_removed": {
+    "status": "verified",
+    "text": "Посты @{account} больше сюда не пересылаются."
+  },
+  "tgfeed_throttled": {
+    "status": "verified",
+    "text": "Telegram сейчас ограничивает запросы бота, поэтому прочитать @{account} не удалось. Попробуйте через несколько минут."
+  },
+  "tgfeed_unreachable": {
+    "status": "verified",
+    "text": "Не удалось прочитать @{account}. Возможно, канал закрыт или не существует, либо у него отключена публичная веб-версия — тогда добавьте бота в канал администратором и повторите команду."
+  },
+  "tgfeed_usage": {
+    "status": "verified",
+    "text": "Использование: /settgfeed <канал в Telegram> — то, что идёт после t.me/, @имя или ссылка."
+  },
   "too_many_requests": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Слишком много запросов — попробуйте позже."
   },
   "ts_ago": {
@@ -777,43 +1217,43 @@
     ]
   },
   "unverify_done": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Верификация пользователя {user_id} отозвана."
   },
   "verify_already": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Вы уже верифицированы."
   },
   "verify_button_not_yours": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Эта кнопка не для вас."
   },
   "verify_invalid_data": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Неверные данные."
   },
   "verify_list_disabled": {
-    "status": "unverified",
-    "text": "Публикация ID верифицированных/разверифицированных пользователей в каналы синхронизации выключена."
+    "status": "verified",
+    "text": "Публикация ID верифицированных/лишённых верификации пользователей в каналы синхронизации выключена."
   },
   "verify_list_enabled": {
-    "status": "unverified",
-    "text": "Публикация ID верифицированных/разверифицированных пользователей в каналы синхронизации включена."
+    "status": "verified",
+    "text": "Публикация ID верифицированных/лишённых верификации пользователей в каналы синхронизации включена."
   },
   "verify_list_usage": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Использование: /verify-list enable | /verify-list disable"
   },
   "verify_message_sent": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Сообщение для верификации отправлено — проверьте канал."
   },
   "verify_send_failed": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Не удалось отправить сообщение для верификации. Возможно, у бота нет прав."
   },
   "verify_thanks": {
-    "status": "unverified",
+    "status": "verified",
     "text": "Спасибо — вы подтверждены."
   },
   "video_message": {
@@ -824,21 +1264,25 @@
     "status": "verified",
     "text": "[Голосовое сообщение]"
   },
+  "webhooks_bridge_disabled": {
+    "status": "verified",
+    "text": "Пересылаемые сообщения в каналах этого сервера в этом мосту снова будут приходить обычными сообщениями бота."
+  },
+  "webhooks_bridge_enabled": {
+    "status": "verified",
+    "text": "Пересылаемые сообщения теперь будут приходить как сообщения вебхуков в каналах этого сервера в этом мосту, включая каналы, которые присоединятся к нему позже."
+  },
   "webhooks_disabled": {
     "status": "verified",
-    "text": "Пересылаемые сообщения в этом канале снова будут приходить обычными сообщениями бота."
+    "text": "Пересылаемые сообщения снова будут приходить обычными сообщениями бота на всём этом сервере."
   },
   "webhooks_enabled": {
     "status": "verified",
-    "text": "Пересылаемые сообщения в этом канале теперь будут приходить как сообщения вебхуков — с аватаром и именем отправителя."
-  },
-  "webhooks_thread_error": {
-    "status": "verified",
-    "text": "Вебхуки не работают в ветках и темах форумов. Используйте команду в обычном текстовом канале."
+    "text": "Пересылаемые сообщения теперь будут приходить как сообщения вебхуков — с аватаром и именем отправителя — во всех каналах этого сервера, в любых мостах, включая каналы, добавленные позже. В ветках и темах форумов формат остаётся обычным: вебхуки там не работают."
   },
   "webhooks_usage": {
     "status": "verified",
-    "text": "Использование: /webhooks enable | /webhooks disable"
+    "text": "Использование: /webhooks enable | /webhooks disable — для всего этого сервера; добавьте `scope: local` — только для этого моста."
   },
   "weekday_names": {
     "status": "verified",
@@ -930,7 +1374,15 @@
   },
   "whois.origin_not_telegram": {
     "status": "verified",
-    "text": "Источник не Telegram; используйте /whois в соответствующей платформе."
+    "text": "Источник сообщения не Telegram; используйте /whois к сообщениям из соответствующей платформы."
+  },
+  "whois.private": {
+    "status": "verified",
+    "text": "Этот пользователь ограничил то, что показывает whois."
+  },
+  "whois.private_template": {
+    "status": "verified",
+    "text": "Никнейм: {nickname}\nАватар: {avatar}\n\nЭтот пользователь ограничил то, что показывает whois."
   },
   "whois.tg_template": {
     "status": "verified",
@@ -947,5 +1399,41 @@
   "whois.use_reply": {
     "status": "verified",
     "text": "Используйте эту команду ответом на relay-сообщение бота."
+  },
+  "ytfeed_already_attached": {
+    "status": "verified",
+    "text": "{account} уже присоединён сюда."
+  },
+  "ytfeed_attached": {
+    "status": "verified",
+    "text": "Канал YouTube {name} ({account}) присоединён к {where}. Его новые видео будут приходить туда, включая чаты, которые присоединятся позже."
+  },
+  "ytfeed_invalid_channel": {
+    "status": "verified",
+    "text": "Это не канал YouTube. Укажите @хэндл, ссылку на канал или идентификатор вида UC…"
+  },
+  "ytfeed_not_attached": {
+    "status": "verified",
+    "text": "{account} сюда не присоединён."
+  },
+  "ytfeed_rem_usage": {
+    "status": "verified",
+    "text": "Использование: /remytfeed <канал YouTube> — @хэндл, ссылка на канал или идентификатор вида UC…"
+  },
+  "ytfeed_removed": {
+    "status": "verified",
+    "text": "Видео с {account} больше сюда не пересылаются."
+  },
+  "ytfeed_throttled": {
+    "status": "verified",
+    "text": "YouTube сейчас ограничивает запросы бота, поэтому прочитать {account} не удалось. Попробуйте через несколько минут."
+  },
+  "ytfeed_unreachable": {
+    "status": "verified",
+    "text": "Не удалось прочитать {account}. Возможно, канал не существует или удалён, либо YouTube сейчас не отвечает."
+  },
+  "ytfeed_usage": {
+    "status": "verified",
+    "text": "Использование: /setytfeed <канал YouTube> — @хэндл, ссылка на канал или идентификатор вида UC…"
   }
 }

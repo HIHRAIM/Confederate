@@ -1,11 +1,12 @@
 import discord
 from discord import app_commands
 from discord.utils import get
-import db, message_relay
+import db, message_relay, bluesky, youtube
 import utils
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, set_chat_lang,
-    get_next_status_text, get_chat_lang, rate_limit_ok,
+    get_next_status_text, get_chat_lang, rate_limit_ok, feed_scope_name,
+    FEED_REQUEST_HEADERS, FEED_REQUEST_TIMEOUT, FeedError, feed_media_name,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     localized_sticker, localized_discord_system_event, localized_whois,
@@ -13,11 +14,16 @@ from utils import (
     localized, language_name, available_locales, locale_stats, locale_bar,
     compare_reply, LANG_ORDER, LOCALE_STATUS_EMOJI, SUPPORTED_LANGS, DEFAULT_LANG,
 )
-from config import SUPPORT_CHATS
+from config import (
+    SUPPORT_CHATS, GALLERY,
+    PURGATORIUM_GUILD_ID, PURGATORIUM_INVITE_URL, APPEAL_CHANNEL_ID, APPEAL_PARDON_CHANNELS,
+    APPEAL_BANINFO_CHANNELS, CONSULS, GUARD_BOT_ID,
+)
 import time
 import asyncio
 import datetime
 import io
+import aiohttp
 import os
 import secrets
 import json
@@ -70,6 +76,124 @@ def is_own_relay_webhook_message(message):
     the send) instead."""
     return getattr(message, "webhook_id", None) in _relay_webhook_ids
 
+def is_dm_chat_id(chat_id):
+    """Discord chats attached to a bridge are keyed 'guild:channel'; a user's DM
+    (used by the Purgatorium appeal system) is keyed 'dm:<user_id>'."""
+    return isinstance(chat_id, str) and chat_id.startswith("dm:")
+
+async def resolve_discord_chat_channel(chat_id):
+    """Resolve a Discord chat_id — 'guild:channel' or 'dm:<user_id>' — to a
+    messageable channel, or None if it can't be reached."""
+    try:
+        if is_dm_chat_id(chat_id):
+            uid = int(chat_id.split(":", 1)[1])
+            user = bot.get_user(uid)
+            if user is None:
+                user = await bot.fetch_user(uid)
+            return user.dm_channel or await user.create_dm()
+        channel_id = int(chat_id.split(":")[1])
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(channel_id)
+        return channel
+    except Exception:
+        return None
+
+def _locale_to_lang(locale):
+    """Map a Discord interaction locale (e.g. 'ru', 'en-US') to a supported
+    bot language. The appeal system can't know which server banned the user
+    (that is guard_bot's database), so the user's own client language is the
+    best signal for how to talk to them."""
+    code = str(locale or "").lower()[:2]
+    return code if code in SUPPORTED_LANGS else DEFAULT_LANG
+
+def _appeal_thread_chat_id(thread_id):
+    return f"{PURGATORIUM_GUILD_ID}:{thread_id}"
+
+def _appeal_thread_lang(thread_id):
+    return get_chat_lang(_appeal_thread_chat_id(thread_id)) or DEFAULT_LANG
+
+def _consul_label(thread_id, consul_user_id):
+    """How a server member writing in an appeal thread is signed in the copy the
+    appellant receives: their `/setname` alias when they have one, otherwise the
+    stable anonymized 'Consul A', 'Consul B', …
+
+    Neither form is localized. An alias is a fixed string by design, and the
+    anonymous signature is deliberately built from the English wording and the
+    Latin alphabet whatever the appellant reads the rest of the bridge in: it is
+    a label identifying one person across a thread, not a sentence, and a
+    consul who appears as 'Consul B' to one appellant and 'Консул Б' to another
+    is harder to talk about than one who is 'Consul B' to everybody.
+
+    The per-thread index is reserved in either case: a consul who later drops
+    their alias must fall back to the same letter they would have had, instead
+    of reading to the appellant as one more person joining the thread."""
+    idx = db.get_consul_ord(str(thread_id), consul_user_id)
+    alias = db.get_consul_name(consul_user_id)
+    if alias:
+        return alias
+    letters = localized("appeal_consul_letters", DEFAULT_LANG)
+    letter = letters[idx] if isinstance(letters, str) and idx < len(letters) else str(idx + 1)
+    return localized("appeal_consul_name", DEFAULT_LANG, letter=letter)
+
+CONSUL_NAME_MAX_LEN = 32
+_CONSUL_PING_RE = re.compile(r"@everyone|@here|<@[!&]?\d+>")
+_CONSUL_MARKUP_RE = re.compile(r"[*_~`|\\<>]")
+
+def _normalize_consul_name(name):
+    """Comparison form of an alias: case-folded, inner whitespace collapsed, so
+    that 'Ivan' and 'ivan ' are one and the same name."""
+    return re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+
+def _reserved_consul_labels():
+    """Every anonymized signature the bot itself can produce, in all supported
+    languages — an alias must not be able to impersonate one of them (nor a
+    consul in another language: appellants read different locales)."""
+    reserved = set()
+    for lang in SUPPORTED_LANGS:
+        letters = localized("appeal_consul_letters", lang)
+        marks = list(letters) if isinstance(letters, str) else []
+        marks += [str(n) for n in range(1, 100)]
+        for mark in marks:
+            reserved.add(_normalize_consul_name(localized("appeal_consul_name", lang, letter=mark)))
+    return reserved
+
+def _clean_consul_name(raw):
+    """Validate a `/setname` alias.
+
+    Returns ``(display, error_key)``. An empty ``display`` with no error means a
+    reset. Pings and the characters that could forge a relay header are removed
+    rather than escaped: the alias is re-escaped downstream by the relay's own
+    header builder, so storing an escaped form would show the backslashes."""
+    text = _CONSUL_PING_RE.sub("", str(raw or ""))
+    text = _CONSUL_MARKUP_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return "", None
+    if len(text) > CONSUL_NAME_MAX_LEN:
+        return None, "setname_too_long"
+    if _normalize_consul_name(text) in _reserved_consul_labels():
+        return None, "setname_reserved"
+    return text, None
+
+async def _is_consul_user(user_id):
+    """Whether a user may hold a consul alias: a CONSULS role holder on
+    Purgatorium, or a bot admin. Unlike `_can_judge_appeals`, which inspects the
+    member who ran a command, this resolves an arbitrary user id against
+    Purgatorium's member list."""
+    if is_admin("discord", user_id):
+        return True
+    guild = bot.get_guild(PURGATORIUM_GUILD_ID)
+    if guild is None:
+        return False
+    member = guild.get_member(int(user_id))
+    if member is None:
+        try:
+            member = await guild.fetch_member(int(user_id))
+        except Exception:
+            return False
+    return any(role.id in CONSULS for role in getattr(member, "roles", None) or [])
+
 _AVATAR_HOST_CHANNEL = 1476645334904995860
 _AVATAR_ASSET_MESSAGES = {
     "user-green.png": 1521522655931404431,
@@ -84,9 +208,54 @@ _AVATAR_ASSET_URLS = {
     "user-red.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522731022287030/user-red.png?ex=6a4523f7&is=6a43d277&hm=11189f7cff40f0e44576b110520b326eed1763bdd482c8da70a6c32fd990b107&",
     "user-grey.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522764953944224/user-grey.png?ex=6a4523ff&is=6a43d27f&hm=0f816c050fcc289a66b86a201d2aaf7e381301b4b3d011e20699b9d570be7a05&",
     "user-blue.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522780766736404/user-blue.png?ex=6a452403&is=6a43d283&hm=bc9ab7af78b08bc6917f416a9dfccbdaccfd9318838d37d3e1046fb35f68ee03&",
+    "dc-user-green.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027687759912/dc-user-green.png?ex=6a679b97&is=6a664a17&hm=fb8ab5f0cb4c06ae28e587cd705411c83caac3de52950be7a1a870065769f65b&",
+    "dc-user-yellow.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027113013268/dc-user-yellow.png?ex=6a679b97&is=6a664a17&hm=9cbf2a1d717b86b830213261df4730b64177a6f3986861af3067dad79348d52a&",
+    "dc-user-red.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997028212183050/dc-user-red.png?ex=6a679b98&is=6a664a18&hm=a89e920798df74f9e2245d97decc32552cf7b9a54cd0e0483b784aed5e5b0962&",
+    "dc-user-grey.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027939291298/dc-user-grey.png?ex=6a679b98&is=6a664a18&hm=0c5c29fdd253ef70a372ad0f27b9d3431a30b132daff98e2c3035e8e72e7428d&",
+    "dc-user-blue.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027390099496/dc-user-blue.png?ex=6a679b97&is=6a664a17&hm=aef87205bef54db718c5e47ce0ab86e1b8a9e0828a1e2a39eed775be1e50a764&",
+    "user-bsky.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1532701711175647242/user-bsky.png?ex=6a6dcf34&is=6a6c7db4&hm=6b66f092fd80685e7f9fda2c4037b91b338edf14ad41e0060ef825bd5d2d21d7&",
+    "user-yt.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1532701711481962647/user-yt.png?ex=6a6dcf34&is=6a6c7db4&hm=8484ab463794c673a832946a227ad284fa3742a1f1169f30080f16d9bc220cbe&",
+    "channel.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1531203664310698024/channel.png?ex=6a685c09&is=6a670a89&hm=7773ca12eb69c1ece71a53683ef04b2e38accfa1b825dc0989aadd8456919a4b&",
 }
 _avatar_url_cache = {}
 _AVATAR_URL_TTL = 12 * 3600
+
+async def _find_avatar_asset_message(asset):
+    """Locate an asset's host message by attachment filename and remember its id.
+
+    Assets uploaded in one go share a single message, so their ids can't all be
+    listed by hand; the host channel is scanned once and the answer cached in
+    ``_AVATAR_ASSET_MESSAGES`` alongside the hand-written ones."""
+    try:
+        ch = bot.get_channel(_AVATAR_HOST_CHANNEL) or await bot.fetch_channel(_AVATAR_HOST_CHANNEL)
+        async for msg in ch.history(limit=300):
+            if any(a.filename == asset for a in msg.attachments):
+                _AVATAR_ASSET_MESSAGES[asset] = msg.id
+                return msg
+    except Exception as e:
+        logger.warning("avatar asset lookup failed (%s): %s", asset, e)
+    return None
+
+async def warm_feed_avatars():
+    """Resolve the avatars of the followed sources once, before the first post
+    needs them.
+
+    Their literal fallback URLs carry a signature that expires within days, so
+    the host-message lookup is what keeps them working — this makes a failure of
+    that lookup visible in the log instead of showing up as posts silently
+    losing their avatar."""
+    for asset in dict.fromkeys(spec["avatar_asset"] for spec in FEED_KINDS.values()):
+        url = await avatar_asset_url(asset)
+        if asset in _AVATAR_ASSET_MESSAGES:
+            logger.info("Feed avatar %s resolved from its host message", asset)
+        else:
+            logger.warning(
+                "Feed avatar %s could not be found in channel %s — falling back to a "
+                "stored link, which stops working once its signature expires",
+                asset, _AVATAR_HOST_CHANNEL,
+            )
+        if not url:
+            logger.warning("Feed avatar %s has no usable URL at all", asset)
 
 async def avatar_asset_url(asset):
     """Fresh Discord CDN URL for a bundled avatar asset, fetched from its host
@@ -98,21 +267,321 @@ async def avatar_asset_url(asset):
         return cached[0]
 
     url = None
+    msg = None
     msg_id = _AVATAR_ASSET_MESSAGES.get(asset)
     if msg_id:
         try:
             ch = bot.get_channel(_AVATAR_HOST_CHANNEL) or await bot.fetch_channel(_AVATAR_HOST_CHANNEL)
             msg = await ch.fetch_message(msg_id)
-            if msg.attachments:
-                url = msg.attachments[0].url
         except Exception as e:
             logger.warning("avatar asset fetch failed (%s): %s", asset, e)
-            url = None
+            msg = None
+    if msg is None:
+        msg = await _find_avatar_asset_message(asset)
+    if msg is not None and msg.attachments:
+        match = discord.utils.find(lambda a: a.filename == asset, msg.attachments)
+        url = (match or msg.attachments[0]).url
     if url is None:
         url = _AVATAR_ASSET_URLS.get(asset)
     if url:
         _avatar_url_cache[asset] = (url, now)
     return url
+
+_DC_AVATAR_ASSETS = {
+    1: "dc-user-green.png", 2: "dc-user-green.png",
+    3: "dc-user-yellow.png", 4: "dc-user-yellow.png",
+    5: "dc-user-red.png", 6: "dc-user-red.png",
+    7: "dc-user-grey.png", 8: "dc-user-grey.png",
+    9: "dc-user-blue.png", 0: "dc-user-blue.png",
+}
+
+async def relay_avatar_url(user_id, avatar_url):
+    """The avatar a Discord sender's webhook copies should carry. Senders who
+    hid it in `/privacy` get a neutral placeholder chosen by the last digit of
+    their ID — the same rule that gives Telegram senders theirs."""
+    if not user_id or not avatar_url:
+        return avatar_url
+    if not db.get_privacy_flag("discord", user_id, "hide_avatar"):
+        return avatar_url
+    try:
+        asset = _DC_AVATAR_ASSETS.get(int(user_id) % 10)
+    except Exception:
+        return None
+    return await avatar_asset_url(asset) if asset else None
+
+GALLERY_MAX_FILES = 10
+GALLERY_DEFAULT_SIZE_LIMIT = 10 * 1024 * 1024
+
+async def resolve_gallery_channel():
+    """First GALLERY channel the bot can actually post files into, or None."""
+    for cid in GALLERY:
+        try:
+            channel = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
+        except Exception:
+            continue
+        if channel is None:
+            continue
+        guild = getattr(channel, "guild", None)
+        me = guild.me if guild is not None else None
+        if me is not None:
+            try:
+                perms = channel.permissions_for(me)
+            except Exception:
+                continue
+            if not (perms.send_messages and perms.attach_files):
+                continue
+        return channel
+    return None
+
+def _gallery_size_limit(channel):
+    """Upload limit of the gallery's server — 10 MB unless it is boosted."""
+    guild = getattr(channel, "guild", None)
+    limit = getattr(guild, "filesize_limit", None) if guild is not None else None
+    return int(limit) if limit else GALLERY_DEFAULT_SIZE_LIMIT
+
+async def gallery_upload_budget():
+    """``(max_files, max_total_bytes)`` for one GALLERY message, or None when no
+    gallery channel is reachable. Callers use it to decide which files fit
+    before spending time downloading them."""
+    channel = await resolve_gallery_channel()
+    if channel is None:
+        return None
+    return GALLERY_MAX_FILES, _gallery_size_limit(channel)
+
+async def gallery_upload(files):
+    """Post ``files`` (``{"name", "data"}`` dicts) to GALLERY as a single message
+    and return ``{"channel_id", "message_id", "urls"}``.
+
+    Returns None on any failure — an unreachable channel, a missing permission,
+    a rejected upload — so that the caller falls back to the marker/link footer
+    instead of losing the message."""
+    if not files:
+        return None
+    channel = await resolve_gallery_channel()
+    if channel is None:
+        logger.warning("GALLERY re-upload skipped: no reachable gallery channel")
+        return None
+    try:
+        sent = await channel.send(files=[
+            discord.File(io.BytesIO(f["data"]), filename=f["name"]) for f in files
+        ])
+    except Exception as e:
+        logger.warning("GALLERY upload failed (channel=%s): %s", channel.id, e)
+        return None
+    return {
+        "channel_id": str(channel.id),
+        "message_id": str(sent.id),
+        "urls": [a.url for a in sent.attachments],
+    }
+
+async def delete_gallery_message(channel_id, gallery_message_id):
+    try:
+        channel = bot.get_channel(int(channel_id)) or await bot.fetch_channel(int(channel_id))
+        msg = await channel.fetch_message(int(gallery_message_id))
+        await msg.delete()
+        return True
+    except Exception:
+        return False
+
+async def drop_gallery_upload(message_id):
+    """Remove a relayed message's GALLERY upload, message and row alike."""
+    row = db.get_gallery_upload(message_id)
+    if not row:
+        return
+    await delete_gallery_message(row["channel_id"], row["gallery_message_id"])
+    db.delete_gallery_upload(message_id)
+
+FEED_KINDS = {
+    "bluesky": {
+        "messenger": "Bluesky",
+        "avatar_asset": "user-bsky.png",
+        "file_source": "bluesky",
+        "stale_after": 14 * 86400,
+    },
+    "youtube": {
+        "messenger": "YouTube",
+        "avatar_asset": "user-yt.png",
+        "file_source": "youtube",
+        "stale_after": 120 * 86400,
+    },
+    "telegram": {
+        "messenger": "Telegram",
+        "avatar_asset": "channel.png",
+        "file_source": "telegram",
+        "stale_after": 14 * 86400,
+    },
+}
+
+FEED_STALE_AFTER = 14 * 86400
+
+def feed_stale_since(posts, kind=None):
+    """The date of a fetched feed's newest post, when it is old enough that the
+    source has plainly stopped moving — otherwise ``None``.
+
+    What counts as "stopped" depends on what is being followed, so each kind
+    names its own patience in `FEED_KINDS`: a news account quiet for a fortnight
+    has probably gone somewhere else, while a video channel quiet for a fortnight
+    is merely between uploads. Reported once a day at most, this is what keeps a
+    feed that has nothing left to relay from going silent with nothing in the log
+    to explain it."""
+    created = (posts[-1] if posts else {}).get("created_at")
+    after = (FEED_KINDS.get(kind) or {}).get("stale_after") or FEED_STALE_AFTER
+    if not created or time.time() - int(created) < after:
+        return None
+    return datetime.datetime.fromtimestamp(
+        int(created), tz=datetime.timezone.utc).strftime("%Y-%m-%d")
+
+def feed_module(kind):
+    """The module that reads one kind of followed source. Telegram channels are
+    read by the Telegram half of the bot, imported on use like every other call
+    that crosses between the two halves."""
+    if kind == "bluesky":
+        return bluesky
+    if kind == "youtube":
+        return youtube
+    if kind == "telegram":
+        import telegram_bot
+        return telegram_bot
+    raise KeyError(kind)
+
+async def download_feed_media(items, max_files=None, max_total_bytes=None, headers=None):
+    """Download a followed post's attachments for the GALLERY re-upload.
+
+    Returns ``(files, skipped)`` — the ``{"name", "data"}`` dicts that fit, in
+    post order, and how many attachments did not make it. Each attachment is
+    tried from its largest rendition down, so an oversized video arrives in a
+    smaller size instead of not at all; one that fails to download or has no
+    rendition small enough is skipped rather than holding up the post."""
+    if not items:
+        return [], 0
+    headers = headers or FEED_REQUEST_HEADERS
+    files, total, skipped = [], 0, 0
+    async with aiohttp.ClientSession() as session:
+        for index, item in enumerate(items):
+            if max_files is not None and len(files) >= max_files:
+                skipped += 1
+                continue
+            data, chosen = None, None
+            for url in item.get("urls") or [item.get("url")]:
+                if not url:
+                    continue
+                try:
+                    async with session.get(
+                        url, headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=FEED_REQUEST_TIMEOUT),
+                    ) as resp:
+                        if resp.status != 200:
+                            continue
+                        declared = int(resp.headers.get("Content-Length") or 0)
+                        if max_total_bytes is not None and declared and total + declared > max_total_bytes:
+                            continue
+                        body = await resp.read()
+                except Exception:
+                    continue
+                if max_total_bytes is not None and total + len(body) > max_total_bytes:
+                    continue
+                data, chosen = body, url
+                break
+            if data is None:
+                skipped += 1
+                continue
+            files.append({
+                "name": feed_media_name(chosen, item.get("index", index),
+                                        item.get("kind", "photo"),
+                                        prefix=item.get("prefix", "media")),
+                "data": data,
+            })
+            total += len(data)
+    return files, skipped
+
+async def upload_feed_media(post):
+    """Re-upload a followed post's attachments to GALLERY.
+
+    Returns ``(urls, skipped)`` — the links to hand out in the relayed copies,
+    and how many attachments could not be brought over, for which the copies get
+    the "[N files from …]" footer instead."""
+    items = post.get("media") or []
+    if not items:
+        return [], 0
+    budget = await gallery_upload_budget()
+    if budget is None:
+        return [], len(items)
+    max_files, max_bytes = budget
+    files, skipped = await download_feed_media(
+        items, max_files=max_files, max_total_bytes=int(max_bytes * 0.95)
+    )
+    if not files:
+        return [], len(items)
+    upload = await gallery_upload(files)
+    if not upload or not upload.get("urls"):
+        return [], len(items)
+    return upload["urls"], skipped + max(0, len(files) - len(upload["urls"]))
+
+async def feed_send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html,
+                            reply_line, reply_link_line=None, reply_to_platform_message_id=None,
+                            sender_name=None, place_name=None, messenger_name=None,
+                            avatar_url=None, is_bot_sender=False):
+    if chat["platform"] == "discord":
+        return await deliver_discord_relay(
+            chat, header=header, body_discord=body_discord, reply_line=reply_line,
+            reply_link_line=reply_link_line,
+            reply_to_platform_message_id=reply_to_platform_message_id,
+            sender_name=sender_name, place_name=place_name,
+            messenger_name=messenger_name, avatar_url=avatar_url,
+            is_bot_sender=is_bot_sender,
+        )
+    if chat["platform"] == "telegram":
+        return await deliver_telegram_relay(
+            chat, header=header, body_plain=body_plain,
+            body_telegram_html=body_telegram_html, reply_line=reply_line,
+            reply_to_platform_message_id=reply_to_platform_message_id,
+        )
+
+async def relay_feed_post(feed, post, gallery=None):
+    """Relay one post of a followed source into the chats of its feed.
+
+    The post is handled like a forwarded message from a sender with no community
+    behind them: the header is ``[Bluesky] Account:`` or ``[Telegram]
+    Channel:`` where webhooks are off, and where they are on the copy carries the
+    source's name and its own avatar instead. A repost keeps the bridge's usual
+    "(forwarded from …)" line above the text. Attachments are re-uploaded to
+    GALLERY, so the chats get links the bot controls; ``gallery`` lets a caller
+    that already has the files (a live Telegram channel post) pass the result in
+    rather than downloading them again."""
+    spec = FEED_KINDS[feed["kind"]]
+    author = post.get("author_name") or feed["title"] or feed["source"]
+    body = post.get("text") or ""
+    if post.get("link"):
+        body = f"{body}\n{post['link']}".strip()
+
+    gallery_urls, skipped = gallery if gallery is not None else await upload_feed_media(post)
+    skipped += int(post.get("unavailable_media") or 0)
+
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (feed["chat_id"],)
+    ).fetchone()
+
+    await message_relay.relay_message(
+        bridge_id=row["bridge_id"] if row else None,
+        origin_platform=f"feed:{feed['kind']}",
+        origin_chat_id=f"{feed['kind']}:{feed['source']}",
+        origin_message_id=str(post["id"]),
+        origin_sender_id=feed["source"],
+        messenger_name=spec["messenger"],
+        place_name=None,
+        sender_name=author,
+        text=body,
+        discord_text=body,
+        telegram_html=escape_html(body),
+        send_to_chat_func=feed_send_to_chat,
+        forward_type=post.get("forward_type"),
+        forward_name=post.get("forward_name"),
+        avatar_url=await avatar_asset_url(spec["avatar_asset"]),
+        gallery_urls=gallery_urls,
+        targets=db.feed_targets(feed["platform"], feed["chat_id"]),
+        file_count=skipped or None,
+        file_count_source=spec["file_source"],
+    )
 
 _MD_ESCAPE = {c: "\\" + c for c in "\\*_~`|"}
 
@@ -123,7 +592,10 @@ def _esc_md(text):
 _BOT_SENDER_EMOJI = "<:bot:1513502696953352363>"
 
 def _discord_relay_header(messenger_name, place_name, sender_name, is_bot_sender):
-    base = f"[{_esc_md(messenger_name)} | {_esc_md(place_name)}] {_esc_md(sender_name)}"
+    prefix = message_relay.relay_header_prefix(
+        _esc_md(messenger_name), _esc_md(place_name) if place_name else None
+    )
+    base = f"{prefix} {_esc_md(sender_name)}"
     if is_bot_sender:
         return f"{base} {_BOT_SENDER_EMOJI}:"
     return f"{base}:"
@@ -152,15 +624,13 @@ async def deliver_discord_relay(
     If the channel has /webhooks enabled (and isn't a thread/forum post), the
     message is sent through a per-channel webhook with the sender's name + platform
     + server as the username and the sender's avatar — otherwise it's a normal bot
-    message with the usual ``[Messenger | Place] Sender:`` header.
+    message with the usual ``[Messenger | Place] Sender:`` header. Also handles
+    'dm:<user_id>' chats (appeal bridges), which never use webhooks.
     """
-    channel_id = int(chat["chat_id"].split(":")[1])
-    channel = bot.get_channel(channel_id)
-    if not channel:
-        try:
-            channel = await bot.fetch_channel(channel_id)
-        except Exception:
-            return None
+    channel = await resolve_discord_chat_channel(chat["chat_id"])
+    if channel is None:
+        return None
+    channel_id = channel.id
 
     body = body_discord
     if reply_line:
@@ -172,20 +642,22 @@ async def deliver_discord_relay(
             username = _webhook_username(sender_name, place_name)
             webhook_body = f"{reply_link_line}\n{body}" if reply_link_line else body
             content = clip_text(webhook_body, DISCORD_MSG_LIMIT) or "​"
-            for _ in range(2):
+            for attempt in range(2):
                 try:
                     sent = await webhook.send(
                         content, username=username, avatar_url=avatar_url,
                         allowed_mentions=RELAY_ALLOWED_MENTIONS, wait=True,
                     )
                     return str(sent.id)
-                except discord.NotFound:
+                except Exception as e:
                     _relay_webhooks.pop(channel.id, None)
+                    logger.warning("Relay webhook send failed (channel=%s, try %d): %s",
+                                   channel.id, attempt + 1, e)
+                    if attempt:
+                        break
                     webhook = await _get_relay_webhook(channel)
                     if webhook is None:
                         break
-                except Exception:
-                    break
 
     if sender_name is not None or place_name is not None or messenger_name is not None:
         disc_header = _discord_relay_header(messenger_name, place_name, sender_name, is_bot_sender)
@@ -205,6 +677,41 @@ async def deliver_discord_relay(
         return str(sent.id)
     except Exception:
         return None
+
+async def deliver_telegram_relay(
+    chat, *, header, body_plain, body_telegram_html, reply_line,
+    reply_to_platform_message_id,
+):
+    """Deliver a relayed message into a Telegram chat/topic.
+
+    Discord-only markup that Telegram can't render (timestamps) is localized
+    first; a reply is sent as a native reply where the replied-to copy still
+    exists, and retried without the reference when it doesn't."""
+    from telegram_bot import bot as tg_bot
+    chat_id_str, thread = chat["chat_id"].split(":")
+    ts_lang = get_chat_lang(chat["chat_id"])
+    body_html = convert_discord_timestamps(body_telegram_html or escape_html(body_plain), ts_lang)
+    body_plain_local = convert_discord_timestamps(body_plain, ts_lang)
+    if reply_line:
+        body_html = f"{escape_html(reply_line)}\n{body_html}"
+    text_html = build_telegram_text(header, body_html, body_plain_local)
+    send_kwargs = dict(
+        chat_id=int(chat_id_str),
+        message_thread_id=int(thread) or None,
+        text=text_html,
+        parse_mode="HTML",
+    )
+    if reply_to_platform_message_id:
+        send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
+    try:
+        sent = await tg_bot.send_message(**send_kwargs)
+    except Exception:
+        if reply_to_platform_message_id:
+            send_kwargs.pop("reply_to_message_id", None)
+            sent = await tg_bot.send_message(**send_kwargs)
+        else:
+            raise
+    return str(sent.message_id)
 
 async def edit_discord_relay_copy(ch, message_id_platform, header, body, message_db_id=None, chat=None):
     """Edit a relayed Discord copy, handling both normal bot messages and the
@@ -401,10 +908,28 @@ def _discord_system_event_key(message: discord.Message):
     }
     return mapping.get(mt)
 
+def _split_attachment_texts(content, attachment_urls):
+    """One relayed message per attachment: the first joined to the text, the
+    rest on their own.
+
+    A chat renders a preview for only one link per message, so a message
+    carrying several files has to be relayed as several messages for all of them
+    to be visible. This applies to a message's own attachments and to the
+    attachments of a message forwarded into the chat alike."""
+    if not attachment_urls:
+        return [content]
+    first = f"{content}\n{attachment_urls[0]}" if content else attachment_urls[0]
+    return [first] + list(attachment_urls[1:])
+
 async def extract_discord_forward_payload(message: discord.Message):
+    """What a forwarded message carries: ``(forward_type, forward_name, text,
+    attachment_urls)``.
+
+    The attachments are kept apart from the text so the caller can split them
+    across one relayed message per file, the way it already splits a message's
+    own attachments."""
     forward_type = None
     forward_name = None
-    forward_text = ""
 
     snapshots = getattr(message, "message_snapshots", None) or []
     if snapshots:
@@ -415,8 +940,6 @@ async def extract_discord_forward_payload(message: discord.Message):
             url = getattr(a, "url", None)
             if url:
                 snap_attachments.append(url)
-        if snap_attachments:
-            body = "\n".join([body] + snap_attachments) if body else "\n".join(snap_attachments)
 
         ref = getattr(message, "reference", None)
         original = getattr(snap, "cached_message", None)
@@ -435,24 +958,22 @@ async def extract_discord_forward_payload(message: discord.Message):
 
         author = getattr(original, "author", None)
         if author is not None:
-            return "user", (getattr(author, "display_name", None) or str(author)), body
+            return "user", (getattr(author, "display_name", None) or str(author)), body, snap_attachments
 
         src_guild = bot.get_guild(ref.guild_id) if ref is not None and getattr(ref, "guild_id", None) else None
         if src_guild is not None and src_guild.name:
-            return "chat", src_guild.name, body
+            return "chat", src_guild.name, body, snap_attachments
 
-        return "unknown", None, body
+        return "unknown", None, body, snap_attachments
 
     if getattr(message, "type", None) == discord.MessageType.reply:
-        return None, None, ""
+        return None, None, "", []
 
     ref = getattr(message, "reference", None)
     resolved = getattr(ref, "resolved", None)
     if resolved and isinstance(resolved, discord.Message):
         body = replace_mentions(resolved, resolved.content or "").strip()
         ref_attachments = [a.url for a in getattr(resolved, "attachments", []) if getattr(a, "url", None)]
-        if ref_attachments:
-            body = "\n".join([body] + ref_attachments) if body else "\n".join(ref_attachments)
         if resolved.channel and getattr(resolved.channel, "name", None):
             forward_type = "chat"
             forward_name = resolved.channel.name
@@ -461,14 +982,32 @@ async def extract_discord_forward_payload(message: discord.Message):
             forward_name = resolved.author.display_name or str(resolved.author)
         else:
             forward_type = "unknown"
-        return forward_type, forward_name, body
+        return forward_type, forward_name, body, ref_attachments
 
     if ref and not resolved:
-        return "unknown", None, ""
+        return "unknown", None, "", []
 
-    return None, None, ""
+    return None, None, "", []
 
-async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None, is_bot_sender=False):
+async def _relay_verified_discord_message(message: discord.Message, bridge_id, system_event_key=None, is_bot_sender=False,
+                                          origin_chat_id=None, place_name=None, sender_name=None, avatar_url=None):
+    """Relay a Discord message into its bridge.
+
+    The origin/place/sender/avatar default to the guild message's own values;
+    the appeal system overrides them to relay from a DM (origin 'dm:<uid>',
+    localized place) and to anonymize appeal-thread members as consuls (no
+    avatar so nothing about them leaks into the webhook path).
+    """
+    if origin_chat_id is None:
+        origin_chat_id = f"{message.guild.id}:{message.channel.id}"
+    if place_name is None:
+        place_name = message.guild.name or message.channel.name
+    if sender_name is None:
+        sender_name = message.author.display_name or str(message.author)
+    if avatar_url is None:
+        avatar_url = str(message.author.display_avatar.url)
+    avatar_url = await relay_avatar_url(message.author.id, avatar_url or None)
+
     reply_to_msg_db_id = None
     forward_type = None
     forward_name = None
@@ -482,8 +1021,6 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 replied = await message.channel.fetch_message(ref_msg_id)
             except Exception:
                 replied = None
-
-        origin_chat_id = f"{message.guild.id}:{message.channel.id}"
 
         if replied and getattr(replied, "author", None):
             if replied.author.bot:
@@ -512,19 +1049,14 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 ).fetchone()
                 reply_to_msg_db_id = msg_row["id"] if msg_row else -1
 
-    forward_type, forward_name, forward_text = await extract_discord_forward_payload(message)
+    forward_type, forward_name, forward_text, forward_attachments = \
+        await extract_discord_forward_payload(message)
     content = replace_mentions(message, message.content or "")
 
     if message.stickers:
         texts = ["__DC_STICKER__"]
     else:
-        attachments = [a.url for a in message.attachments]
-        if attachments:
-            texts = [content + "\n" + attachments[0] if content else attachments[0]]
-            for a in attachments[1:]:
-                texts.append(a)
-        else:
-            texts = [content]
+        texts = _split_attachment_texts(content, [a.url for a in message.attachments])
 
     embed_texts = _discord_embed_texts(message)
     if embed_texts:
@@ -535,7 +1067,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             texts = [embed_block]
 
     if forward_type and not any((t or "").strip() for t in texts):
-        texts = [forward_text or ""]
+        texts = _split_attachment_texts(forward_text or "", forward_attachments)
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "discord":
@@ -549,70 +1081,50 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             )
 
         if chat["platform"] == "telegram":
-            from telegram_bot import bot as tg_bot
-            chat_id_str, thread = chat["chat_id"].split(":")
-            ts_lang = get_chat_lang(chat["chat_id"])
-            body_html = convert_discord_timestamps(body_telegram_html or escape_html(body_plain), ts_lang)
-            body_plain_local = convert_discord_timestamps(body_plain, ts_lang)
-            if reply_line:
-                body_html = f"{escape_html(reply_line)}\n{body_html}"
-            text_html = build_telegram_text(header, body_html, body_plain_local)
-            send_kwargs = dict(
-                chat_id=int(chat_id_str),
-                message_thread_id=int(thread) or None,
-                text=text_html,
-                parse_mode="HTML",
+            return await deliver_telegram_relay(
+                chat, header=header, body_plain=body_plain,
+                body_telegram_html=body_telegram_html, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
             )
-            if reply_to_platform_message_id:
-                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
-            try:
-                sent = await tg_bot.send_message(**send_kwargs)
-            except Exception:
-                if reply_to_platform_message_id:
-                    send_kwargs.pop("reply_to_message_id", None)
-                    sent = await tg_bot.send_message(**send_kwargs)
-                else:
-                    raise
-            return str(sent.message_id)
 
     if system_event_key:
-        origin_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        origin_lang = get_chat_lang(origin_chat_id)
         event_text = localized_discord_system_event(
-            message.author.display_name or str(message.author),
+            sender_name,
             system_event_key,
             origin_lang,
         )
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
-            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
+            origin_chat_id=origin_chat_id,
             origin_message_id=str(message.id),
             origin_sender_id=str(message.author.id),
             messenger_name="Discord",
-            place_name=message.guild.name or message.channel.name,
-            sender_name=message.author.display_name or str(message.author),
+            place_name=place_name,
+            sender_name=sender_name,
             text=event_text,
             discord_text=event_text,
             telegram_html=discord_to_telegram_html(event_text),
             reply_to_msg_db_id=None,
             send_to_chat_func=send_to_chat,
-            avatar_url=str(message.author.display_avatar.url),
+            avatar_url=avatar_url,
         )
         return
 
     for text in texts:
-        target_lang = get_chat_lang(f"{message.guild.id}:{message.channel.id}")
+        target_lang = get_chat_lang(origin_chat_id)
         localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
         telegram_text = replace_channel_mentions_for_telegram(localized_text, message.guild)
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
-            origin_chat_id=f"{message.guild.id}:{message.channel.id}",
+            origin_chat_id=origin_chat_id,
             origin_message_id=str(message.id),
             origin_sender_id=str(message.author.id),
             messenger_name="Discord",
-            place_name=message.guild.name or message.channel.name,
-            sender_name=message.author.display_name or str(message.author),
+            place_name=place_name,
+            sender_name=sender_name,
             text=telegram_text,
             discord_text=localized_text,
             telegram_html=discord_to_telegram_html(telegram_text),
@@ -621,7 +1133,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             forward_type=forward_type,
             forward_name=forward_name,
             is_bot_sender=is_bot_sender,
-            avatar_url=str(message.author.display_avatar.url),
+            avatar_url=avatar_url,
         )
 
 async def _send_db_backup_discord(client):
@@ -710,11 +1222,27 @@ class DiscordBot(discord.Client):
         self.loop.create_task(self.bridge_rules_loop())
         self.loop.create_task(self.deadtopic_loop())
         self.loop.create_task(self.backup_loop())
+        self.loop.create_task(self.appeal_maintenance_loop())
         try:
             for poll in db.get_open_polls():
                 self.add_view(PollView(poll["id"], json.loads(poll["options"])))
         except Exception:
             pass
+        try:
+            for row in db.get_open_appeals():
+                lang = get_chat_lang(f"{PURGATORIUM_GUILD_ID}:{row['thread_id']}") or DEFAULT_LANG
+                self.add_view(AppealVerdictView(int(row["user_id"]), lang))
+        except Exception:
+            pass
+
+    async def appeal_maintenance_loop(self):
+        await self.wait_until_ready()
+        while not self.is_closed():
+            try:
+                await _appeal_maintenance_pass(self)
+            except Exception as e:
+                logger.warning("appeal maintenance failed: %s", e)
+            await asyncio.sleep(24 * 3600)
 
     async def backup_loop(self):
         await self.wait_until_ready()
@@ -917,8 +1445,8 @@ class DiscordBot(discord.Client):
 
 bot = DiscordBot()
 
-async def _post_user_id_to_channels(channel_ids, user_id):
-    """Post a bare user ID to each of the given Discord channels.
+async def _post_user_id_to_channels(channel_ids, payload):
+    """Post a verification-sync payload to each of the given Discord channels.
 
     Used to publish verification state changes to the VERIFIED / UNVERIFIED
     channels so guard_bot can mirror them into its cross-server database.
@@ -933,12 +1461,15 @@ async def _post_user_id_to_channels(channel_ids, user_id):
         if channel is None:
             continue
         try:
-            await channel.send(str(user_id))
+            await channel.send(str(payload))
         except Exception as e:
-            logger.warning("Failed to publish user id %s to channel %s: %s", user_id, cid, e)
+            logger.warning("Failed to publish user id %s to channel %s: %s", payload, cid, e)
 
 async def announce_verified_user(user_id):
     """Publish a newly verified user's ID to the VERIFIED channel(s).
+
+    The message carries exactly one ID — the user's — so consumers can never
+    mistake it for anything else.
 
     Only useful when running alongside Confederate Guard; can be turned off
     with /verify-list disable.
@@ -1013,6 +1544,167 @@ async def atb(interaction: discord.Interaction, bridge_id: int):
                 )
             except Exception:
                 pass
+
+async def resolve_telegram_channel(channel):
+    """What the Bot API can tell us about a public channel: its numeric id, its
+    title, and whether the bot is an administrator of it.
+
+    Membership decides how the channel is read: an admin bot is handed every post
+    as it appears, everyone else has to poll the channel's public web preview.
+    Returns None when the API knows nothing about the name at all."""
+    from telegram_bot import bot as tg_bot
+    try:
+        chat = await tg_bot.get_chat(f"@{channel}")
+    except Exception as e:
+        logger.info("Telegram channel lookup failed (%s): %s", channel, e)
+        return None
+    member = False
+    try:
+        me = await tg_bot.get_me()
+        status = getattr(await tg_bot.get_chat_member(chat.id, me.id), "status", None)
+        member = str(status) in ("administrator", "creator", "ChatMemberStatus.ADMINISTRATOR",
+                                 "ChatMemberStatus.CREATOR")
+    except Exception:
+        member = False
+    return {"id": chat.id, "title": chat.title or f"@{channel}", "member": member}
+
+async def attach_feed(kind, raw_source, platform, chat_id, added_by):
+    """Attach a public source to a chat — and thereby to its whole bridge.
+
+    Returns ``(status, source, title, stale_since)`` where status is 'ok',
+    'live' (a Telegram channel the bot is in, whose posts arrive without
+    polling), 'exists' (this chat or its bridge already follows the source),
+    'invalid' (not a handle of that platform), 'throttled' (the source is
+    rate-limiting us — worth retrying shortly) or 'unreachable' (nothing
+    readable there). `stale_since` is set when what the source serves has not
+    moved for days, which the admin should hear about right away rather than
+    discover through silence. The newest post is recorded as already seen, so
+    the feed starts with what comes next instead of replaying the backlog into
+    every chat."""
+    module = feed_module(kind)
+    source = module.normalize_source(raw_source)
+    if not source:
+        return "invalid", None, None, None
+    if db.find_feed(kind, source, chat_id):
+        return "exists", source, None, None
+
+    source_id = None
+    if kind == "telegram":
+        resolved = await resolve_telegram_channel(source)
+        if resolved:
+            source_id = resolved["id"]
+            if resolved["member"]:
+                db.add_feed(kind, source, platform, chat_id, source_id=source_id,
+                            title=resolved["title"], live=True, added_by=added_by)
+                return "live", source, resolved["title"], None
+
+    try:
+        title, posts = await module.fetch_posts(source)
+    except FeedError as e:
+        logger.warning("feed attach failed (%s %s): %s", kind, source, e)
+        status = "throttled" if getattr(e, "throttled", False) else "unreachable"
+        return status, source, None, None
+
+    db.add_feed(kind, source, platform, chat_id, source_id=source_id, title=title,
+                last_post_id=posts[-1]["id"] if posts else None, added_by=added_by)
+    return "ok", source, title or source, feed_stale_since(posts, kind)
+
+async def _feed_command(interaction: discord.Interaction, kind, account, keys):
+    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed`."""
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+
+    if not (is_admin("discord", interaction.user.id)
+            or is_chat_admin("discord", chat_id, interaction.user.id)):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    status, source, title, stale_since = await attach_feed(
+        kind, account, "discord", chat_id, interaction.user.id)
+    if status in ("ok", "live"):
+        key = keys["attached_live"] if status == "live" else keys["attached"]
+        text = localized(key, lang, account=source, name=title,
+                         where=feed_scope_name(chat_id, lang))
+        if stale_since:
+            text += "\n\n" + localized("feed_stale_note", lang, account=source, date=stale_since)
+    else:
+        text = localized(keys[status], lang, account=source)
+    await interaction.followup.send(text, ephemeral=True)
+
+async def _rem_feed_command(interaction: discord.Interaction, kind, account, keys):
+    """Shared body of `/rembskyfeed`, `/remytfeed` and `/remtgfeed`."""
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+
+    if not (is_admin("discord", interaction.user.id)
+            or is_chat_admin("discord", chat_id, interaction.user.id)):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    source = feed_module(kind).normalize_source(account)
+    if not source:
+        await interaction.response.send_message(localized(keys["invalid"], lang), ephemeral=True)
+        return
+
+    existing = db.find_feed(kind, source, chat_id)
+    if existing and db.remove_feed(kind, source, existing["chat_id"]):
+        await interaction.response.send_message(
+            localized(keys["removed"], lang, account=source), ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            localized(keys["not_attached"], lang, account=source), ephemeral=True)
+
+YTFEED_KEYS = {
+    "attached": "ytfeed_attached", "attached_live": "ytfeed_attached",
+    "exists": "ytfeed_already_attached", "invalid": "ytfeed_invalid_channel",
+    "throttled": "ytfeed_throttled", "unreachable": "ytfeed_unreachable",
+    "removed": "ytfeed_removed", "not_attached": "ytfeed_not_attached",
+}
+
+BSKYFEED_KEYS = {
+    "attached": "bskyfeed_attached", "attached_live": "bskyfeed_attached",
+    "exists": "bskyfeed_already_attached", "invalid": "bskyfeed_invalid_account",
+    "throttled": "bskyfeed_throttled", "unreachable": "bskyfeed_unreachable",
+    "removed": "bskyfeed_removed", "not_attached": "bskyfeed_not_attached",
+}
+
+TGFEED_KEYS = {
+    "attached": "tgfeed_attached", "attached_live": "tgfeed_attached_live",
+    "exists": "tgfeed_already_attached", "invalid": "tgfeed_invalid_channel",
+    "throttled": "tgfeed_throttled", "unreachable": "tgfeed_unreachable",
+    "removed": "tgfeed_removed", "not_attached": "tgfeed_not_attached",
+}
+
+@bot.tree.command(name="setytfeed", description="relay a public YouTube channel into this bridge (bot admins)")
+@app_commands.describe(channel="YouTube channel: @handle, a link to the channel or a UC… channel id")
+async def setytfeed_cmd(interaction: discord.Interaction, channel: str):
+    await _feed_command(interaction, "youtube", channel, YTFEED_KEYS)
+
+@bot.tree.command(name="remytfeed", description="stop relaying a YouTube channel into this bridge (bot admins)")
+@app_commands.describe(channel="YouTube channel: @handle, a link to the channel or a UC… channel id")
+async def remytfeed_cmd(interaction: discord.Interaction, channel: str):
+    await _rem_feed_command(interaction, "youtube", channel, YTFEED_KEYS)
+
+@bot.tree.command(name="setbskyfeed", description="relay a public Bluesky account into this bridge (bot admins)")
+@app_commands.describe(account="Bluesky account: handle, @handle, a link to the profile or a DID")
+async def setbskyfeed_cmd(interaction: discord.Interaction, account: str):
+    await _feed_command(interaction, "bluesky", account, BSKYFEED_KEYS)
+
+@bot.tree.command(name="rembskyfeed", description="stop relaying a Bluesky account into this bridge (bot admins)")
+@app_commands.describe(account="Bluesky account: handle, @handle, a link to the profile or a DID")
+async def rembskyfeed_cmd(interaction: discord.Interaction, account: str):
+    await _rem_feed_command(interaction, "bluesky", account, BSKYFEED_KEYS)
+
+@bot.tree.command(name="settgfeed", description="relay a public Telegram channel into this bridge (bot admins)")
+@app_commands.describe(channel="Telegram channel: the name after t.me/, @name or a link")
+async def settgfeed_cmd(interaction: discord.Interaction, channel: str):
+    await _feed_command(interaction, "telegram", channel, TGFEED_KEYS)
+
+@bot.tree.command(name="remtgfeed", description="stop relaying a Telegram channel into this bridge (bot admins)")
+@app_commands.describe(channel="Telegram channel: the name after t.me/, @name or a link")
+async def remtgfeed_cmd(interaction: discord.Interaction, channel: str):
+    await _rem_feed_command(interaction, "telegram", channel, TGFEED_KEYS)
 
 @bot.tree.command(name="rfb", description="remove this chat from the bridge")
 async def rfb(interaction: discord.Interaction, target: str | None = None):
@@ -1109,8 +1801,379 @@ async def rfb(interaction: discord.Interaction, target: str | None = None):
 
     await interaction.response.send_message(localized("rfb_removed", lang), ephemeral=True)
 
+APPEAL_AUTO_KICK_SECONDS = 7 * 86400
+APPEAL_CLEANUP_SECONDS = 30 * 86400
+
+def _cleanup_appeal_records(appeal_row):
+    """Drop an appeal's rows and detach its bridge chats (the bridge row itself
+    disappears with its last chat via remove_chat_from_bridge)."""
+    if not appeal_row:
+        return
+    db.remove_chat_from_bridge(f"{PURGATORIUM_GUILD_ID}:{appeal_row['thread_id']}")
+    db.remove_chat_from_bridge(f"dm:{appeal_row['user_id']}")
+    db.delete_appeal(appeal_row["user_id"])
+
+def _can_judge_appeals(member):
+    """Consuls hold one of the CONSULS roles on Purgatorium; global bot admins also count."""
+    if is_admin("discord", member.id):
+        return True
+    return any(role.id in CONSULS for role in getattr(member, "roles", None) or [])
+
+class AppealVerdictButton(discord.ui.Button):
+    def __init__(self, action, user_id, lang):
+        super().__init__(
+            label=localized(f"appeal_btn_{action}", lang),
+            style=discord.ButtonStyle.success if action == "pardon" else discord.ButtonStyle.danger,
+            custom_id=f"appeal:{action}:{user_id}",
+        )
+        self.action = action
+        self.target_uid = int(user_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        await handle_appeal_verdict_click(interaction, self.action, self.target_uid)
+
+class AppealVerdictView(discord.ui.View):
+    """Verdict buttons pinned in an appeal thread. Persistent: stable custom_ids,
+    re-registered in setup_hook for every open appeal after a restart."""
+    def __init__(self, user_id, lang):
+        super().__init__(timeout=None)
+        self.add_item(AppealVerdictButton("pardon", user_id, lang))
+        self.add_item(AppealVerdictButton("condemn", user_id, lang))
+
+class _AppealConfirmView(discord.ui.View):
+    """One-button ephemeral confirmation shown before a verdict is executed."""
+    def __init__(self, action, target_uid, pinned_message_id, lang):
+        super().__init__(timeout=60)
+        button = discord.ui.Button(
+            label=localized("appeal_confirm_btn", lang),
+            style=discord.ButtonStyle.danger,
+        )
+
+        async def _confirm(interaction: discord.Interaction):
+            await execute_appeal_verdict(interaction, action, target_uid, pinned_message_id)
+
+        button.callback = _confirm
+        self.add_item(button)
+
+async def handle_appeal_verdict_click(interaction: discord.Interaction, action, target_uid):
+    thread_lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or DEFAULT_LANG
+    if not _can_judge_appeals(interaction.user):
+        await interaction.response.send_message(localized("no_permission", thread_lang), ephemeral=True)
+        return
+    if not db.get_open_appeal(target_uid):
+        await interaction.response.send_message(localized("appeal_already_resolved", thread_lang), ephemeral=True)
+        return
+    key = "appeal_confirm_pardon" if action == "pardon" else "appeal_confirm_condemn"
+    await interaction.response.send_message(
+        localized(key, thread_lang),
+        view=_AppealConfirmView(action, target_uid, interaction.message.id if interaction.message else None, thread_lang),
+        ephemeral=True,
+    )
+
+async def execute_appeal_verdict(interaction: discord.Interaction, action, target_uid, pinned_message_id):
+    thread_lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or DEFAULT_LANG
+    if not _can_judge_appeals(interaction.user):
+        await interaction.response.send_message(localized("no_permission", thread_lang), ephemeral=True)
+        return
+
+    status = "pardoned" if action == "pardon" else "condemned"
+    appeal = db.get_open_appeal(target_uid)
+    if not appeal or not db.resolve_appeal(target_uid, status, interaction.user.id):
+        await interaction.response.send_message(localized("appeal_already_resolved", thread_lang), ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    user_lang = appeal["lang"] if appeal["lang"] in SUPPORTED_LANGS else DEFAULT_LANG
+    purg = bot.get_guild(PURGATORIUM_GUILD_ID)
+
+    try:
+        user = bot.get_user(target_uid) or await bot.fetch_user(target_uid)
+        dm_key = "appeal_user_pardoned" if action == "pardon" else "appeal_user_condemned"
+        await user.send(localized(dm_key, user_lang))
+    except Exception:
+        pass
+
+    if action == "pardon":
+        await _post_user_id_to_channels(APPEAL_PARDON_CHANNELS.get("discord", set()), target_uid)
+        if purg:
+            try:
+                await purg.kick(discord.Object(id=target_uid), reason="Appeal granted")
+            except Exception:
+                pass
+    else:
+        if purg:
+            try:
+                await purg.ban(
+                    discord.Object(id=target_uid),
+                    reason="Appeal denied by consuls",
+                    delete_message_days=0,
+                )
+            except Exception:
+                pass
+
+    thread = interaction.channel
+    note_key = "appeal_note_pardoned" if action == "pardon" else "appeal_note_condemned"
+    try:
+        await thread.send(localized(note_key, thread_lang))
+    except Exception:
+        pass
+
+    if pinned_message_id:
+        try:
+            pinned = await thread.fetch_message(int(pinned_message_id))
+            await pinned.edit(view=None)
+        except Exception:
+            pass
+
+    try:
+        await interaction.followup.send(localized("appeal_verdict_done", thread_lang), ephemeral=True)
+    except Exception:
+        pass
+
+    try:
+        await thread.edit(archived=True, locked=True)
+    except Exception:
+        pass
+
+@bot.tree.command(name="appeal", description="file a ban appeal (on the appeal server)")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.allowed_installs(guilds=True, users=True)
+async def appeal_cmd(interaction: discord.Interaction):
+    lang = _locale_to_lang(interaction.locale)
+    uid = interaction.user.id
+
+    purg = bot.get_guild(PURGATORIUM_GUILD_ID)
+    member = purg.get_member(uid) if purg else None
+    if member is None:
+        await interaction.response.send_message(
+            localized("appeal_not_member", lang, invite=PURGATORIUM_INVITE_URL), ephemeral=True
+        )
+        return
+
+    if db.get_open_appeal(uid):
+        await interaction.response.send_message(localized("appeal_already_open", lang), ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    channel = bot.get_channel(APPEAL_CHANNEL_ID)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(APPEAL_CHANNEL_ID)
+        except Exception:
+            channel = None
+    if channel is None:
+        await interaction.followup.send(localized("appeal_failed", lang), ephemeral=True)
+        return
+
+    try:
+        thread = await channel.create_thread(
+            name=clean_display_name(interaction.user.display_name or interaction.user.name, max_len=90),
+            type=discord.ChannelType.public_thread,
+            auto_archive_duration=10080,
+        )
+    except Exception as e:
+        logger.warning("appeal thread creation failed (user=%s): %s", uid, e)
+        await interaction.followup.send(localized("appeal_failed", lang), ephemeral=True)
+        return
+
+    _cleanup_appeal_records(db.get_appeal(uid))
+
+    bridge_id = db.next_appeal_bridge_id()
+    db.attach_chat("discord", f"{PURGATORIUM_GUILD_ID}:{thread.id}", bridge_id)
+    db.attach_chat("discord", f"dm:{uid}", bridge_id)
+    db.create_appeal(uid, thread.id, bridge_id, lang)
+
+    db.add_verified_user("discord", uid, str(PURGATORIUM_GUILD_ID), days_valid=365)
+
+    try:
+        await interaction.user.send(localized("appeal_created_dm", lang))
+    except Exception:
+        _cleanup_appeal_records(db.get_appeal(uid))
+        try:
+            await thread.delete()
+        except Exception:
+            pass
+        await interaction.followup.send(localized("appeal_dm_closed", lang), ephemeral=True)
+        return
+
+    thread_lang = _appeal_thread_lang(thread.id)
+    try:
+        pinned = await thread.send(
+            localized(
+                "appeal_thread_info", thread_lang,
+                mention=f"<@{uid}>", username=str(interaction.user), id=uid,
+            ),
+            view=AppealVerdictView(uid, thread_lang),
+        )
+        try:
+            await pinned.pin()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("appeal pinned message failed (user=%s): %s", uid, e)
+
+    await _post_user_id_to_channels(
+        APPEAL_BANINFO_CHANNELS.get("discord", set()), f"{uid} {thread.id}"
+    )
+
+    await interaction.followup.send(localized("appeal_created", lang), ephemeral=True)
+
+@bot.tree.command(name="setname", description="set the alias appellants see instead of 'Consul A' (consuls)")
+@app_commands.describe(
+    name=f"Alias shown to appellants, up to {CONSUL_NAME_MAX_LEN} characters. Leave empty to go back to 'Consul A'.",
+    user="Bot Admins only: whose alias to change (ID or mention)",
+)
+async def setname_command(interaction: discord.Interaction, name: str = None, user: str = None):
+    """Consul aliases. Always answers ephemerally — the command may well be run
+    inside an appeal thread, and the appellant must see neither the call nor the
+    answer."""
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or DEFAULT_LANG
+
+    if not _can_judge_appeals(interaction.user):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    target_id = interaction.user.id
+    if user is not None:
+        if not is_admin("discord", interaction.user.id):
+            await interaction.response.send_message(localized("setname_user_forbidden", lang), ephemeral=True)
+            return
+        try:
+            resolved = await resolve_discord_user(interaction.guild, user)
+        except Exception:
+            resolved = None
+        if resolved is None:
+            await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+            return
+        target_id = resolved
+
+    is_other = str(target_id) != str(interaction.user.id)
+    display, error_key = _clean_consul_name(name)
+    if error_key:
+        await interaction.response.send_message(
+            localized(error_key, lang, limit=CONSUL_NAME_MAX_LEN), ephemeral=True
+        )
+        return
+
+    if not display:
+        db.remove_consul_name(target_id)
+        key = "setname_reset_other" if is_other else "setname_reset"
+        await interaction.response.send_message(
+            localized(key, lang, user=f"<@{target_id}>"), ephemeral=True
+        )
+        return
+
+    if not await _is_consul_user(target_id):
+        await interaction.response.send_message(localized("setname_target_not_consul", lang), ephemeral=True)
+        return
+
+    normalized = _normalize_consul_name(display)
+    owner = db.find_consul_name_owner(normalized)
+    if owner is not None and str(owner) != str(target_id):
+        await interaction.response.send_message(localized("setname_taken", lang), ephemeral=True)
+        return
+
+    db.set_consul_name(target_id, display, normalized, set_by=interaction.user.id)
+    key = "setname_done_other" if is_other else "setname_done"
+    await interaction.response.send_message(
+        localized(key, lang, name=display, user=f"<@{target_id}>"), ephemeral=True
+    )
+
+async def _appeal_maintenance_pass(client):
+    """Daily housekeeping of the appeal system.
+
+    Silently kicks Purgatorium members who have been on the server for over
+    7 days without ever filing an appeal (bots, bot admins and anyone holding
+    a role — consuls/staff — are exempt; Discord's own joined_at makes this
+    restart-proof), and garbage-collects appeals resolved more than 30 days
+    ago together with their bridge attachments.
+    """
+    purg = client.get_guild(PURGATORIUM_GUILD_ID)
+    if purg:
+        now = discord.utils.utcnow()
+        for member in list(purg.members):
+            if member.bot:
+                continue
+            if is_admin("discord", member.id):
+                continue
+            if len(member.roles) > 1:
+                continue
+            if member.joined_at is None:
+                continue
+            if (now - member.joined_at).total_seconds() < APPEAL_AUTO_KICK_SECONDS:
+                continue
+            if db.has_any_appeal(member.id):
+                continue
+            try:
+                await purg.kick(member, reason="No appeal filed within 7 days")
+            except Exception:
+                pass
+
+    for row in db.get_resolved_appeals_older_than(APPEAL_CLEANUP_SECONDS):
+        _cleanup_appeal_records(row)
+
+@bot.event
+async def on_thread_delete(thread):
+    row = db.get_appeal_by_thread(str(thread.id))
+    if row:
+        _cleanup_appeal_records(row)
+
+async def handle_appeal_dm_message(message: discord.Message):
+    """DM side of an appeal bridge: relay the appellant's direct messages into
+    their appeal thread. DMs from users without an open appeal are ignored."""
+    if message.author.bot:
+        return
+    appeal = db.get_open_appeal(message.author.id)
+    if not appeal:
+        return
+    if db.is_shadow_banned("discord", str(message.author.id)):
+        return
+    if not rate_limit_ok(("relay", "discord", str(message.author.id)), limit=20, window_seconds=60):
+        logger.warning("Rate limit: dropping appeal DM from %s", message.author.id)
+        return
+    thread_lang = _appeal_thread_lang(appeal["thread_id"])
+    await _relay_verified_discord_message(
+        message, appeal["bridge_id"],
+        origin_chat_id=f"dm:{message.author.id}",
+        place_name=localized("appeal_dm_place", thread_lang),
+    )
+
+async def handle_appeal_thread_message(message: discord.Message, appeal_row, bridge_id):
+    """Thread side of an appeal bridge: relay server members' messages to the
+    appellant's DM, anonymized as 'Consul A/B/…'. No consent prompt — writing
+    in an appeal thread is a moderation duty, not a bridged community chat.
+    The appellant's own thread messages (they can see their thread if channel
+    permissions allow) are not relayed back to their DM."""
+    if appeal_row["status"] != "open":
+        return
+    if str(message.author.id) == str(appeal_row["user_id"]):
+        return
+    if db.is_shadow_banned("discord", str(message.author.id)):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+    if not rate_limit_ok(("relay", "discord", str(message.author.id)), limit=20, window_seconds=60):
+        logger.warning("Rate limit: dropping appeal thread message from %s", message.author.id)
+        return
+    await _relay_verified_discord_message(
+        message, bridge_id,
+        sender_name=_consul_label(message.channel.id, message.author.id),
+        avatar_url="",
+    )
+
 @bot.event
 async def on_message(message: discord.Message):
+    if message.guild is None:
+        try:
+            await handle_appeal_dm_message(message)
+        except Exception as e:
+            logger.warning("appeal DM relay failed (user=%s): %s", message.author.id, e)
+        return
+
     chat_id = f"{message.guild.id}:{message.channel.id}"
 
     row_news = db.cur.execute(
@@ -1137,6 +2200,12 @@ async def on_message(message: discord.Message):
             return
         if is_own_relay_webhook_message(message):
             return
+        if message.author.id == GUARD_BOT_ID and db.get_appeal_by_thread(str(message.channel.id)):
+            try:
+                await message.pin()
+            except Exception:
+                pass
+            return
         if db.get_allow_bots(chat_id) and not db.is_relay_copy("discord", chat_id, str(message.id)):
             row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
             if row:
@@ -1162,6 +2231,15 @@ async def on_message(message: discord.Message):
         return
 
     bridge_id = row["bridge_id"]
+
+    appeal_row = db.get_appeal_by_thread(str(message.channel.id))
+    if appeal_row:
+        if not _discord_system_event_key(message):
+            try:
+                await handle_appeal_thread_message(message, appeal_row, bridge_id)
+            except Exception as e:
+                logger.warning("appeal thread relay failed (thread=%s): %s", message.channel.id, e)
+        return
 
     db.cur.execute(
         "UPDATE bridge_rules SET message_counter = COALESCE(message_counter, 0) + 1 WHERE bridge_id=?",
@@ -1271,6 +2349,11 @@ async def on_message(message: discord.Message):
 async def on_message_edit(before: discord.Message, after: discord.Message):
     if after.author.bot:
         return
+    if after.guild is None:
+        await process_appeal_dm_edit(after.author.id, after.id,
+                                     after.author.display_name or str(after.author),
+                                     after.content or "")
+        return
     await process_discord_message_edit(
         guild=after.guild,
         channel=after.channel,
@@ -1279,9 +2362,36 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
         text=replace_mentions(after, after.content or ""),
     )
 
-async def process_discord_message_edit(*, guild, channel, message_id, author_display_name, text):
-    if not guild or not channel:
+def _edit_author_id_for_consul(message_db_id):
+    """Original sender of a relayed message (for re-deriving the consul label
+    when an appeal-thread message is edited)."""
+    row = db.cur.execute(
+        "SELECT origin_sender_id FROM messages WHERE id=?", (message_db_id,)
+    ).fetchone()
+    return row["origin_sender_id"] if row else "0"
+
+async def process_appeal_dm_edit(author_id, message_id, author_display_name, text):
+    """Propagate an edit of the appellant's DM message into the appeal thread."""
+    appeal = db.get_appeal(author_id)
+    if not appeal:
         return
+    thread_lang = _appeal_thread_lang(appeal["thread_id"])
+    await process_discord_message_edit(
+        guild=None,
+        channel=None,
+        message_id=message_id,
+        author_display_name=author_display_name,
+        text=text,
+        origin_chat_id=f"dm:{author_id}",
+        place_name=localized("appeal_dm_place", thread_lang),
+    )
+
+async def process_discord_message_edit(*, guild, channel, message_id, author_display_name, text,
+                                       origin_chat_id=None, place_name=None):
+    if origin_chat_id is None:
+        if not guild or not channel:
+            return
+        origin_chat_id = f"{guild.id}:{channel.id}"
 
     row = db.cur.execute(
         """
@@ -1289,12 +2399,20 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
         WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?
         ORDER BY id DESC LIMIT 1
         """,
-        (f"{guild.id}:{channel.id}", str(message_id))
+        (origin_chat_id, str(message_id))
     ).fetchone()
     if not row:
         return
 
-    header = f"[Discord | {clean_display_name(guild.name or channel.name)}] {clean_display_name(author_display_name)}:"
+    if place_name is None:
+        place_name = guild.name or channel.name
+
+    if channel is not None:
+        appeal_row = db.get_appeal_by_thread(str(channel.id))
+        if appeal_row:
+            author_display_name = _consul_label(channel.id, _edit_author_id_for_consul(row["id"]))
+
+    header = f"[Discord | {clean_display_name(place_name)}] {clean_display_name(author_display_name)}:"
     telegram_text = replace_channel_mentions_for_telegram(text, guild)
     text_html = discord_to_telegram_html(telegram_text)
 
@@ -1302,13 +2420,9 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
     for c in copies:
         try:
             if c["platform"] == "discord":
-                channel_id = int(c["chat_id"].split(":")[1])
-                ch = bot.get_channel(channel_id)
-                if not ch:
-                    try:
-                        ch = await bot.fetch_channel(channel_id)
-                    except Exception:
-                        continue
+                ch = await resolve_discord_chat_channel(c["chat_id"])
+                if ch is None:
+                    continue
                 await edit_discord_relay_copy(ch, c["message_id_platform"], header, text, message_db_id=row["id"], chat=c)
             elif c["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
@@ -1345,6 +2459,14 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
         guild = channel.guild
 
     if not guild or not channel:
+        author_data = data.get("author") or {}
+        author_id = author_data.get("id")
+        if isinstance(channel, discord.DMChannel) and author_id:
+            name = author_data.get("global_name") or author_data.get("username") or "Unknown"
+            try:
+                await process_appeal_dm_edit(int(author_id), payload.message_id, name, data.get("content") or "")
+            except Exception as e:
+                logger.warning("appeal DM edit relay failed (user=%s): %s", author_id, e)
         return
 
     author_display_name = None
@@ -1437,14 +2559,36 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         message_id=payload.message_id,
     )
 
+async def _dm_discord_user(interaction: discord.Interaction, uid, text):
+    try:
+        member = (interaction.guild.get_member(uid) if interaction.guild else None) \
+            or await bot.fetch_user(uid)
+        if member:
+            await member.send(text)
+    except Exception:
+        pass
+
 @bot.tree.command(name="setadmin", description="add a Bridge Admin")
-async def setadmin(interaction: discord.Interaction, user: str):
+@app_commands.describe(user="user ID, mention or name",
+                       scope="`local` for this bridge only; omit for every bridge of this server")
+async def setadmin(interaction: discord.Interaction, user: str, scope: str | None = None):
+    """Bridge Admin rights, in the same two scopes as `/allow-files` and
+    `/webhooks`: every bridge this server takes part in — including ones it
+    joins later — or, with `scope: local`, the bridge of this channel alone."""
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id)
     if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
         return
 
+    scope = (scope or "").strip().lower()
+    if scope not in ("", "local"):
+        await interaction.response.send_message(localized("setadmin_usage", lang), ephemeral=True)
+        return
+    if interaction.guild is None:
+        await interaction.response.send_message(localized("group_only", lang), ephemeral=True)
+        return
+
     uid = None
     if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
         uid = await resolve_discord_user(interaction.guild, user)
@@ -1454,30 +2598,42 @@ async def setadmin(interaction: discord.Interaction, user: str):
     else:
         uid = int(user)
 
-    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
-    if not row:
-        await interaction.response.send_message(localized_bridge_info("not_in_bridge", lang), ephemeral=True)
+    place = interaction.guild.name if interaction.guild else str(interaction.guild_id)
+
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await interaction.response.send_message(localized_bridge_info("not_in_bridge", lang), ephemeral=True)
+            return
+        bridge_id = row["bridge_id"]
+        db.add_bridge_admin(bridge_id, uid)
+        await interaction.response.send_message(
+            localized("setadmin_bridge_done", lang, user_id=uid, bridge_id=bridge_id), ephemeral=True)
+        await _dm_discord_user(interaction, uid, localized(
+            "setadmin_bridge_dm", lang, bridge_id=bridge_id, place=place))
         return
-    bridge_id = row["bridge_id"]
 
-    db.add_bridge_admin(bridge_id, uid)
-    await interaction.response.send_message(localized("setadmin_bridge_done", lang, user_id=uid), ephemeral=True)
-
-    try:
-        member = interaction.guild.get_member(uid) or await bot.fetch_user(uid)
-        if member:
-            await member.send(localized("setadmin_bridge_dm", lang, bridge_id=bridge_id))
-    except Exception:
-        pass
+    db.add_server_bridge_admin("discord", interaction.guild_id, uid,
+                               added_by=interaction.user.id)
+    await interaction.response.send_message(
+        localized("setadmin_server_done", lang, user_id=uid, place=place), ephemeral=True)
+    await _dm_discord_user(interaction, uid, localized("setadmin_server_dm", lang, place=place))
 
 @bot.tree.command(name="remadmin", description="remove a Bridge Admin")
-async def remadmin(interaction: discord.Interaction, user: str):
+@app_commands.describe(user="user ID, mention or name",
+                       scope="`local` for this bridge only; omit for every bridge of this server")
+async def remadmin(interaction: discord.Interaction, user: str, scope: str | None = None):
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id)
     if not is_admin("discord", interaction.user.id):
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
         return
 
+    scope = (scope or "").strip().lower()
+    if scope not in ("", "local"):
+        await interaction.response.send_message(localized("remadmin_usage", lang), ephemeral=True)
+        return
+
     uid = None
     if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
         uid = await resolve_discord_user(interaction.guild, user)
@@ -1487,13 +2643,162 @@ async def remadmin(interaction: discord.Interaction, user: str):
     else:
         uid = int(user)
 
-    db.cur.execute(
-        "DELETE FROM chat_admins WHERE platform=? AND chat_id=? AND user_id=?",
-        ("discord", chat_id, str(uid))
-    )
-    db.conn.commit()
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if row:
+            db.remove_bridge_admin(row["bridge_id"], uid)
+        db.cur.execute(
+            "DELETE FROM chat_admins WHERE platform=? AND chat_id=? AND user_id=?",
+            ("discord", chat_id, str(uid))
+        )
+        db.conn.commit()
+    else:
+        db.remove_server_bridge_admin("discord", interaction.guild_id, uid)
+        db.cur.execute(
+            "DELETE FROM chat_admins WHERE platform=? AND chat_id LIKE ? AND user_id=?",
+            ("discord", f"{interaction.guild_id}:%", str(uid))
+        )
+        db.conn.commit()
 
     await interaction.response.send_message(localized("remadmin_done", lang, user_id=uid), ephemeral=True)
+
+@bot.tree.command(name="setlocaladmin", description="delegate server-wide Local Admin rights to a user (bot admins)")
+async def setlocaladmin(interaction: discord.Interaction, user: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+    if interaction.guild is None:
+        await interaction.response.send_message(localized("group_only", lang), ephemeral=True)
+        return
+
+    uid = None
+    if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
+        uid = await resolve_discord_user(interaction.guild, user)
+        if uid is None:
+            await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+            return
+    else:
+        uid = int(user)
+
+    server_id = str(interaction.guild_id)
+    if db.is_server_admin("discord", server_id, uid):
+        await interaction.response.send_message(
+            localized("setlocaladmin_already", lang, user_id=uid), ephemeral=True)
+        return
+
+    username = None
+    member = None
+    try:
+        member = interaction.guild.get_member(uid) or await bot.fetch_user(uid)
+        username = getattr(member, "name", None)
+    except Exception:
+        pass
+    db.add_server_admin("discord", server_id, uid,
+                        username=username, added_by=interaction.user.id)
+    await interaction.response.send_message(
+        localized("setlocaladmin_done", lang, user_id=uid), ephemeral=True)
+
+    try:
+        if member:
+            await member.send(localized("setlocaladmin_dm", lang, server=interaction.guild.name))
+    except Exception:
+        pass
+
+@bot.tree.command(name="remlocaladmin", description="revoke a user's server-wide Local Admin rights (bot admins)")
+async def remlocaladmin(interaction: discord.Interaction, user: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+    if interaction.guild is None:
+        await interaction.response.send_message(localized("group_only", lang), ephemeral=True)
+        return
+
+    uid = None
+    if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
+        uid = await resolve_discord_user(interaction.guild, user)
+        if uid is None:
+            await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+            return
+    else:
+        uid = int(user)
+
+    server_id = str(interaction.guild_id)
+    if not db.is_server_admin("discord", server_id, uid):
+        await interaction.response.send_message(
+            localized("remlocaladmin_not_admin", lang, user_id=uid), ephemeral=True)
+        return
+
+    db.remove_server_admin("discord", server_id, uid)
+    await interaction.response.send_message(
+        localized("remlocaladmin_done", lang, user_id=uid), ephemeral=True)
+
+async def _resolve_localizer_target(interaction, user):
+    """Ping/ID always work; usernames are matched within the current guild."""
+    if user.startswith("@") or not user.isdigit() or "#" in user or user.startswith("<@"):
+        if interaction.guild is None:
+            return None
+        return await resolve_discord_user(interaction.guild, user)
+    return int(user)
+
+@bot.tree.command(name="localizer-add", description="grant Localizer status: lets the user edit this bot's localization in the control panel")
+async def localizer_add(interaction: discord.Interaction, user: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    uid = await _resolve_localizer_target(interaction, user)
+    if uid is None:
+        await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+        return
+
+    if db.is_localizer("discord", uid):
+        await interaction.response.send_message(
+            localized("localizer_add_already", lang, user_id=uid), ephemeral=True)
+        return
+
+    username = None
+    member = None
+    try:
+        member = (interaction.guild.get_member(uid) if interaction.guild else None) \
+            or await bot.fetch_user(uid)
+        username = getattr(member, "name", None)
+    except Exception:
+        pass
+    db.add_localizer("discord", uid, username=username, added_by=interaction.user.id)
+    await interaction.response.send_message(
+        localized("localizer_add_done", lang, user_id=uid), ephemeral=True)
+    try:
+        if member:
+            await member.send(localized("localizer_add_dm", lang))
+    except Exception:
+        pass
+
+@bot.tree.command(name="localizer-rem", description="revoke a delegated Localizer status")
+async def localizer_rem(interaction: discord.Interaction, user: str):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+    if not is_admin("discord", interaction.user.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    uid = await _resolve_localizer_target(interaction, user)
+    if uid is None:
+        await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
+        return
+
+    if not db.remove_localizer("discord", uid):
+        await interaction.response.send_message(
+            localized("localizer_rem_not", lang, user_id=uid), ephemeral=True)
+        return
+
+    await interaction.response.send_message(
+        localized("localizer_rem_done", lang, user_id=uid), ephemeral=True)
 
 async def handle_delete_of_copy(platform, platform_message_id):
     row = db.cur.execute(
@@ -1522,13 +2827,7 @@ async def delete_all_copies_and_origin(msg_id):
 
     for c in copies:
         if c["platform"] == "discord":
-            channel_id = int(c["chat_id"].split(":")[1])
-            channel = bot.get_channel(channel_id)
-            if not channel:
-                try:
-                    channel = await bot.fetch_channel(channel_id)
-                except Exception:
-                    channel = None
+            channel = await resolve_discord_chat_channel(c["chat_id"])
             if channel:
                 try:
                     m = await channel.fetch_message(int(c["message_id_platform"]))
@@ -1548,19 +2847,15 @@ async def delete_all_copies_and_origin(msg_id):
                 pass
 
     if msg["origin_platform"] == "discord":
-        channel_id = int(msg["origin_chat_id"].split(":")[1])
-        channel = bot.get_channel(channel_id)
-        if not channel:
-            try:
-                channel = await bot.fetch_channel(channel_id)
-            except Exception:
-                channel = None
+        channel = await resolve_discord_chat_channel(msg["origin_chat_id"])
         if channel:
             try:
                 m = await channel.fetch_message(int(msg["origin_message_id"]))
                 await m.delete()
             except Exception:
                 pass
+
+    await drop_gallery_upload(msg_id)
 
     db.cur.execute("DELETE FROM message_copies WHERE message_id=?", (msg_id,))
     db.cur.execute("DELETE FROM media_group_members WHERE message_id=?", (msg_id,))
@@ -2022,6 +3317,10 @@ async def mention_cmd(interaction: discord.Interaction, target: str):
         await interaction.response.send_message(localized("could_not_resolve_user", lang), ephemeral=True)
         return
 
+    if db.get_privacy_flag("discord", uid, "block_mention"):
+        await interaction.response.send_message(localized("mention_opted_out", lang), ephemeral=True)
+        return
+
     if not rate_limit_ok(("mention-target", str(uid)), limit=1, window_seconds=3600):
         await interaction.response.send_message(localized("mention_cooldown", lang), ephemeral=True)
         return
@@ -2032,7 +3331,9 @@ async def mention_cmd(interaction: discord.Interaction, target: str):
         sender_name=interaction.user.display_name or str(interaction.user),
         place_name=interaction.guild.name if interaction.guild else "Discord",
         messenger_name="Discord",
-        avatar_url=str(interaction.user.display_avatar.url),
+        avatar_url=await relay_avatar_url(
+            interaction.user.id, str(interaction.user.display_avatar.url)
+        ),
     )
     if ok:
         await interaction.followup.send(localized("mention_sent", lang), ephemeral=True)
@@ -2292,6 +3593,16 @@ async def shadow_ban(interaction: discord.Interaction, target: str):
     db.add_shadow_ban("discord", uid)
     await interaction.response.send_message(localized("shadowban_done", lang, user_id=uid), ephemeral=True)
 
+def _private_whois_embed(lang, nickname, avatar_url):
+    """Everything `whois` may show about a sender who turned it off in
+    `/privacy`: the nickname their messages already carry, and their avatar."""
+    embed = discord.Embed(title=localized_whois("title", lang), color=discord.Color.blurple())
+    embed.add_field(name=localized_whois("field_nickname", lang), value=nickname or "—", inline=False)
+    embed.set_footer(text=localized_whois("private", lang))
+    if avatar_url:
+        embed.set_thumbnail(url=avatar_url)
+    return embed
+
 async def _whois_lookup(interaction: discord.Interaction, target_message: discord.Message | None, replied_id: str | None = None):
     """Общая логика для whois: ищет автора target_message или сообщения с replied_id."""
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
@@ -2361,6 +3672,16 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
             elif member:
                 user_name = f"{member.name}#{member.discriminator}"
 
+            avatar_url = None
+            if user_obj and getattr(user_obj, "display_avatar", None):
+                avatar_url = str(user_obj.display_avatar.url)
+
+            if db.get_privacy_flag("discord", origin_sender_id, "hide_whois"):
+                await interaction.response.send_message(
+                    embed=_private_whois_embed(lang, nick, avatar_url), ephemeral=True
+                )
+                return
+
             mode_key = str(getattr(member, "status", "offline"))
             if mode_key not in ("online", "idle", "dnd", "offline", "invisible"):
                 mode_key = "offline"
@@ -2377,11 +3698,9 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
                 except Exception:
                     custom_status = "—"
 
-            avatar_url = None
             banner_url = None
             created_at = "—"
             if user_obj:
-                avatar_url = str(user_obj.display_avatar.url) if getattr(user_obj, "display_avatar", None) else None
                 banner_url = str(user_obj.banner.url) if getattr(user_obj, "banner", None) else None
                 if getattr(user_obj, "created_at", None):
                     created_at = discord.utils.format_dt(user_obj.created_at, style="F")
@@ -2416,6 +3735,12 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
             except Exception:
                 nick, username, bio = "—", "—", "—"
 
+            if db.get_privacy_flag("telegram", origin_sender_id, "hide_whois"):
+                await interaction.response.send_message(
+                    embed=_private_whois_embed(lang, nick, None), ephemeral=True
+                )
+                return
+
             embed = discord.Embed(
                 title=localized_whois("title", lang),
                 color=discord.Color.blurple()
@@ -2448,6 +3773,61 @@ async def whois_command(interaction: discord.Interaction):
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
     await interaction.response.send_message(
         localized_whois("use_context_menu", lang), ephemeral=True
+    )
+
+def _privacy_embed(user_id, lang):
+    """The `/privacy` menu: one line per switch, with what it does and whether
+    the user has it on."""
+    flags = db.get_user_privacy("discord", user_id)
+    lines = [localized("privacy_header", lang), ""]
+    for flag in db.PRIVACY_FLAGS:
+        state = localized("privacy_state_on" if flags[flag] else "privacy_state_off", lang)
+        mark = "🔒" if flags[flag] else "🔓"
+        lines.append(f"{mark} {localized(f'privacy_opt_{flag}', lang)} — **{state}**")
+    return discord.Embed(
+        title=localized("privacy_title", lang),
+        description="\n".join(lines),
+        color=discord.Color.blurple(),
+    )
+
+class PrivacyToggleButton(discord.ui.Button):
+    def __init__(self, flag, lang, enabled):
+        super().__init__(
+            label=clip_text(localized(f"privacy_btn_{flag}", lang), 80),
+            style=discord.ButtonStyle.success if enabled else discord.ButtonStyle.secondary,
+        )
+        self.flag = flag
+        self.lang = lang
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.view.user_id:
+            await interaction.response.send_message(
+                localized("privacy_not_yours", self.lang), ephemeral=True
+            )
+            return
+        db.toggle_privacy_flag("discord", interaction.user.id, self.flag)
+        await interaction.response.edit_message(
+            embed=_privacy_embed(interaction.user.id, self.lang),
+            view=PrivacyView(interaction.user.id, self.lang),
+        )
+
+class PrivacyView(discord.ui.View):
+    def __init__(self, user_id, lang):
+        super().__init__(timeout=600)
+        self.user_id = user_id
+        flags = db.get_user_privacy("discord", user_id)
+        for flag in db.PRIVACY_FLAGS:
+            self.add_item(PrivacyToggleButton(flag, lang, flags[flag]))
+
+@bot.tree.command(name="privacy", description="configure what the bot may share about you")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.allowed_installs(guilds=True, users=True)
+async def privacy_cmd(interaction: discord.Interaction):
+    lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
+    await interaction.response.send_message(
+        embed=_privacy_embed(interaction.user.id, lang),
+        view=PrivacyView(interaction.user.id, lang),
+        ephemeral=True,
     )
 
 async def resolve_bridge_admins(bridge_id):
@@ -2556,6 +3936,17 @@ async def bridge_command(interaction: discord.Interaction):
     embed.add_field(name=localized_bridge_info("field_number", lang), value=str(bridge_id), inline=False)
     embed.add_field(name=localized_bridge_info("field_chats", lang), value=chats_value, inline=False)
 
+    attached_feeds = db.get_bridge_feeds(bridge_id)
+    if attached_feeds:
+        embed.add_field(
+            name=localized_bridge_info("field_feeds", lang),
+            value="\n".join(
+                f"[{f['title'] or f['source']}]({feed_module(f['kind']).source_url(f['source'])})"
+                for f in attached_feeds
+            ),
+            inline=False,
+        )
+
     discord_admins, telegram_pings = await resolve_bridge_admins(bridge_id)
     if discord_admins or telegram_pings:
         admin_lines = []
@@ -2587,6 +3978,35 @@ async def allow_bots_command(interaction: discord.Interaction, action: str):
     else:
         await interaction.response.send_message(localized("allow_bots_usage", lang), ephemeral=True)
 
+@bot.tree.command(name="allow-files", description="allow re-uploading Telegram files to Discord and sharing their links")
+@app_commands.describe(action="enable or disable", scope="local — this bridge only (default: this whole server)")
+async def allow_files_command(interaction: discord.Interaction, action: str, scope: str = None):
+    chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
+    lang = get_chat_lang(chat_id)
+    if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):
+        await interaction.response.send_message(localized("allow_files_no_permission", lang), ephemeral=True)
+        return
+
+    action = action.strip().lower()
+    scope = (scope or "").strip().lower()
+    if action not in ("enable", "disable") or scope not in ("", "local"):
+        await interaction.response.send_message(localized("allow_files_usage", lang), ephemeral=True)
+        return
+
+    enabled = action == "enable"
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await interaction.response.send_message(localized("chat_not_in_bridge", lang), ephemeral=True)
+            return
+        db.set_bridge_file_consent(row["bridge_id"], enabled, enabled_by=interaction.user.id)
+        key = "allow_files_bridge_enabled" if enabled else "allow_files_bridge_disabled"
+    else:
+        db.set_server_file_consent("discord", str(interaction.guild_id), enabled, enabled_by=interaction.user.id)
+        key = "allow_files_enabled" if enabled else "allow_files_disabled"
+
+    await interaction.response.send_message(localized(key, lang), ephemeral=True)
+
 @bot.tree.command(name="verify-list", description="publish IDs of (un)verified users for Confederate Guard (bot admins)")
 @app_commands.describe(action="enable or disable")
 async def verify_list_cmd(interaction: discord.Interaction, action: str):
@@ -2605,27 +4025,46 @@ async def verify_list_cmd(interaction: discord.Interaction, action: str):
         await interaction.response.send_message(localized("verify_list_usage", lang), ephemeral=True)
 
 @bot.tree.command(name="webhooks", description="show relayed messages as webhooks (sender avatar and name)")
-@app_commands.describe(action="enable or disable")
-async def webhooks_command(interaction: discord.Interaction, action: str):
+@app_commands.describe(action="enable or disable",
+                       scope="`local` for this bridge only; omit for the whole server")
+async def webhooks_command(interaction: discord.Interaction, action: str, scope: str | None = None):
+    """Webhook-style relay copies, in the same two scopes as `/allow-files`:
+    the whole server by default, or the server's chats in one bridge with
+    `scope: local`. Both cover chats that join later."""
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id)
     if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
         return
 
-    if isinstance(interaction.channel, discord.Thread):
-        await interaction.response.send_message(localized("webhooks_thread_error", lang), ephemeral=True)
+    action = action.strip().lower()
+    if action not in ("enable", "disable"):
+        await interaction.response.send_message(localized("webhooks_usage", lang), ephemeral=True)
+        return
+    scope = (scope or "").strip().lower()
+    if scope not in ("", "local"):
+        await interaction.response.send_message(localized("webhooks_usage", lang), ephemeral=True)
         return
 
-    action = action.strip().lower()
-    if action == "enable":
-        db.set_webhooks_enabled(chat_id, True)
-        await interaction.response.send_message(localized("webhooks_enabled", lang), ephemeral=True)
-    elif action == "disable":
-        db.set_webhooks_enabled(chat_id, False)
-        await interaction.response.send_message(localized("webhooks_disabled", lang), ephemeral=True)
+    enabled = action == "enable"
+    server_id = str(interaction.guild_id)
+
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await interaction.response.send_message(localized("chat_not_in_bridge", lang), ephemeral=True)
+            return
+        db.set_bridge_webhooks(server_id, row["bridge_id"], enabled,
+                               enabled_by=interaction.user.id)
+        key = "webhooks_bridge_enabled" if enabled else "webhooks_bridge_disabled"
     else:
-        await interaction.response.send_message(localized("webhooks_usage", lang), ephemeral=True)
+        db.set_server_webhooks(server_id, enabled, enabled_by=interaction.user.id)
+        key = "webhooks_enabled" if enabled else "webhooks_disabled"
+
+    if not enabled:
+        db.set_webhooks_enabled(chat_id, False)
+
+    await interaction.response.send_message(localized(key, lang), ephemeral=True)
 
 async def post_loc_suggestion(*, lang, key, suggestion, code, ui_lang, username, user_id, avatar_url=None):
     """Post a localization suggestion to the Discord and Telegram support chat(s)."""
@@ -3089,6 +4528,8 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_verify", lang),
         localized_help("cmd_mention", lang),
         localized_help("cmd_poll", lang),
+        localized_help("cmd_appeal", lang),
+        localized_help("cmd_privacy", lang),
         localized_help("cmd_locale", lang),
         localized_help("cmd_loc_compare", lang),
         localized_help("cmd_loc_suggest", lang),
@@ -3103,6 +4544,7 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_remindrules", lang),
         localized_help("cmd_shadowban", lang),
         localized_help("cmd_allow_bots", lang),
+        localized_help("cmd_allow_files", lang),
         localized_help("cmd_webhooks", lang),
         localized_help("cmd_deadtopic", lang),
         localized_help("cmd_deadchat", lang),
@@ -3111,8 +4553,19 @@ async def help_command(interaction: discord.Interaction):
 
     bot_admins_lines = "\n".join([
         localized_help("cmd_atb", lang),
+        localized_help("cmd_setytfeed", lang),
+        localized_help("cmd_remytfeed", lang),
+        localized_help("cmd_setbskyfeed", lang),
+        localized_help("cmd_rembskyfeed", lang),
+        localized_help("cmd_settgfeed", lang),
+        localized_help("cmd_remtgfeed", lang),
         localized_help("cmd_remadmin", lang),
+        localized_help("cmd_setlocaladmin", lang),
+        localized_help("cmd_remlocaladmin", lang),
+        localized_help("cmd_localizer_add", lang),
+        localized_help("cmd_localizer_rem", lang),
         localized_help("cmd_unverify", lang),
+        localized_help("cmd_setname", lang),
         localized_help("cmd_verify_list", lang),
         localized_help("cmd_list_chats", lang),
         localized_help("cmd_force_leave", lang),

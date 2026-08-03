@@ -207,6 +207,143 @@ async def pending_cleanup_loop():
 
         await asyncio.sleep(60)
 
+FEED_TICK_SECONDS = 30
+FEED_MAX_POSTS_PER_CYCLE = 5
+
+FEED_POLL_INTERVALS = {"telegram": 60, "bluesky": 120, "youtube": 5 * 60}
+FEED_DEFAULT_INTERVAL = 10 * 60
+FEED_FETCHES_PER_KIND_PER_TICK = 1
+
+FEED_THROTTLE_BACKOFF = 15 * 60
+FEED_BACKOFF_START = 15 * 60
+FEED_BACKOFF_MAX = 4 * 3600
+
+_feed_backoff = {}
+_feed_last_fetch = {}
+
+def _feed_note_failure(key, throttled=False):
+    """Put a source aside for a while after a failed fetch.
+
+    A source that is broken or gone is backed off further on every failure, up
+    to hours. Being throttled is different: the far end is working and will take
+    us back shortly, so the wait stays flat — an escalating one would keep the
+    feed silent long after the throttle lifted. A throttle is counted per host
+    rather than per source, since that is how the far end counts it: asking it
+    about a different account of the same site would only prolong the refusal."""
+    if throttled:
+        deadline = time.time() + FEED_THROTTLE_BACKOFF
+        _feed_backoff[key] = (deadline, 0)
+        _feed_backoff[(key[0], None)] = (deadline, 0)
+        return FEED_THROTTLE_BACKOFF
+    _, strikes = _feed_backoff.get(key, (0, 0))
+    strikes += 1
+    delay = min(FEED_BACKOFF_START * 2 ** (strikes - 1), FEED_BACKOFF_MAX)
+    _feed_backoff[key] = (time.time() + delay, strikes)
+    return delay
+
+def _feeds_due(now):
+    """The sources to ask on this tick: at most one per kind, the one waiting
+    longest, and only if its kind's interval has passed since it was last read.
+
+    Spreading the sources over the ticks instead of walking them all at once is
+    what keeps a bridge with many sources of one kind from arriving at that
+    kind's host as a burst."""
+    candidates = {}
+    for feed in db.get_all_feeds():
+        if feed["live"]:
+            continue
+        key = (feed["kind"], feed["source"])
+        until, _ = _feed_backoff.get(key, (0, 0))
+        kind_until, _ = _feed_backoff.get((feed["kind"], None), (0, 0))
+        if max(until, kind_until) > now:
+            continue
+        interval = FEED_POLL_INTERVALS.get(feed["kind"], FEED_DEFAULT_INTERVAL)
+        if now - _feed_last_fetch.get(key, 0) < interval:
+            continue
+        candidates.setdefault(key, []).append(feed)
+
+    due = []
+    for kind in {k for k, _ in candidates}:
+        of_kind = sorted((k for k in candidates if k[0] == kind),
+                         key=lambda k: _feed_last_fetch.get(k, 0))
+        for key in of_kind[:FEED_FETCHES_PER_KIND_PER_TICK]:
+            due.append((key, candidates[key]))
+    return due
+
+async def feed_loop():
+    """Poll every followed source and relay what is new.
+
+    Covers the Bluesky accounts of `/setbskyfeed`, the YouTube channels of
+    `/setytfeed` and the Telegram channels of
+    `/settgfeed` that the bot is not a member of — a channel it *is* in delivers
+    its posts through `channel_post` and never appears here. A source is read
+    once however many chats follow it, and each attachment advances its own
+    `last_post_id`. A failing source is put aside for a while and reported to the
+    service chats at most once an hour: an outage at the far end must turn into
+    neither a flood of messages nor a flood of requests."""
+    import aiohttp
+    from discord_bot import (
+        bot as dc, feed_module, feed_stale_since, relay_feed_post, warm_feed_avatars,
+    )
+    from utils import rate_limit_ok, FeedError
+
+    await dc.wait_until_ready()
+    await warm_feed_avatars()
+    while True:
+        try:
+            due = _feeds_due(time.time())
+            if due:
+                async with aiohttp.ClientSession() as session:
+                    for key, rows in due:
+                        kind, source = key
+                        _feed_last_fetch[key] = time.time()
+                        try:
+                            title, posts = await feed_module(kind).fetch_posts(
+                                source, session=session)
+                        except FeedError as e:
+                            delay = _feed_note_failure(
+                                key, throttled=getattr(e, "throttled", False))
+                            logger.warning("feed fetch failed (%s %s): %s — next try in %d min",
+                                           kind, source, e, delay // 60)
+                            if rate_limit_ok(("feed-error", kind, source), limit=1, window_seconds=3600):
+                                await send_service_event("feed_error", account=source,
+                                                         error=str(e))
+                            continue
+                        _feed_backoff.pop(key, None)
+
+                        stale_since = feed_stale_since(posts, kind)
+                        if stale_since and rate_limit_ok(("feed-stale", kind, source),
+                                                         limit=1, window_seconds=86400):
+                            logger.warning("feed %s %s has not moved since %s",
+                                           kind, source, stale_since)
+                            await send_service_event("feed_stale", account=source,
+                                                     date=stale_since)
+
+                        for feed in rows:
+                            try:
+                                last_id = feed["last_post_id"]
+                                fresh = [p for p in posts
+                                         if last_id is None or int(p["id"]) > int(last_id)]
+                                if not fresh:
+                                    if title and title != feed["title"]:
+                                        db.set_feed_last_post(kind, source, feed["chat_id"],
+                                                              last_id or "0", title=title)
+                                    continue
+                                for post in fresh[-FEED_MAX_POSTS_PER_CYCLE:]:
+                                    await relay_feed_post(feed, post)
+                                db.set_feed_last_post(kind, source, feed["chat_id"],
+                                                      fresh[-1]["id"], title=title)
+                            except Exception as e:
+                                logger.warning("feed relay failed (%s %s -> %s): %s",
+                                               kind, source, feed["chat_id"], e)
+        except Exception as e:
+            try:
+                await send_service_event("daily_loop_error", error=f"feed_loop error: {e}")
+            except Exception:
+                pass
+
+        await asyncio.sleep(FEED_TICK_SECONDS)
+
 async def poll_loop():
     """Posts results for expired polls to every bridge chat, then closes them."""
     from discord_bot import post_poll_results
@@ -232,13 +369,16 @@ async def daily_check_loop():
     from telegram_bot import bot as tg
     from discord_bot import bot as dc
 
-    await asyncio.sleep(0)
+    await dc.wait_until_ready()
     while True:
         try:
             rows = db.cur.execute("SELECT * FROM chats").fetchall()
             for r in rows:
                 platform = r["platform"]
                 chat_key = r["chat_id"]
+                if platform == "discord" and chat_key.startswith("dm:"):
+                    db.clear_chat_inaccessible(chat_key)
+                    continue
                 inaccessible = False
                 if platform == "telegram":
                     try:
@@ -324,6 +464,7 @@ async def main():
         asyncio.create_task(pending_cleanup_loop()),
         asyncio.create_task(daily_check_loop()),
         asyncio.create_task(poll_loop()),
+        asyncio.create_task(feed_loop()),
     ]
 
     await asyncio.sleep(5)

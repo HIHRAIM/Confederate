@@ -9,7 +9,8 @@ from message_relay import (
 import utils
 from utils import (
     is_admin, extract_username_from_bot_message, is_chat_admin, get_chat_lang,
-    rate_limit_ok,
+    rate_limit_ok, feed_scope_name,
+    FEED_REQUEST_HEADERS, FEED_REQUEST_TIMEOUT, FeedError, feed_media_name,
     localized_bridge_join, localized_bridge_leave, localized_bot_joined,
     localized_consent_title, localized_consent_body, localized_consent_button,
     set_chat_lang, localized_sticker, localized_file_count_text,
@@ -20,11 +21,15 @@ from utils import (
 )
 from config import TELEGRAM_TOKEN, SUPPORT_CHATS
 import os
+import re
 import secrets
 import time
 import asyncio
+import html as html_module
 import json
 import logging
+
+import aiohttp
 
 logger = logging.getLogger("bridge.telegram")
 
@@ -112,9 +117,141 @@ def _count_telegram_files(message: Message) -> int:
         count += 1
     return count
 
-def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None = None):
-    is_sticker = getattr(message, "sticker", None) is not None
+TELEGRAM_GETFILE_LIMIT = 20 * 1024 * 1024
+
+def _collect_gallery_candidates(message: Message):
+    """The message's files that may be re-uploaded to GALLERY.
+
+    Stickers, voice messages and video notes are left out on purpose — they keep
+    their own localized markers. Mirrors `_count_telegram_files`, including its
+    treatment of animations (which arrive with a `document` of their own)."""
+    candidates = []
+    mid = message.message_id
+
+    def add(obj, name):
+        candidates.append({
+            "file_id": obj.file_id,
+            "size": getattr(obj, "file_size", None),
+            "name": clean_display_name(name, max_len=96),
+        })
+
+    animation = getattr(message, "animation", None)
+    document = getattr(message, "document", None)
+    if animation:
+        add(animation, getattr(animation, "file_name", None) or f"animation_{mid}.mp4")
+    elif document:
+        add(document, getattr(document, "file_name", None) or f"document_{mid}")
+
+    photo = getattr(message, "photo", None)
+    if photo:
+        add(photo[-1], f"photo_{mid}.jpg")
+
+    video = getattr(message, "video", None)
+    if video:
+        add(video, getattr(video, "file_name", None) or f"video_{mid}.mp4")
+
+    audio = getattr(message, "audio", None)
+    if audio:
+        add(audio, getattr(audio, "file_name", None) or f"audio_{mid}.mp3")
+
+    return candidates
+
+async def _download_telegram_file(file_id, max_size):
+    """Bytes of a Telegram file, or None when it can't be fetched or is too
+    large. Telegram's getFile refuses anything above 20 MB, and Discord's own
+    upload limit cuts in below that on a non-boosted server."""
+    try:
+        f = await bot.get_file(file_id)
+    except Exception as e:
+        logger.warning("getFile failed (%s): %s", file_id, e)
+        return None
+    size = getattr(f, "file_size", None)
+    if size and int(size) > max_size:
+        return None
+    try:
+        buf = await bot.download_file(f.file_path)
+    except Exception as e:
+        logger.warning("Telegram file download failed (%s): %s", file_id, e)
+        return None
+    data = buf.read() if hasattr(buf, "read") else buf
+    if not data or len(data) > max_size:
+        return None
+    return data
+
+async def _upload_telegram_files_to_gallery(candidates):
+    """Re-upload a Telegram message's files to a GALLERY channel.
+
+    Returns ``(upload, uploaded_count)``. Files that exceed Telegram's getFile
+    ceiling, Discord's upload limit or what is left of the single-message budget
+    are skipped, and the caller keeps representing them with the usual footer;
+    a bigger file never blocks a smaller one that still fits. Any failure at all
+    — no reachable gallery, a failed download, a rejected upload — degrades to
+    ``(None, 0)``, i.e. to the pre-GALLERY behaviour."""
+    if not candidates:
+        return None, 0
+
+    from discord_bot import gallery_upload, gallery_upload_budget
+    budget = await gallery_upload_budget()
+    if budget is None:
+        return None, 0
+    max_files, max_total = budget
+    max_single = min(max_total, TELEGRAM_GETFILE_LIMIT)
+
+    files = []
+    total = 0
+    for cand in candidates:
+        if len(files) >= max_files:
+            break
+        known_size = cand.get("size") or 0
+        if known_size and (known_size > max_single or total + known_size > max_total):
+            continue
+        data = await _download_telegram_file(cand["file_id"], max_single)
+        if data is None or total + len(data) > max_total:
+            continue
+        files.append({"name": cand["name"], "data": data})
+        total += len(data)
+
+    if not files:
+        return None, 0
+
+    upload = await gallery_upload(files)
+    if not upload or not upload.get("urls"):
+        return None, 0
+    return upload, len(upload["urls"])
+
+def _telegram_source_link(message: Message):
+    """Public t.me link to the original message, when one can be formed."""
     thread = message.message_thread_id or 0
+    username = getattr(message.chat, "username", None)
+    if username:
+        if thread:
+            return f"https://t.me/{username}/{thread}/{message.message_id}"
+        return f"https://t.me/{username}/{message.message_id}"
+
+    fwd_chat = getattr(message, "forward_from_chat", None)
+    fwd_username = getattr(fwd_chat, "username", None) if fwd_chat else None
+    fwd_msg_id = getattr(message, "forward_from_message_id", None)
+    if fwd_username and fwd_msg_id:
+        return f"https://t.me/{fwd_username}/{fwd_msg_id}"
+    return None
+
+def _compose_relay_texts(base_text, remaining_files, source_link):
+    """Relay body: the message's own text/caption, plus the footer standing in
+    for the files that were *not* re-uploaded to GALLERY — every file when the
+    mechanic is off, the oversized leftovers when it is on, none at all when all
+    of them went through. Returns ``(texts, relay_file_count)``."""
+    if remaining_files <= 0:
+        return [base_text], None
+
+    prefix = (base_text + "\n") if base_text else ""
+    if source_link:
+        if remaining_files > 1:
+            return [prefix + f"{source_link} (__TG_FILES_{remaining_files}__)"], remaining_files
+        return [prefix + source_link], None
+    return [prefix + f"[__TG_FILES_{remaining_files}__]"], remaining_files
+
+def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None = None, gallery_uploaded: int = 0):
+    is_sticker = getattr(message, "sticker", None) is not None
     base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
     total_files = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
 
@@ -128,33 +265,7 @@ def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None
     if not base_text and total_files == 1 and is_video_note:
         return ["__TG_VIDEO_NOTE__"], None
 
-    relay_file_count = None
-    if total_files > 0:
-        link = None
-        username = getattr(message.chat, "username", None)
-        if username:
-            if thread:
-                link = f"https://t.me/{username}/{thread}/{message.message_id}"
-            else:
-                link = f"https://t.me/{username}/{message.message_id}"
-        else:
-            fwd_chat = getattr(message, "forward_from_chat", None)
-            fwd_username = getattr(fwd_chat, "username", None) if fwd_chat else None
-            fwd_msg_id = getattr(message, "forward_from_message_id", None)
-            if fwd_username and fwd_msg_id:
-                link = f"https://t.me/{fwd_username}/{fwd_msg_id}"
-
-        if link:
-            prefix = (base_text + "\n") if base_text else ""
-            if total_files > 1:
-                relay_file_count = total_files
-                return [prefix + f"{link} (__TG_FILES_{total_files}__)"], relay_file_count
-            return [prefix + link], relay_file_count
-
-        relay_file_count = total_files
-        return [(base_text + "\n" if base_text else "") + f"[__TG_FILES_{total_files}__]"], relay_file_count
-
-    return [base_text], relay_file_count
+    return _compose_relay_texts(base_text, total_files - gallery_uploaded, _telegram_source_link(message))
 
 def _relay_variants_for_text(text, base_text, discord_text, telegram_html):
     """Pair a relay text item with its Discord-markdown and Telegram-HTML forms.
@@ -204,6 +315,9 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         "base_text": (getattr(message, "text", "") or getattr(message, "caption", "") or ""),
         "discord_text": discord_text,
         "telegram_html": tg_html_source,
+        "gallery_candidates": _collect_gallery_candidates(message),
+        "source_link": _telegram_source_link(message),
+        "total_files": _count_telegram_files(message),
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -251,11 +365,28 @@ async def _relay_serialized_telegram_payload(payload_json: str):
 
     base_text = payload.get("base_text", "")
     avatar_url = await _telegram_relay_avatar_url(payload["bridge_id"], payload.get("origin_sender_id"))
-    for text in payload.get("texts", []):
+
+    texts = payload.get("texts", [])
+    relay_file_count = payload.get("relay_file_count")
+    gallery_urls = None
+    upload = None
+    candidates = payload.get("gallery_candidates") or []
+    if candidates and db.bridge_file_relay_enabled(payload["bridge_id"]):
+        upload, uploaded = await _upload_telegram_files_to_gallery(candidates)
+        if upload:
+            gallery_urls = upload["urls"]
+            texts, relay_file_count = _compose_relay_texts(
+                base_text,
+                int(payload.get("total_files") or uploaded) - uploaded,
+                payload.get("source_link"),
+            )
+
+    relayed_db_id = None
+    for text in texts:
         current_discord_text, current_telegram_html = _relay_variants_for_text(
             text, base_text, payload.get("discord_text", ""), payload.get("telegram_html")
         )
-        await message_relay.relay_message(
+        relayed_db_id = await message_relay.relay_message(
             bridge_id=payload["bridge_id"],
             origin_platform="telegram",
             origin_chat_id=payload["origin_chat_id"],
@@ -269,11 +400,20 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             telegram_html=current_telegram_html,
             reply_to_msg_db_id=payload.get("reply_to_msg_db_id"),
             send_to_chat_func=send_to_chat,
-            telegram_file_count=payload.get("relay_file_count"),
+            telegram_file_count=relay_file_count,
             forward_type=payload.get("forward_type"),
             forward_name=payload.get("forward_name"),
             external_reply=payload.get("external_reply", False),
             avatar_url=avatar_url,
+            gallery_urls=gallery_urls,
+        )
+
+    if upload and relayed_db_id is not None:
+        db.add_gallery_upload(
+            relayed_db_id, upload["channel_id"], upload["message_id"],
+            json.dumps(upload["urls"], ensure_ascii=False),
+            json.dumps([str(payload.get("origin_message_id"))]),
+            json.dumps([c["file_id"] for c in candidates], ensure_ascii=False),
         )
 
 async def _flush_media_group(buffer_key):
@@ -285,6 +425,7 @@ async def _flush_media_group(buffer_key):
         payload["message"],
         grouped_file_count=payload["count"],
         grouped_message_ids=payload.get("message_ids"),
+        grouped_messages=payload.get("messages"),
     )
 
 async def resolve_telegram_user(identifier: str):
@@ -460,11 +601,12 @@ async def relay_from_telegram(message: Message):
             key = (f"{message.chat.id}:{thread}", str(media_group_id))
             payload = _media_group_buffer.get(key)
             if not payload:
-                payload = {"message": message, "count": 0, "task": None, "message_ids": []}
+                payload = {"message": message, "count": 0, "task": None, "message_ids": [], "messages": []}
                 _media_group_buffer[key] = payload
 
             payload["count"] += files_count
             payload["message_ids"].append(message.message_id)
+            payload["messages"].append(message)
             if getattr(message, "caption", None) and not getattr(payload["message"], "caption", None):
                 payload["message"] = message
             elif message.message_id < payload["message"].message_id:
@@ -477,7 +619,7 @@ async def relay_from_telegram(message: Message):
 
     await _relay_from_telegram_impl(message)
 
-async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None, grouped_message_ids=None):
+async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | None = None, grouped_message_ids=None, grouped_messages=None):
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
 
@@ -640,7 +782,22 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         logger.warning("Rate limit: dropping relay from telegram user %s in %s", user_id_str, origin_chat_id)
         return
 
-    texts, relay_file_count = _build_telegram_relay_texts(message, grouped_file_count=grouped_file_count)
+    source_messages = sorted(grouped_messages or [message], key=lambda m: m.message_id)
+    candidates = []
+    for m in source_messages:
+        candidates.extend(_collect_gallery_candidates(m))
+
+    gallery_urls = None
+    upload = None
+    uploaded = 0
+    if candidates and db.bridge_file_relay_enabled(bridge_id):
+        upload, uploaded = await _upload_telegram_files_to_gallery(candidates)
+        if upload:
+            gallery_urls = upload["urls"]
+
+    texts, relay_file_count = _build_telegram_relay_texts(
+        message, grouped_file_count=grouped_file_count, gallery_uploaded=uploaded
+    )
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
         if chat["platform"] == "telegram":
@@ -725,27 +882,52 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             external_reply=is_external_reply,
             is_bot_sender=is_bot_sender,
             avatar_url=avatar_url,
+            gallery_urls=gallery_urls,
         )
 
     if grouped_message_ids and relayed_db_id is not None:
         db.record_media_group_members(chat_id, grouped_message_ids, relayed_db_id)
 
+    if upload and relayed_db_id is not None:
+        db.add_gallery_upload(
+            relayed_db_id, upload["channel_id"], upload["message_id"],
+            json.dumps(upload["urls"], ensure_ascii=False),
+            json.dumps([str(m.message_id) for m in source_messages]),
+            json.dumps([c["file_id"] for c in candidates], ensure_ascii=False),
+        )
+
+def _split_scope_arg(text):
+    """``(target, scope)`` from an admin command's argument, where the optional
+    trailing word is `local` (also accepted as `scope:local`)."""
+    parts = (text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    if not arg:
+        return "", ""
+    head, _, tail = arg.rpartition(" ")
+    tail_scope = tail.strip().lower().removeprefix("scope:")
+    if head and tail_scope == "local":
+        return head.strip(), "local"
+    return arg, ""
+
 @router.message(Command("setadmin"))
 async def setadmin(message: Message):
+    """Bridge Admin rights, in the same two scopes as `/allow_files`: every
+    bridge this group takes part in — including ones it joins later — or, with a
+    trailing `local`, the bridge of this chat alone."""
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_id)
 
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
+    identifier, scope = _split_scope_arg(message.text)
+    if not identifier:
         await message.reply(localized("setadmin_usage", lang))
         return
 
-    if not is_admin("telegram", message.from_user.id):
+    if not (is_admin("telegram", message.from_user.id)
+            or is_chat_admin("telegram", chat_id, message.from_user.id)):
         await message.reply(localized("no_permission", lang))
         return
 
-    identifier = parts[1].strip()
     uid = None
     if identifier.startswith("@") or not identifier.isdigit():
         uid = await resolve_telegram_user(identifier)
@@ -755,16 +937,25 @@ async def setadmin(message: Message):
     else:
         uid = int(identifier)
 
-    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
-    if not row:
-        await message.reply(localized("chat_not_in_bridge", lang))
-        return
+    place = message.chat.title or str(message.chat.id)
 
-    bridge_id = row["bridge_id"]
-    db.add_bridge_admin(bridge_id, uid)
-    await message.reply(localized("setadmin_bridge_done", lang, user_id=uid))
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await message.reply(localized("chat_not_in_bridge", lang))
+            return
+        bridge_id = row["bridge_id"]
+        db.add_bridge_admin(bridge_id, uid)
+        await message.reply(localized("setadmin_bridge_done", lang, user_id=uid, bridge_id=bridge_id))
+        dm = localized("setadmin_bridge_dm", lang, bridge_id=bridge_id, place=place)
+    else:
+        db.add_server_bridge_admin("telegram", message.chat.id, uid,
+                                   added_by=message.from_user.id)
+        await message.reply(localized("setadmin_server_done", lang, user_id=uid, place=place))
+        dm = localized("setadmin_server_dm", lang, place=place)
+
     try:
-        await bot.send_message(uid, localized("setadmin_bridge_dm", lang, bridge_id=bridge_id))
+        await bot.send_message(uid, dm)
     except Exception:
         pass
 
@@ -774,8 +965,8 @@ async def remadmin(message: Message):
     chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_id)
 
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
+    identifier, scope = _split_scope_arg(message.text)
+    if not identifier:
         await message.reply(localized("remadmin_usage", lang))
         return
 
@@ -783,7 +974,6 @@ async def remadmin(message: Message):
         await message.reply(localized("no_permission", lang))
         return
 
-    identifier = parts[1].strip()
     uid = None
     if identifier.startswith("@") or not identifier.isdigit():
         uid = await resolve_telegram_user(identifier)
@@ -793,14 +983,277 @@ async def remadmin(message: Message):
     else:
         uid = int(identifier)
 
-    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
-    if not row:
-        await message.reply(localized("chat_not_in_bridge", lang))
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await message.reply(localized("chat_not_in_bridge", lang))
+            return
+        db.remove_bridge_admin(row["bridge_id"], uid)
+    else:
+        db.remove_server_bridge_admin("telegram", message.chat.id, uid)
+        db.cur.execute(
+            "DELETE FROM chat_admins WHERE platform=? AND chat_id LIKE ? AND user_id=?",
+            ("telegram", f"{message.chat.id}:%", str(uid))
+        )
+        db.conn.commit()
+
+    await message.reply(localized("remadmin_done", lang, user_id=uid))
+
+async def _resolve_tg_admin_target(message: Message, arg):
+    """Resolve an admin-command target to (user_id, username|None):
+    a reply, a text-mention entity, a numeric id, or a public @username."""
+    if message.reply_to_message and message.reply_to_message.from_user:
+        u = message.reply_to_message.from_user
+        return u.id, u.username
+    for ent in (message.entities or []):
+        if ent.type == "text_mention" and ent.user:
+            return ent.user.id, ent.user.username
+    arg = (arg or "").strip()
+    if not arg:
+        return None, None
+    if arg.lstrip("-").isdigit():
+        uid = int(arg)
+        try:
+            ch = await bot.get_chat(uid)
+            return uid, getattr(ch, "username", None)
+        except Exception:
+            return uid, None
+    try:
+        ch = await bot.get_chat(arg if arg.startswith("@") else f"@{arg}")
+        return ch.id, getattr(ch, "username", None) or arg.lstrip("@")
+    except Exception:
+        return None, None
+
+@router.message(Command("setlocaladmin"))
+async def setlocaladmin(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not is_admin("telegram", message.from_user.id):
+        await message.reply(localized("no_permission", lang))
+        return
+    if message.chat.type not in ("group", "supergroup"):
+        await message.reply(localized("group_only", lang))
         return
 
-    bridge_id = row["bridge_id"]
-    db.remove_bridge_admin(bridge_id, uid)
-    await message.reply(localized("remadmin_done", lang, user_id=uid))
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    has_reply = message.reply_to_message and message.reply_to_message.from_user
+    if not arg and not has_reply:
+        await message.reply(localized("setlocaladmin_usage", lang))
+        return
+
+    uid, username = await _resolve_tg_admin_target(message, arg)
+    if uid is None:
+        await message.reply(localized("could_not_resolve_user", lang))
+        return
+
+    server_id = str(message.chat.id)
+    if db.is_server_admin("telegram", server_id, uid):
+        await message.reply(localized("setlocaladmin_already", lang, user_id=uid))
+        return
+
+    db.add_server_admin("telegram", server_id, uid,
+                        username=username, added_by=message.from_user.id)
+    await message.reply(localized("setlocaladmin_done", lang, user_id=uid))
+    try:
+        await bot.send_message(
+            uid,
+            localized("setlocaladmin_dm", lang,
+                      server=message.chat.title or server_id)
+        )
+    except Exception:
+        pass
+
+@router.message(Command("remlocaladmin"))
+async def remlocaladmin(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not is_admin("telegram", message.from_user.id):
+        await message.reply(localized("no_permission", lang))
+        return
+    if message.chat.type not in ("group", "supergroup"):
+        await message.reply(localized("group_only", lang))
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    has_reply = message.reply_to_message and message.reply_to_message.from_user
+    if not arg and not has_reply:
+        await message.reply(localized("remlocaladmin_usage", lang))
+        return
+
+    uid, _ = await _resolve_tg_admin_target(message, arg)
+    if uid is None:
+        await message.reply(localized("could_not_resolve_user", lang))
+        return
+
+    server_id = str(message.chat.id)
+    if not db.is_server_admin("telegram", server_id, uid):
+        await message.reply(localized("remlocaladmin_not_admin", lang, user_id=uid))
+        return
+
+    db.remove_server_admin("telegram", server_id, uid)
+    await message.reply(localized("remlocaladmin_done", lang, user_id=uid))
+
+async def _feed_command_tg(message: Message, kind, keys, usage_key):
+    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed` on Telegram."""
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_id, message.from_user.id)
+    ):
+        await message.reply(localized("no_permission", lang))
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    source = parts[1].strip() if len(parts) > 1 else ""
+    if not source:
+        await message.reply(localized(usage_key, lang))
+        return
+
+    from discord_bot import attach_feed
+    status, resolved, title, stale_since = await attach_feed(
+        kind, source, "telegram", chat_id, message.from_user.id)
+    if status in ("ok", "live"):
+        key = keys["attached_live"] if status == "live" else keys["attached"]
+        text = localized(key, lang, account=resolved, name=title,
+                         where=feed_scope_name(chat_id, lang))
+        if stale_since:
+            text += "\n\n" + localized("feed_stale_note", lang, account=resolved,
+                                       date=stale_since)
+        await message.reply(text)
+    else:
+        await message.reply(localized(keys[status], lang, account=resolved))
+
+async def _rem_feed_command_tg(message: Message, kind, keys, usage_key):
+    """Shared body of `/rembskyfeed`, `/remytfeed` and `/remtgfeed` on Telegram."""
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not (
+        is_admin("telegram", message.from_user.id)
+        or is_chat_admin("telegram", chat_id, message.from_user.id)
+    ):
+        await message.reply(localized("no_permission", lang))
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    raw = parts[1].strip() if len(parts) > 1 else ""
+    if not raw:
+        await message.reply(localized(usage_key, lang))
+        return
+
+    from discord_bot import feed_module
+    source = feed_module(kind).normalize_source(raw)
+    if not source:
+        await message.reply(localized(keys["invalid"], lang))
+        return
+
+    existing = db.find_feed(kind, source, chat_id)
+    if existing and db.remove_feed(kind, source, existing["chat_id"]):
+        await message.reply(localized(keys["removed"], lang, account=source))
+    else:
+        await message.reply(localized(keys["not_attached"], lang, account=source))
+
+@router.message(Command("setytfeed"))
+async def setytfeed_cmd(message: Message):
+    from discord_bot import YTFEED_KEYS
+    await _feed_command_tg(message, "youtube", YTFEED_KEYS, "ytfeed_usage")
+
+@router.message(Command("remytfeed"))
+async def remytfeed_cmd(message: Message):
+    from discord_bot import YTFEED_KEYS
+    await _rem_feed_command_tg(message, "youtube", YTFEED_KEYS, "ytfeed_rem_usage")
+
+@router.message(Command("setbskyfeed"))
+async def setbskyfeed_cmd(message: Message):
+    from discord_bot import BSKYFEED_KEYS
+    await _feed_command_tg(message, "bluesky", BSKYFEED_KEYS, "bskyfeed_usage")
+
+@router.message(Command("rembskyfeed"))
+async def rembskyfeed_cmd(message: Message):
+    from discord_bot import BSKYFEED_KEYS
+    await _rem_feed_command_tg(message, "bluesky", BSKYFEED_KEYS, "bskyfeed_rem_usage")
+
+@router.message(Command("settgfeed"))
+async def settgfeed_cmd(message: Message):
+    from discord_bot import TGFEED_KEYS
+    await _feed_command_tg(message, "telegram", TGFEED_KEYS, "tgfeed_usage")
+
+@router.message(Command("remtgfeed"))
+async def remtgfeed_cmd(message: Message):
+    from discord_bot import TGFEED_KEYS
+    await _rem_feed_command_tg(message, "telegram", TGFEED_KEYS, "tgfeed_rem_usage")
+
+@router.message(Command("localizer_add", "localizer-add"))
+async def localizer_add(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not is_admin("telegram", message.from_user.id):
+        await message.reply(localized("no_permission", lang))
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    has_reply = message.reply_to_message and message.reply_to_message.from_user
+    if not arg and not has_reply:
+        await message.reply(localized("localizer_add_usage", lang))
+        return
+
+    uid, username = await _resolve_tg_admin_target(message, arg)
+    if uid is None:
+        await message.reply(localized("could_not_resolve_user", lang))
+        return
+
+    if db.is_localizer("telegram", uid):
+        await message.reply(localized("localizer_add_already", lang, user_id=uid))
+        return
+
+    db.add_localizer("telegram", uid, username=username,
+                     added_by=message.from_user.id)
+    await message.reply(localized("localizer_add_done", lang, user_id=uid))
+    try:
+        await bot.send_message(uid, localized("localizer_add_dm", lang))
+    except Exception:
+        pass
+
+@router.message(Command("localizer_rem", "localizer-rem"))
+async def localizer_rem(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    if not message.from_user or not is_admin("telegram", message.from_user.id):
+        await message.reply(localized("no_permission", lang))
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    has_reply = message.reply_to_message and message.reply_to_message.from_user
+    if not arg and not has_reply:
+        await message.reply(localized("localizer_rem_usage", lang))
+        return
+
+    uid, _ = await _resolve_tg_admin_target(message, arg)
+    if uid is None:
+        await message.reply(localized("could_not_resolve_user", lang))
+        return
+
+    if not db.remove_localizer("telegram", uid):
+        await message.reply(localized("localizer_rem_not", lang, user_id=uid))
+        return
+
+    await message.reply(localized("localizer_rem_done", lang, user_id=uid))
 
 @router.message(Command("locallang"))
 async def locallang_handler(message: Message):
@@ -907,6 +1360,10 @@ async def mention_cmd(message: Message):
         await message.reply(localized("could_not_resolve_user", lang))
         return
 
+    if db.get_privacy_flag("discord", uid, "block_mention"):
+        await message.reply(localized("mention_opted_out", lang))
+        return
+
     if not rate_limit_ok(("mention-target", str(uid)), limit=1, window_seconds=3600):
         await message.reply(localized("mention_cooldown", lang))
         return
@@ -924,17 +1381,42 @@ async def mention_cmd(message: Message):
     else:
         await message.reply(localized("mention_no_discord", lang))
 
+async def _demote_live_channel_feeds(channel_id):
+    """A followed channel the bot has just lost its admin rights in stops
+    delivering posts on its own, so its feeds fall back to polling the public
+    web preview. Everything published so far counts as seen — the fallback is
+    meant to keep the feed alive, not to replay it."""
+    rows = db.get_feeds_by_source_id("telegram", channel_id)
+    live = [r for r in rows if r["live"]]
+    if not live:
+        return
+    last_id = None
+    try:
+        _, posts = await fetch_posts(live[0]["source"])
+        last_id = posts[-1]["id"] if posts else None
+    except Exception as e:
+        logger.warning("channel feed fallback lookup failed (%s): %s", channel_id, e)
+    for feed in live:
+        db.add_feed(feed["kind"], feed["source"], feed["platform"], feed["chat_id"],
+                    source_id=feed["source_id"], title=feed["title"],
+                    last_post_id=last_id or feed["last_post_id"], live=False,
+                    added_by=feed["added_by"])
+
 @router.my_chat_member()
 async def my_chat_member_update(update: ChatMemberUpdated):
     """
     When bot is removed from a chat (left/kicked), clean up chat_settings for that chat.
     """
     try:
-        new_status = update.new_chat_member.status
+        new_status = str(update.new_chat_member.status)
         me = await bot.get_me()
-        if update.new_chat_member.user.id == me.id and new_status in ("left", "kicked"):
+        if update.new_chat_member.user.id != me.id:
+            return
+        if new_status in ("left", "kicked"):
             db.cur.execute("DELETE FROM chat_settings WHERE chat_id LIKE ?", (f"{update.chat.id}:%",))
             db.conn.commit()
+        if getattr(update.chat, "type", None) == "channel" and "administrator" not in new_status:
+            await _demote_live_channel_feeds(update.chat.id)
     except Exception:
         pass
 
@@ -1225,6 +1707,11 @@ async def whois_cmd(message: Message):
             full = u.full_name or (u.first_name or "")
             full_user = await bot.get_chat(int(origin_sender_id))
             bio = getattr(full_user, "bio", None) or "—"
+            if db.get_privacy_flag("telegram", origin_sender_id, "hide_whois"):
+                await _reply_autodelete(
+                    localized_whois("private_template", lang, nickname=full or "—", avatar="—")
+                )
+                return
             await _reply_autodelete(
                 localized_whois(
                     "tg_template",
@@ -1265,6 +1752,15 @@ async def whois_cmd(message: Message):
                 user_name = f"{user_obj.name}#{user_obj.discriminator}"
             elif member:
                 user_name = f"{member.name}#{member.discriminator}"
+
+            if db.get_privacy_flag("discord", origin_sender_id, "hide_whois"):
+                hidden_avatar = "—"
+                if user_obj and getattr(user_obj, "display_avatar", None):
+                    hidden_avatar = str(user_obj.display_avatar.url)
+                await _reply_autodelete(
+                    localized_whois("private_template", lang, nickname=nick or "—", avatar=hidden_avatar)
+                )
+                return
 
             mode_key = str(getattr(member, "status", "offline"))
             if mode_key not in ("online", "idle", "dnd", "offline", "invisible"):
@@ -1385,6 +1881,15 @@ async def bridge_cmd(message: Message):
     chats_str = "\n".join(chat_lines) if chat_lines else "—"
     text = localized_bridge_info("tg_template", lang, bridge_id=bridge_id, chats=chats_str)
 
+    attached_feeds = db.get_bridge_feeds(bridge_id)
+    if attached_feeds:
+        from discord_bot import feed_module
+        feeds_str = "\n".join(
+            f"* {f['title'] or f['source']}: {feed_module(f['kind']).source_url(f['source'])}"
+            for f in attached_feeds
+        )
+        text = f"{text}\n\n{localized_bridge_info('field_feeds', lang)}:\n{feeds_str}"
+
     try:
         from discord_bot import resolve_bridge_admins
         discord_admins, telegram_pings = await resolve_bridge_admins(bridge_id)
@@ -1428,6 +1933,38 @@ async def allow_bots_cmd(message: Message):
     else:
         await message.reply(localized("allow_bots_disabled", lang))
 
+@router.message(Command("allow_files", "allow-files"))
+async def allow_files_cmd(message: Message):
+    thread = message.message_thread_id or 0
+    chat_id = f"{message.chat.id}:{thread}"
+    lang = get_chat_lang(chat_id)
+
+    parts = message.text.split()
+    action = parts[1].lower() if len(parts) > 1 else ""
+    scope = parts[2].lower() if len(parts) > 2 else ""
+    if len(parts) > 3 or action not in ("enable", "disable") or scope not in ("", "local"):
+        await message.reply(localized("allow_files_usage_tg", lang))
+        return
+
+    if not (is_admin("telegram", message.from_user.id)
+            or is_chat_admin("telegram", chat_id, message.from_user.id)):
+        await message.reply(localized("allow_files_no_permission", lang))
+        return
+
+    enabled = action == "enable"
+    if scope == "local":
+        row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+        if not row:
+            await message.reply(localized("chat_not_in_bridge", lang))
+            return
+        db.set_bridge_file_consent(row["bridge_id"], enabled, enabled_by=message.from_user.id)
+        key = "allow_files_bridge_enabled" if enabled else "allow_files_bridge_disabled"
+    else:
+        db.set_server_file_consent("telegram", str(message.chat.id), enabled, enabled_by=message.from_user.id)
+        key = "allow_files_enabled" if enabled else "allow_files_disabled"
+
+    await message.reply(localized(key, lang))
+
 @router.message(Command("help"))
 async def help_cmd(message: Message):
     thread = message.message_thread_id or 0
@@ -1452,6 +1989,7 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_verify", lang)),
         escape_html(localized_help("cmd_mention", lang)),
         escape_html(localized_help("cmd_poll", lang)),
+        escape_html(localized_help("cmd_privacy", lang)),
         escape_html(localized_help("cmd_locale", lang)),
         escape_html(localized_help("cmd_loc_compare", lang)),
         escape_html(localized_help("cmd_loc_suggest", lang)),
@@ -1467,11 +2005,22 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_shadowban", lang)),
         escape_html(localized_help("cmd_unverify", lang)),
         escape_html(localized_help("cmd_allow_bots_tg", lang)),
+        escape_html(localized_help("cmd_allow_files_tg", lang)),
     ])
 
     bot_admins_lines = "\n".join([
         escape_html(localized_help("cmd_atb", lang)),
+        escape_html(localized_help("cmd_setytfeed", lang)),
+        escape_html(localized_help("cmd_remytfeed", lang)),
+        escape_html(localized_help("cmd_setbskyfeed", lang)),
+        escape_html(localized_help("cmd_rembskyfeed", lang)),
+        escape_html(localized_help("cmd_settgfeed", lang)),
+        escape_html(localized_help("cmd_remtgfeed", lang)),
         escape_html(localized_help("cmd_remadmin", lang)),
+        escape_html(localized_help("cmd_setlocaladmin", lang)),
+        escape_html(localized_help("cmd_remlocaladmin", lang)),
+        escape_html(localized_help("cmd_localizer_add_tg", lang)),
+        escape_html(localized_help("cmd_localizer_rem_tg", lang)),
         escape_html(localized_help("cmd_backup", lang)),
         escape_html(localized_help("cmd_loc_reply", lang)),
     ])
@@ -1499,7 +2048,11 @@ async def edited_message_handler(message: Message):
     if not row:
         return
 
-    texts, relay_file_count = _build_telegram_relay_texts(message)
+    gallery_urls, gallery_changed = await _refresh_gallery_for_edit(message, row["id"])
+
+    texts, relay_file_count = _build_telegram_relay_texts(
+        message, gallery_uploaded=len(gallery_urls or [])
+    )
     rendered_text = texts[0] if texts else ""
     base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
     if getattr(message, "text", None) is not None:
@@ -1511,7 +2064,10 @@ async def edited_message_handler(message: Message):
 
     header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(message.from_user.full_name if message.from_user else 'Unknown')}:"
 
-    copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
+    copies = db.cur.execute(
+        "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
+        (row["id"],)
+    ).fetchall()
     for c in copies:
         try:
             if c["platform"] == "telegram":
@@ -1525,6 +2081,9 @@ async def edited_message_handler(message: Message):
                     edit_plain = edit_plain.replace(f"__TG_FILES_{relay_file_count}__", marker)
                     if edit_html is not None:
                         edit_html = edit_html.replace(f"__TG_FILES_{relay_file_count}__", escape_html(marker))
+                edit_plain, _, edit_html = message_relay.apply_gallery_links(
+                    "telegram", edit_plain, edit_plain, edit_html, gallery_urls
+                )
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
@@ -1533,6 +2092,16 @@ async def edited_message_handler(message: Message):
                 )
             elif c["platform"] == "discord":
                 from discord_bot import bot as dc_bot, edit_discord_relay_copy
+                target_lang = get_chat_lang(c["chat_id"])
+                edit_discord, _ = _relay_variants_for_text(
+                    rendered_text, base_text, discord_text, telegram_html
+                )
+                if relay_file_count is not None:
+                    marker = localized_file_count_text(relay_file_count, target_lang)
+                    edit_discord = edit_discord.replace(f"__TG_FILES_{relay_file_count}__", marker)
+                _, edit_discord, _ = message_relay.apply_gallery_links(
+                    "discord", edit_discord, edit_discord, None, gallery_urls
+                )
                 channel_id = int(c["chat_id"].split(":")[1])
                 ch = dc_bot.get_channel(channel_id)
                 if not ch:
@@ -1540,9 +2109,105 @@ async def edited_message_handler(message: Message):
                         ch = await dc_bot.fetch_channel(channel_id)
                     except Exception:
                         continue
-                await edit_discord_relay_copy(ch, c["message_id_platform"], header, discord_text, message_db_id=row["id"], chat=c)
+                await edit_discord_relay_copy(ch, c["message_id_platform"], header, edit_discord, message_db_id=row["id"], chat=c)
         except Exception:
             pass
+
+    if gallery_changed:
+        await _resync_gallery_followups(row["id"], gallery_urls)
+
+async def _refresh_gallery_for_edit(message: Message, message_db_id):
+    """Bring a relayed message's GALLERY upload in line with an edit.
+
+    Returns ``(urls, changed)``. A single-message upload is redone, since the
+    edit may have replaced the media. An album's upload is kept as it is: the
+    edit carries only the one message that was edited, so re-uploading from it
+    would drop the album's other files. Any failure keeps the stored links —
+    stale links beat a copy that suddenly points at nothing."""
+    row = db.get_gallery_upload(message_db_id)
+    if not row:
+        return None, False
+
+    try:
+        stored_urls = json.loads(row["urls"]) or []
+        source_ids = json.loads(row["source_message_ids"] or "[]")
+    except Exception:
+        stored_urls, source_ids = [], []
+
+    candidates = _collect_gallery_candidates(message)
+    if len(source_ids) > 1 or not candidates:
+        return stored_urls, False
+
+    file_ids = [c["file_id"] for c in candidates]
+    try:
+        stored_file_ids = json.loads(row["file_ids"] or "[]")
+    except Exception:
+        stored_file_ids = []
+    if stored_file_ids and file_ids == stored_file_ids:
+        return stored_urls, False
+
+    upload, _ = await _upload_telegram_files_to_gallery(candidates)
+    if not upload:
+        return stored_urls, False
+
+    from discord_bot import delete_gallery_message
+    await delete_gallery_message(row["channel_id"], row["gallery_message_id"])
+    db.add_gallery_upload(
+        message_db_id, upload["channel_id"], upload["message_id"],
+        json.dumps(upload["urls"], ensure_ascii=False), row["source_message_ids"],
+        json.dumps(file_ids, ensure_ascii=False),
+    )
+    return upload["urls"], upload["urls"] != stored_urls
+
+async def _resync_gallery_followups(message_db_id, gallery_urls):
+    """Rebuild the per-file follow-up messages of a Telegram copy after a
+    re-upload handed out new links: the old ones point at a deleted GALLERY
+    message, and their number may have changed."""
+    rows = db.cur.execute(
+        "SELECT * FROM message_copies WHERE message_id=? AND kind='file'",
+        (message_db_id,)
+    ).fetchall()
+    if not rows:
+        return
+
+    chat_ids = []
+    for r in rows:
+        if r["platform"] != "telegram":
+            continue
+        if r["chat_id"] not in chat_ids:
+            chat_ids.append(r["chat_id"])
+        try:
+            await bot.delete_message(int(r["chat_id"].split(":")[0]), int(r["message_id_platform"]))
+        except Exception:
+            pass
+
+    db.cur.execute(
+        "DELETE FROM message_copies WHERE message_id=? AND kind='file'",
+        (message_db_id,)
+    )
+    db.conn.commit()
+
+    for chat_id in chat_ids:
+        chat_id_str, thread = chat_id.split(":")
+        for url in (gallery_urls or [])[1:]:
+            try:
+                sent = await bot.send_message(
+                    chat_id=int(chat_id_str),
+                    message_thread_id=int(thread) or None,
+                    text=escape_html(url),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                continue
+            db.cur.execute(
+                """
+                INSERT INTO message_copies
+                (message_id, platform, chat_id, message_id_platform, kind)
+                VALUES (?,'telegram',?,?,'file')
+                """,
+                (message_db_id, chat_id, str(sent.message_id))
+            )
+    db.conn.commit()
 
 @router.message(Command("backup"))
 async def backup_tg_cmd(message: Message):
@@ -1797,6 +2462,345 @@ async def handle_poll_callback(query: CallbackQuery):
 
     db.record_poll_vote(poll_id, "telegram", user_id, idx)
     await query.answer(localized("poll_vote_recorded", lang))
+
+PREVIEW_URL = "https://t.me/s/{channel}"
+
+PREVIEW_RETRY_DELAY = 10
+MAX_POSTS_PER_FETCH = 20
+
+CHANNEL_NAME_RE = re.compile(r"^[A-Za-z0-9_]{4,32}$")
+
+_MESSAGE_RE = re.compile(r'<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"/]+)/(\d+)"')
+_PHOTO_RE = re.compile(r'tgme_widget_message_photo_wrap[^>]*background-image:url\(\'([^\']+)\'\)')
+_VIDEO_RE = re.compile(r'<video[^>]+src="([^"]+)"')
+_TEXT_RE = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.DOTALL)
+_UNSUPPORTED_RE = re.compile(r'message_media_not_supported_wrap')
+_FORWARD_RE = re.compile(
+    r'<a class="tgme_widget_message_forwarded_from_name"(?:\s+href="([^"]*)")?[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+_FORWARD_PLAIN_RE = re.compile(
+    r'<span class="tgme_widget_message_forwarded_from_name"[^>]*>(.*?)</span>', re.DOTALL
+)
+_TITLE_RE = re.compile(r'<meta property="og:title" content="([^"]*)"')
+_SERVICE_RE = re.compile(r'class="[^"]*\bservice_message\b')
+_TAG_RE = re.compile(r"<[^>]+>")
+
+def normalize_source(raw):
+    """Accept `name`, `@name`, `t.me/name`, `t.me/s/name` or a link to a post and
+    return the bare channel name. ``None`` when it is not a channel link."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^https?://", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(www\.)?t(elegram)?\.me/", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^s/", "", text, flags=re.IGNORECASE)
+    text = text.split("?", 1)[0].split("/", 1)[0]
+    text = text.lstrip("@").strip()
+    return text if CHANNEL_NAME_RE.match(text) else None
+
+def source_url(channel):
+    return f"https://t.me/{channel}"
+
+def post_url(channel, post_id):
+    return f"https://t.me/{channel}/{post_id}"
+
+def preview_html_to_text(fragment):
+    """The readable text of a preview fragment: line breaks kept, tags dropped,
+    entities decoded. Custom emoji are rendered as an image wrapping the emoji
+    character itself, so dropping the tags leaves the character behind."""
+    if not fragment:
+        return ""
+    text = re.sub(r"<br\s*/?>", "\n", fragment)
+    text = re.sub(r"</p>", "\n", text)
+    text = _TAG_RE.sub("", text)
+    return html_module.unescape(text).strip()
+
+def _collect_preview_media(block):
+    """Attachments of one preview block, as the media items `relay_feed_post`
+    expects.
+
+    The preview serves photos as a CSS background and videos as a plain ``mp4``
+    link, both in one size only — so the ladder each item carries holds one rung."""
+    out = []
+
+    def add(url, kind):
+        if not url:
+            return
+        index = len(out)
+        out.append({"urls": [url], "kind": kind, "index": index, "prefix": "tg-media",
+                    "name": feed_media_name(url, index, kind, prefix="tg-media")})
+
+    for url in _PHOTO_RE.findall(block):
+        add(html_module.unescape(url), "photo")
+    for url in _VIDEO_RE.findall(block):
+        add(html_module.unescape(url), "video")
+    return out
+
+def _parse_preview_forward(block):
+    """``(forward_type, forward_name)`` for a repost, or ``(None, None)``.
+
+    A forward from another channel keeps its link in the preview; one from a
+    person does not, which is what tells the two apart here."""
+    m = _FORWARD_RE.search(block)
+    if m:
+        name = preview_html_to_text(m.group(2))
+        if name:
+            return ("chat" if m.group(1) else "user"), name
+    m = _FORWARD_PLAIN_RE.search(block)
+    if m:
+        name = preview_html_to_text(m.group(1))
+        if name:
+            return "user", name
+    return None, None
+
+def parse_preview(html, channel):
+    """``(title, posts)`` from a channel's public web preview.
+
+    Posts are ordered oldest first; service messages ("Channel created" and the
+    like) are dropped. Raises `FeedError` when the page carries no messages the
+    parser recognizes — which is also what a preview-less channel and a changed
+    layout look like."""
+    if not html:
+        raise FeedError("empty response")
+
+    title_match = _TITLE_RE.search(html)
+    title = html_module.unescape(title_match.group(1)) if title_match else None
+
+    bounds = list(_MESSAGE_RE.finditer(html))
+    if not bounds:
+        raise FeedError("no posts in preview (private channel, or the preview is off)")
+
+    posts = []
+    for i, match in enumerate(bounds):
+        end = bounds[i + 1].start() if i + 1 < len(bounds) else len(html)
+        block = html[match.start():end]
+        if _SERVICE_RE.search(block):
+            continue
+
+        post_id = match.group(2)
+        text_match = _TEXT_RE.search(block)
+        media = _collect_preview_media(block)
+        forward_type, forward_name = _parse_preview_forward(block)
+        posts.append({
+            "id": post_id,
+            "text": preview_html_to_text(text_match.group(1)) if text_match else "",
+            "media": media,
+            "unavailable_media": 1 if not media and _UNSUPPORTED_RE.search(block) else 0,
+            "link": post_url(channel, post_id),
+            "author_name": title,
+            "forward_type": forward_type,
+            "forward_name": forward_name,
+        })
+
+    posts.sort(key=lambda p: int(p["id"]))
+    return title, posts[-MAX_POSTS_PER_FETCH:]
+
+async def fetch_posts(channel, session=None, retries=1, retry_delay=PREVIEW_RETRY_DELAY):
+    """``(title, posts)`` for a public Telegram channel, read from its web
+    preview. Raises `FeedError` when the channel can't be read."""
+    url = PREVIEW_URL.format(channel=channel)
+    owns_session = session is None
+    if owns_session:
+        session = aiohttp.ClientSession()
+    try:
+        for attempt in range(retries + 1):
+            try:
+                async with session.get(
+                    url, headers=FEED_REQUEST_HEADERS,
+                    timeout=aiohttp.ClientTimeout(total=FEED_REQUEST_TIMEOUT),
+                ) as resp:
+                    if resp.status == 200:
+                        return parse_preview(await resp.text(), channel)
+                    error = FeedError(f"HTTP {resp.status}")
+                    error.throttled = resp.status == 429
+                    retryable = resp.status >= 500
+            except FeedError:
+                raise
+            except Exception as e:
+                error = FeedError(f"{type(e).__name__}: {e}")
+                retryable = True
+            if not retryable or attempt >= retries:
+                raise error
+            await asyncio.sleep(retry_delay)
+        raise error
+    finally:
+        if owns_session:
+            await session.close()
+
+_channel_post_buffer = {}
+
+def _channel_post_forward(message: Message):
+    """``(forward_type, forward_name)`` for a channel post that is itself a
+    repost — the bridge's own "(forwarded from …)" wording, resolved through the
+    Bot API rather than guessed."""
+    chat = getattr(message, "forward_from_chat", None)
+    if chat is not None:
+        return "chat", chat.title or getattr(chat, "username", None) or "unknown"
+    user = getattr(message, "forward_from", None)
+    if user is not None:
+        return "user", user.full_name or getattr(user, "username", None) or "unknown"
+    name = getattr(message, "forward_sender_name", None)
+    if name:
+        return "user", name
+    origin = getattr(message, "forward_origin", None)
+    if origin is not None:
+        origin_chat = getattr(origin, "chat", None) or getattr(origin, "sender_chat", None)
+        if origin_chat is not None:
+            return "chat", origin_chat.title or getattr(origin_chat, "username", None) or "unknown"
+        sender = getattr(origin, "sender_user", None)
+        if sender is not None:
+            return "user", sender.full_name or "unknown"
+        sender_name = getattr(origin, "sender_user_name", None)
+        if sender_name:
+            return "user", sender_name
+    return None, None
+
+async def _relay_channel_post(message: Message, extra_messages=None):
+    """Relay a post of a followed Telegram channel the bot is a member of.
+
+    The files come through the Bot API, so they are re-uploaded to GALLERY the
+    same way a user's Telegram files are; whatever does not fit is represented
+    by the usual "[N files from Telegram]" footer."""
+    from discord_bot import relay_feed_post
+
+    rows = db.get_feeds_by_source_id("telegram", message.chat.id)
+    if not rows:
+        return
+
+    group = [message] + list(extra_messages or [])
+    candidates = []
+    for m in group:
+        candidates.extend(_collect_gallery_candidates(m))
+    upload, uploaded = await _upload_telegram_files_to_gallery(candidates)
+    gallery_urls = list(upload["urls"]) if upload else []
+
+    text = ""
+    for m in group:
+        text = getattr(m, "text", None) or getattr(m, "caption", None) or ""
+        if text:
+            break
+
+    forward_type, forward_name = _channel_post_forward(message)
+    username = getattr(message.chat, "username", None)
+    post = {
+        "id": str(message.message_id),
+        "text": text,
+        "media": [],
+        "link": f"https://t.me/{username}/{message.message_id}" if username else None,
+        "author_name": message.chat.title,
+        "forward_type": forward_type,
+        "forward_name": forward_name,
+    }
+    skipped = max(0, len(candidates) - uploaded)
+    for feed in rows:
+        try:
+            await relay_feed_post(feed, post, gallery=(gallery_urls, skipped))
+        except Exception as e:
+            logger.warning("channel post relay failed (%s -> %s): %s",
+                           message.chat.id, feed["chat_id"], e)
+
+async def _flush_channel_post_group(buffer_key):
+    await asyncio.sleep(1.0)
+    payload = _channel_post_buffer.pop(buffer_key, None)
+    if not payload:
+        return
+    await _relay_channel_post(payload["message"], extra_messages=payload["rest"])
+
+@router.channel_post()
+async def channel_post_handler(message: Message):
+    """Posts of channels the bot was added to. Only those attached with
+    `/settgfeed` are relayed; an album arrives as several updates and is held
+    for a second so it goes out as one message."""
+    if not db.get_feeds_by_source_id("telegram", message.chat.id):
+        return
+
+    media_group_id = getattr(message, "media_group_id", None)
+    if media_group_id:
+        key = (message.chat.id, str(media_group_id))
+        payload = _channel_post_buffer.get(key)
+        if not payload:
+            payload = {"message": message, "rest": [], "task": None}
+            _channel_post_buffer[key] = payload
+        elif message.message_id < payload["message"].message_id:
+            payload["rest"].append(payload["message"])
+            payload["message"] = message
+        else:
+            payload["rest"].append(message)
+        if payload.get("task"):
+            payload["task"].cancel()
+        payload["task"] = asyncio.create_task(_flush_channel_post_group(key))
+        return
+
+    await _relay_channel_post(message)
+
+def _privacy_text(user_id, lang):
+    """The `/privacy` menu: one line per switch, with what it does and whether
+    the user has it on."""
+    flags = db.get_user_privacy("telegram", user_id)
+    lines = [f"<b>{escape_html(localized('privacy_title', lang))}</b>", "",
+             escape_html(localized("privacy_header", lang)), ""]
+    for flag in db.PRIVACY_FLAGS:
+        state = localized("privacy_state_on" if flags[flag] else "privacy_state_off", lang)
+        mark = "🔒" if flags[flag] else "🔓"
+        lines.append(f"{mark} {escape_html(localized(f'privacy_opt_{flag}', lang))} — "
+                     f"<b>{escape_html(state)}</b>")
+    return "\n".join(lines)
+
+def _privacy_keyboard(user_id, lang):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    flags = db.get_user_privacy("telegram", user_id)
+    rows = []
+    for flag in db.PRIVACY_FLAGS:
+        mark = "🔒" if flags[flag] else "🔓"
+        rows.append([InlineKeyboardButton(
+            text=f"{mark} {localized(f'privacy_btn_{flag}', lang)}",
+            callback_data=f"privacy:{user_id}:{flag}",
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+@router.message(Command("privacy"))
+async def privacy_cmd(message: Message):
+    lang = get_chat_lang(f"{message.chat.id}:{message.message_thread_id or 0}")
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+    await message.reply(
+        _privacy_text(user_id, lang),
+        parse_mode="HTML",
+        reply_markup=_privacy_keyboard(user_id, lang),
+    )
+
+@router.callback_query(lambda c: c.data and c.data.startswith("privacy:"))
+async def handle_privacy_callback(query: CallbackQuery):
+    try:
+        _, owner_s, flag = query.data.split(":")
+        owner_id = int(owner_s)
+    except Exception:
+        await query.answer()
+        return
+
+    chat = query.message.chat if query.message else None
+    thread = (query.message.message_thread_id or 0) if query.message else 0
+    lang = get_chat_lang(f"{chat.id}:{thread}") if chat else DEFAULT_LANG
+
+    if flag not in db.PRIVACY_FLAGS:
+        await query.answer()
+        return
+    if query.from_user.id != owner_id:
+        await query.answer(localized("privacy_not_yours", lang), show_alert=True)
+        return
+
+    db.toggle_privacy_flag("telegram", owner_id, flag)
+    try:
+        await query.message.edit_text(
+            _privacy_text(owner_id, lang),
+            parse_mode="HTML",
+            reply_markup=_privacy_keyboard(owner_id, lang),
+        )
+    except Exception:
+        pass
+    await query.answer()
 
 async def main():
     await dp.start_polling(bot)

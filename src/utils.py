@@ -56,8 +56,15 @@ def is_chat_admin(platform, chat_id, user_id):
     if row:
         return True
 
+    prefix = chat_id.split(":", 1)[0] if ":" in chat_id else chat_id
+
+    if db.is_server_admin(platform, prefix, user_id):
+        return True
+
+    if db.is_server_bridge_admin(platform, prefix, user_id):
+        return True
+
     if ":" in chat_id:
-        prefix = chat_id.split(":", 1)[0]
         group_key = f"{prefix}:0"
         row = db.cur.execute(
             """
@@ -269,6 +276,46 @@ def localized(_key, locale, **kwargs):
     except Exception:
         return template
 
+FEED_REQUEST_TIMEOUT = 30
+
+FEED_REQUEST_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                   " (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+_FEED_MEDIA_NAME_RE = re.compile(
+    r"^[\w.-]{1,64}\.(jpg|jpeg|png|gif|webp|mp4|mov|webm|m4a|mp3|ogg)$", re.IGNORECASE
+)
+
+class FeedError(Exception):
+    """A followed source could not be read (network, layout change, no such
+    account or channel). Carries a short reason for the service-chat report, and
+    ``throttled`` when the source asked us to slow down."""
+
+    throttled = False
+
+def feed_media_name(url, index, kind, prefix="media"):
+    """A filename for the GALLERY upload, taken from the media URL when it looks
+    usable and synthesized otherwise."""
+    tail = (url or "").split("?", 1)[0].rsplit("/", 1)[-1]
+    if _FEED_MEDIA_NAME_RE.match(tail):
+        return tail
+    ext = "mp4" if kind in ("video", "animated_gif", "gif") else "jpg"
+    return f"{prefix}-{index + 1}.{ext}"
+
+def feed_scope_name(chat_id, lang):
+    """Where a feed attached in this chat will deliver, for the confirmation
+    reply: the whole bridge when the chat has one — chats that join it later
+    included — and otherwise this chat alone, until it joins a bridge."""
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (str(chat_id),)
+    ).fetchone()
+    if row and row["bridge_id"] is not None:
+        return localized("feed_scope_bridge", lang, bridge_id=row["bridge_id"])
+    return localized("feed_scope_chat", lang)
+
 POLL_MAX_SECONDS = 30 * 86400
 
 def parse_poll_duration(text):
@@ -325,8 +372,12 @@ def plural_for(lang, n):
         return plural_en(n, file_forms[lang])
     return plural_en(n, file_forms["en"])
 
-def localized_file_count_text(n, lang):
-    template = _LOCALE["file_count"].get(lang, _LOCALE["file_count"][DEFAULT_LANG])
+def localized_file_count_text(n, lang, source="telegram"):
+    """"N files from Telegram" / "N files from X" — the stand-in for attachments
+    the bot could not bring over. `source` picks which one."""
+    table = _LOCALE.get("file_count" if source == "telegram" else f"file_count_{source}") \
+        or _LOCALE["file_count"]
+    template = table.get(lang, table[DEFAULT_LANG])
     word = plural_for(lang, n)
     return template.format(count=n, files=word)
 

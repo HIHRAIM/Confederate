@@ -15,6 +15,118 @@
     "status": "unverified",
     "text": "Використання: /allow_bots enable | /allow_bots disable"
   },
+  "allow_files_bridge_disabled": {
+    "status": "unverified",
+    "text": "Файли, надіслані в Telegram, більше не перезаливаються на Discord для чатів цього моста."
+  },
+  "allow_files_bridge_enabled": {
+    "status": "unverified",
+    "text": "Файли, надіслані в Telegram, тепер перезаливаються на Discord і роздаються посиланнями — для всіх чатів цього моста, включно з тими, що приєднаються пізніше. Працює лише там, де це дозволено в кожному чаті моста."
+  },
+  "allow_files_disabled": {
+    "status": "unverified",
+    "text": "Файли, надіслані в Telegram, більше не перезаливаються на Discord для чатів цього сервера."
+  },
+  "allow_files_enabled": {
+    "status": "unverified",
+    "text": "Файли, надіслані в Telegram, тепер перезаливаються на Discord і роздаються посиланнями — для всіх чатів цього сервера, у будь-яких мостах. Працює лише там, де це дозволено в кожному чаті моста."
+  },
+  "allow_files_no_permission": {
+    "status": "unverified",
+    "text": "Змінювати згоду на перезалив файлів можуть лише адміністратори моста та адміністратори бота."
+  },
+  "allow_files_usage": {
+    "status": "unverified",
+    "text": "Використання: /allow-files enable | /allow-files disable — для всього сервера; додайте `local` (/allow-files enable local), щоб охопити лише поточний міст."
+  },
+  "allow_files_usage_tg": {
+    "status": "unverified",
+    "text": "Використання: /allow_files enable | /allow_files disable — для всієї групи; додайте `local` (/allow_files enable local), щоб охопити лише поточний міст."
+  },
+  "appeal_already_open": {
+    "status": "unverified",
+    "text": "У вас уже є відкрита апеляція. Просто пишіть мені в ОП — ваші повідомлення доходять до консулів."
+  },
+  "appeal_already_resolved": {
+    "status": "unverified",
+    "text": "Цю апеляцію вже розглянуто."
+  },
+  "appeal_btn_condemn": {
+    "status": "unverified",
+    "text": "Пермабан тут"
+  },
+  "appeal_btn_pardon": {
+    "status": "unverified",
+    "text": "Глобальний розбан"
+  },
+  "appeal_confirm_btn": {
+    "status": "unverified",
+    "text": "Підтвердити"
+  },
+  "appeal_confirm_condemn": {
+    "status": "unverified",
+    "text": "Назавжди заблокувати користувача на цьому сервері (без запису до бази даних) і закрити апеляцію?"
+  },
+  "appeal_confirm_pardon": {
+    "status": "unverified",
+    "text": "Зняти ВСІ мережеві бани цього користувача й закрити апеляцію?"
+  },
+  "appeal_consul_letters": {
+    "status": "unverified",
+    "text": "АБВГҐДЕЄЖЗИІЇКЛМНОПРСТУФХЦЧШЩЮЯ"
+  },
+  "appeal_consul_name": {
+    "status": "unverified",
+    "text": "Консул {letter}"
+  },
+  "appeal_created": {
+    "status": "unverified",
+    "text": "Апеляцію створено — перевірте особисті повідомлення."
+  },
+  "appeal_created_dm": {
+    "status": "unverified",
+    "text": "Вашу апеляцію подано. Опишіть свою ситуацію прямо тут: кожне повідомлення, надіслане мені в ОП, пересилається консулам, а їхні відповіді з'являтимуться тут."
+  },
+  "appeal_dm_closed": {
+    "status": "unverified",
+    "text": "Я не можу надсилати вам особисті повідомлення, тому апеляцію не відкрито. Дозвольте ОП від учасників сервера (налаштування конфіденційності) і знову надішліть /appeal."
+  },
+  "appeal_dm_place": {
+    "status": "unverified",
+    "text": "ОП"
+  },
+  "appeal_failed": {
+    "status": "unverified",
+    "text": "Не вдалося відкрити апеляцію. Спробуйте пізніше або зверніться до персоналу сервера."
+  },
+  "appeal_not_member": {
+    "status": "unverified",
+    "text": "Апеляції подаються через сервер апеляцій. Спочатку приєднайтеся до нього, потім знову надішліть /appeal: {invite}"
+  },
+  "appeal_note_condemned": {
+    "status": "unverified",
+    "text": "Вердикт: апеляцію відхилено. Користувача повідомлено й назавжди заблоковано на цьому сервері."
+  },
+  "appeal_note_pardoned": {
+    "status": "unverified",
+    "text": "Вердикт: апеляцію задоволено. Запит на глобальний розбан надіслано Confederate Guard; користувача повідомлено й виключено з цього сервера."
+  },
+  "appeal_thread_info": {
+    "status": "unverified",
+    "text": "Апеляція {mention} ({username}, ID {id}). Повідомлення в цій гілці пересилаються в ОП користувача; відправники показуються йому анонімно як консули."
+  },
+  "appeal_user_condemned": {
+    "status": "unverified",
+    "text": "Вашу апеляцію розглянуто й відхилено. Рішення остаточне."
+  },
+  "appeal_user_pardoned": {
+    "status": "unverified",
+    "text": "Вашу апеляцію задоволено: мережеві бани знято. Вас виключено з сервера апеляцій — він вам більше не потрібен."
+  },
+  "appeal_verdict_done": {
+    "status": "unverified",
+    "text": "Готово."
+  },
   "atb_already_attached": {
     "status": "unverified",
     "text": "Цей чат уже підключено до мосту."
@@ -40,71 +152,111 @@
     "text": "Використовуйте цю команду в особистому чаті з ботом."
   },
   "bot_joined": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Бот приєднався до мосту."
   },
   "bridge_info.admins_discord": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Discord: {admins}"
   },
   "bridge_info.admins_telegram": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Telegram: {admins}"
   },
   "bridge_info.admins_title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Адміністратори мосту"
   },
   "bridge_info.field_chats": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Підключені чати"
   },
+  "bridge_info.field_feeds": {
+    "status": "unverified",
+    "text": "Приєднані стрічки"
+  },
   "bridge_info.field_number": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Номер"
   },
   "bridge_info.not_in_bridge": {
-    "status": "verified",
-    "text": "Цей чат не підключений до мосту."
+    "status": "unverified",
+    "text": "Цей чат не підключено до мосту."
   },
   "bridge_info.tg_template": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Інформація про міст\n\nНомер: {bridge_id}\nПідключені чати:\n{chats}"
   },
   "bridge_info.title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Інформація про міст"
   },
   "bridge_info.topic": {
-    "status": "verified",
+    "status": "unverified",
     "text": "тема {thread_id}"
   },
   "bridge_info.unknown": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Невідомо"
   },
   "bridge_join": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Чат {channel} з {server} приєднався до мосту."
   },
   "bridge_leave": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Чат {channel} з {server} виключено з мосту."
+  },
+  "bskyfeed_already_attached": {
+    "status": "unverified",
+    "text": "@{account} вже приєднано сюди."
+  },
+  "bskyfeed_attached": {
+    "status": "unverified",
+    "text": "Акаунт Bluesky {name} (@{account}) приєднано до {where}. Його нові дописи надходитимуть туди, включно з чатами, які приєднаються пізніше."
+  },
+  "bskyfeed_invalid_account": {
+    "status": "unverified",
+    "text": "Це не акаунт Bluesky. Вкажіть хендл, @хендл, посилання на профіль або DID."
+  },
+  "bskyfeed_not_attached": {
+    "status": "unverified",
+    "text": "@{account} сюди не приєднано."
+  },
+  "bskyfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Використання: /rembskyfeed <акаунт Bluesky> — хендл, @хендл, посилання на профіль або DID."
+  },
+  "bskyfeed_removed": {
+    "status": "unverified",
+    "text": "Дописи @{account} більше сюди не пересилаються."
+  },
+  "bskyfeed_throttled": {
+    "status": "unverified",
+    "text": "Bluesky зараз обмежує запити бота, тому прочитати @{account} не вдалося. Спробуйте за кілька хвилин."
+  },
+  "bskyfeed_unreachable": {
+    "status": "unverified",
+    "text": "Не вдалося прочитати @{account}. Можливо, акаунт не існує або видалений, або Bluesky зараз не відповідає."
+  },
+  "bskyfeed_usage": {
+    "status": "unverified",
+    "text": "Використання: /setbskyfeed <акаунт Bluesky> — хендл, @хендл, посилання на профіль або DID."
   },
   "chat_not_in_bridge": {
     "status": "unverified",
     "text": "Цей чат не підключено до жодного мосту."
   },
   "consent_body": {
-    "status": "verified",
-    "text": "Цей чат з'єднаний з іншими. Твої повідомлення автоматично надсилатимуться до пов'язаних чатів. Якщо ти зміниш або видалиш своє повідомлення протягом 30 днів з моменту його надсилання, воно автоматично оновиться або зникне й в інших чатах. Натисни «Погоджуюсь», щоб погодитися з пересиланням і продовжити спілкування. Детальніше — в описі чату або у закріпленому повідомленні."
+    "status": "unverified",
+    "text": "Цей чат з'єднано з іншими. Твої повідомлення автоматично пересилатимуться до пов'язаних чатів. Якщо ти зміниш або видалиш своє повідомлення протягом 30 днів після його надсилання, воно автоматично оновиться або зникне й в інших чатах. Натисни «Приймаю», щоб погодитися з пересиланням і продовжити спілкування. Докладніше — в описі чату або закріпленому повідомленні."
   },
   "consent_button": {
-    "status": "verified",
-    "text": "Погоджуюсь"
+    "status": "unverified",
+    "text": "Приймаю"
   },
   "consent_title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Увага: міст повідомлень"
   },
   "could_not_resolve_user": {
@@ -128,15 +280,15 @@
     "text": "Deadchat налаштовано: роль <@&{role_id}>, {hours} год."
   },
   "deadtopic.disabled": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Автозбереження теми вимкнено."
   },
   "deadtopic.enabled": {
-    "status": "verified",
-    "text": "Автозбереження теми увімкнено. Кожних 6 днів без активності опівночі за UTC бот надішле та видалить фантомне повідомлення."
+    "status": "unverified",
+    "text": "Автозбереження теми ввімкнено. Кожні 6 днів без активності опівночі UTC бот надішле й видалить фантомне повідомлення."
   },
   "deadtopic.phantom_message": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Фантомне повідомлення для збереження теми."
   },
   "deadtopic.usage": {
@@ -144,31 +296,51 @@
     "text": "Використання: /deadtopic enable | /deadtopic disable"
   },
   "discord_system_event": {
-    "status": "verified",
+    "status": "unverified",
     "text": "{name} {action}"
   },
   "discord_system_event_action.boosted_server": {
-    "status": "verified",
-    "text": "дав буст серверу"
+    "status": "unverified",
+    "text": "дав(-ла) буст серверу"
   },
   "discord_system_event_action.created_thread": {
-    "status": "verified",
-    "text": "створив гілку"
+    "status": "unverified",
+    "text": "створив(-ла) гілку"
   },
   "discord_system_event_action.joined_server": {
-    "status": "verified",
-    "text": "приєднався до сервера"
+    "status": "unverified",
+    "text": "приєднався(-лася) до сервера"
   },
   "discord_system_event_action.pinned_message": {
-    "status": "verified",
-    "text": "закріпив повідомлення"
+    "status": "unverified",
+    "text": "закріпив(-ла) повідомлення"
+  },
+  "feed_scope_bridge": {
+    "status": "unverified",
+    "text": "мосту {bridge_id} й усім його чатам"
+  },
+  "feed_scope_chat": {
+    "status": "unverified",
+    "text": "цьому чату (він ще не в мосту — щойно приєднається, дописи підуть в усі чати мосту)"
+  },
+  "feed_stale_note": {
+    "status": "unverified",
+    "text": "Увага: найсвіжіший допис, який джерело віддає для @{account}, — від {date}. Схоже, джерело давно не оновлювалося; поки це так, пересилати звідси нічого."
   },
   "file_count": {
-    "status": "verified",
+    "status": "unverified",
     "text": "{count} {files} з Telegram"
   },
+  "file_count_bluesky": {
+    "status": "unverified",
+    "text": "{count} {files} з Bluesky"
+  },
+  "file_count_youtube": {
+    "status": "unverified",
+    "text": "{count} {files} з YouTube"
+  },
   "file_forms": {
-    "status": "verified",
+    "status": "unverified",
     "text": [
       "файл",
       "файли",
@@ -185,11 +357,11 @@
   },
   "force_leave_not_member": {
     "status": "unverified",
-    "text": "Бот не знаходиться на цьому сервері."
+    "text": "Бота немає на цьому сервері."
   },
   "force_leave_success_discord": {
     "status": "unverified",
-    "text": "Бот покинув сервер {guild_id}, дані сервера видалено з бази."
+    "text": "Бот покинув сервер {guild_id}, дані сервера видалено з бази даних."
   },
   "force_leave_success_telegram": {
     "status": "unverified",
@@ -200,51 +372,67 @@
     "text": "Непідтримувана платформа. Використовуйте 'discord' або 'telegram'."
   },
   "forward_from_chat": {
-    "status": "verified",
+    "status": "unverified",
     "text": "(переслано з {name})"
   },
   "forward_from_user": {
-    "status": "verified",
+    "status": "unverified",
     "text": "(переслано від {name})"
   },
   "forward_unknown": {
-    "status": "verified",
+    "status": "unverified",
     "text": "(переслано з невідомого джерела)"
   },
+  "group_only": {
+    "status": "unverified",
+    "text": "Ця команда доступна лише в групі."
+  },
   "help.cmd_allow_bots": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/allow-bots enable|disable — дозволити або заборонити пересилання повідомлень від ботів"
   },
   "help.cmd_allow_bots_tg": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/allow_bots enable|disable — дозволити або заборонити пересилання повідомлень від ботів"
   },
+  "help.cmd_allow_files": {
+    "status": "unverified",
+    "text": "/allow-files enable|disable [local] — дозволити або заборонити перезалив файлів із Telegram на Discord (для сервера, або `local` — для поточного моста)"
+  },
+  "help.cmd_allow_files_tg": {
+    "status": "unverified",
+    "text": "/allow_files enable|disable [local] — дозволити або заборонити перезалив файлів із Telegram на Discord (для групи, або `local` — для поточного моста)"
+  },
+  "help.cmd_appeal": {
+    "status": "unverified",
+    "text": "/appeal — подати апеляцію на бан (після входу на сервер апеляцій)"
+  },
   "help.cmd_atb": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/atb <id_мосту> — прив'язати цей чат до мосту (адміни бота)"
   },
   "help.cmd_backup": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/backup — отримати резервну копію бази даних (адміни бота)"
   },
   "help.cmd_bridge": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/bridge — інформація про міст і підключені чати"
   },
   "help.cmd_deadchat": {
-    "status": "verified",
-    "text": "/deadchat <роль> <години> | disable — пінгувати роль при неактивності (тільки Discord)"
+    "status": "unverified",
+    "text": "/deadchat <роль> <години> | disable — пінгувати роль за неактивності (лише Discord)"
   },
   "help.cmd_deadtopic": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/deadtopic enable|disable — раз на 6 днів без активності надсилати фантомне повідомлення для збереження теми"
   },
   "help.cmd_force_leave": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/force_leave <платформа> <id> — вивести бота з чату (адміни бота)"
   },
   "help.cmd_help": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/help — показати список команд"
   },
   "help.cmd_lang": {
@@ -252,24 +440,40 @@
     "text": "/lang <код> — встановити мову бота за замовчуванням для всього сервера/групи (адміни мосту)"
   },
   "help.cmd_list_chats": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/list_chats — список усіх чатів бота (адміни бота)"
   },
   "help.cmd_loc_compare": {
-    "status": "verified",
-    "text": "/loc-compare <код> — порівняння репліки за мовами"
+    "status": "unverified",
+    "text": "/loc-compare <код> — порівняння перекладів репліки різними мовами"
   },
   "help.cmd_loc_reply": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/loc-reply <код> <текст> — відповісти на пропозицію локалізації (адміни бота)"
   },
   "help.cmd_loc_suggest": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/loc-suggest <мова> <код> <текст> — запропонувати варіант локалізації"
   },
   "help.cmd_locale": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/locale [код] — статус локалізації або файл обраної мови"
+  },
+  "help.cmd_localizer_add": {
+    "status": "unverified",
+    "text": "/localizer-add <користувач> — видати статус локалізатора: правка локалізації через панель керування (адміни бота)"
+  },
+  "help.cmd_localizer_add_tg": {
+    "status": "unverified",
+    "text": "/localizer-add <ID | @username | відповідь> — видати статус локалізатора: правка локалізації через панель керування (адміни бота)"
+  },
+  "help.cmd_localizer_rem": {
+    "status": "unverified",
+    "text": "/localizer-rem <користувач> — відкликати делегований статус локалізатора (адміни бота)"
+  },
+  "help.cmd_localizer_rem_tg": {
+    "status": "unverified",
+    "text": "/localizer-rem <ID | @username | відповідь> — відкликати делегований статус локалізатора (адміни бота)"
   },
   "help.cmd_locallang": {
     "status": "unverified",
@@ -280,39 +484,79 @@
     "text": "/mention <user> — згадати Discord-користувача з іншої спільноти мосту (кулдаун 1 година на користувача)"
   },
   "help.cmd_newschat": {
-    "status": "verified",
-    "text": "/newschat add <емодзі> | disable — автореакція на повідомлення в каналі новин (тільки Discord)"
+    "status": "unverified",
+    "text": "/newschat add <емодзі> | disable — авто-реакція на повідомлення в каналі новин (лише Discord)"
   },
   "help.cmd_poll": {
     "status": "unverified",
     "text": "/poll <текст> <час> <варіанти> — анонімне голосування в усіх чатах мосту"
   },
+  "help.cmd_privacy": {
+    "status": "unverified",
+    "text": "/privacy — вирішити, що бот може розповідати про вас"
+  },
   "help.cmd_remadmin": {
-    "status": "verified",
-    "text": "/remadmin <user> — видалити Bridge Admin"
+    "status": "unverified",
+    "text": "/remadmin <user> [local] — зняти адміна мостів на всьому сервері/групі або лише в цьому мосту"
+  },
+  "help.cmd_rembskyfeed": {
+    "status": "unverified",
+    "text": "/rembskyfeed <акаунт> — від'єднати акаунт Bluesky від цього мосту"
   },
   "help.cmd_remindrules": {
-    "status": "verified",
-    "text": "/remindrules <час> [повідомлень] — періодично публікувати правила в усіх чатах мосту (напр., 2h, 30m)"
+    "status": "unverified",
+    "text": "/remindrules <час> [повідомлень] — періодично публікувати правила в усіх чатах мосту (наприклад: 2h, 30m)"
+  },
+  "help.cmd_remlocaladmin": {
+    "status": "unverified",
+    "text": "/remlocaladmin <користувач> — відкликати делеговані права локального адміністратора (адміни бота)"
+  },
+  "help.cmd_remtgfeed": {
+    "status": "unverified",
+    "text": "/remtgfeed <канал> — від'єднати канал Telegram від цього мосту"
+  },
+  "help.cmd_remytfeed": {
+    "status": "unverified",
+    "text": "/remytfeed <канал> — від'єднати канал YouTube від цього мосту"
   },
   "help.cmd_rfb": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/rfb — відключити цей чат від мосту"
   },
   "help.cmd_setadmin": {
-    "status": "verified",
-    "text": "/setadmin <user> — додати Bridge Admin"
+    "status": "unverified",
+    "text": "/setadmin <user> [local] — призначити адміна мостів в усіх мостах цього сервера/групи або лише в цьому мосту"
+  },
+  "help.cmd_setbskyfeed": {
+    "status": "unverified",
+    "text": "/setbskyfeed <акаунт> — приєднати публічний акаунт Bluesky до цього мосту"
+  },
+  "help.cmd_setlocaladmin": {
+    "status": "unverified",
+    "text": "/setlocaladmin <користувач> — делегувати права локального адміністратора всього сервера/групи (адміни бота)"
+  },
+  "help.cmd_setname": {
+    "status": "unverified",
+    "text": "/setname [name] [user] — задати псевдонім, який апелянти бачать замість «Консул А» (для консулів; без імені — скидання, параметр `user` лише для адміністраторів бота)"
+  },
+  "help.cmd_settgfeed": {
+    "status": "unverified",
+    "text": "/settgfeed <канал> — приєднати публічний канал Telegram до цього мосту"
+  },
+  "help.cmd_setytfeed": {
+    "status": "unverified",
+    "text": "/setytfeed <канал> — приєднати публічний канал YouTube до цього мосту"
   },
   "help.cmd_shadowban": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/shadow-ban <user> — приховати повідомлення користувача від пересилання"
   },
   "help.cmd_unverify": {
-    "status": "verified",
-    "text": "/unverify <user> — скасувати верифікацію користувача"
+    "status": "unverified",
+    "text": "/unverify <user> — відкликати верифікацію користувача"
   },
   "help.cmd_verify": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/verify — підтвердити згоду на пересилання повідомлень"
   },
   "help.cmd_verify_list": {
@@ -320,27 +564,27 @@
     "text": "/verify-list enable|disable — публікувати ID (роз)верифікованих користувачів у канали синхронізації для Confederate Guard (адміни бота)"
   },
   "help.cmd_webhooks": {
-    "status": "verified",
-    "text": "/webhooks enable|disable — показувати переслані повідомлення як вебхуки (з аватаром та ім'ям відправника)"
+    "status": "unverified",
+    "text": "/webhooks enable|disable [scope: local] — показувати переслані повідомлення як вебхуки (аватар та ім'я відправника), для всього сервера або лише для цього мосту"
   },
   "help.cmd_whois": {
-    "status": "verified",
+    "status": "unverified",
     "text": "/whois — інформація про автора повідомлення (відповіддю на relay-повідомлення бота)"
   },
   "help.section_admins": {
-    "status": "verified",
-    "text": "Для адмінів моста"
+    "status": "unverified",
+    "text": "Для адміністраторів мосту"
   },
   "help.section_bot_admins": {
-    "status": "verified",
-    "text": "Для адмінів бота"
+    "status": "unverified",
+    "text": "Для адміністраторів бота"
   },
   "help.section_everyone": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Для всіх"
   },
   "help.title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Команди бота"
   },
   "lang_save_error": {
@@ -376,15 +620,15 @@
     "text": "Список великий — завантажую файл."
   },
   "loc_compare_header": {
-    "status": "verified",
-    "text": "Порівняння репліки `{key}` за мовами:"
+    "status": "unverified",
+    "text": "Порівняння репліки `{key}` різними мовами:"
   },
   "loc_compare_not_found": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Репліку з кодом `{key}` не знайдено в локалізаціях."
   },
   "loc_compare_untranslated": {
-    "status": "verified",
+    "status": "unverified",
     "text": "(не перекладено)"
   },
   "loc_compare_usage": {
@@ -392,40 +636,40 @@
     "text": "Використання: /loc_compare <код репліки>"
   },
   "loc_cooldown": {
-    "status": "verified",
-    "text": "Цей файл уже запитували нещодавно. Спробуйте пізніше (не частіше ніж раз на 10 хвилин на сервер/групу)."
+    "status": "unverified",
+    "text": "Цей файл уже нещодавно запитували. Спробуйте пізніше (не частіше одного разу на 10 хвилин на сервер/групу)."
   },
   "loc_file_caption": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Локалізація: {name} ({code}). Перевірено: {percent}%."
   },
   "loc_list_footer": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Надішліть /locale <код>, щоб отримати файл локалізації."
   },
   "loc_list_header": {
-    "status": "verified",
-    "text": "Доступні мови локалізації (🟩 перевірено, 🟧 не перевірено, 🟥 не перекладено):"
+    "status": "unverified",
+    "text": "Доступні мови локалізації (🟩 — перевірено, 🟧 — не перевірено, 🟥 — не перекладено):"
   },
   "loc_reply_dm_body": {
-    "status": "verified",
+    "status": "unverified",
     "text": "> {suggestion}\n{reply}\n\nМова: {name} / {lang}\nКод: {key}"
   },
   "loc_reply_dm_title": {
-    "status": "verified",
-    "text": "Відповідь щодо вашої пропозиції локалізації"
+    "status": "unverified",
+    "text": "Відповідь від адміністратора бота"
   },
   "loc_reply_failed": {
-    "status": "verified",
-    "text": "Не вдалося надіслати особисте повідомлення користувачу (можливо, закриті ПП)."
+    "status": "unverified",
+    "text": "Не вдалося надіслати особисте повідомлення користувачеві (можливо, закриті ОП)."
   },
   "loc_reply_not_found": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Повідомлення з кодом {code} не знайдено."
   },
   "loc_reply_sent": {
-    "status": "verified",
-    "text": "Відповідь надіслано користувачу."
+    "status": "unverified",
+    "text": "Відповідь надіслано користувачеві."
   },
   "loc_reply_support_prefix": {
     "status": "unverified",
@@ -436,24 +680,52 @@
     "text": "Використання: /loc_reply <код> <текст>"
   },
   "loc_suggest_confirm": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Дякуємо! Вашу пропозицію надіслано команді. Код вашого повідомлення: {code}"
   },
   "loc_suggest_no_support": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Канал підтримки не налаштовано. Зверніться до адміністратора бота."
   },
   "loc_suggest_support_body": {
-    "status": "verified",
+    "status": "unverified",
     "text": "{suggestion}\n\nМова: {name} / {lang}\nКод: {key}"
   },
   "loc_suggest_usage": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Використання: /loc-suggest <мова> <код репліки> <текст>"
   },
   "loc_unknown_lang": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Невідома мова: {lang}. Доступні: {supported}."
+  },
+  "localizer_add_already": {
+    "status": "unverified",
+    "text": "Користувач {user_id} уже є локалізатором цього бота."
+  },
+  "localizer_add_dm": {
+    "status": "unverified",
+    "text": "Вам видано статус локалізатора: тепер ви можете редагувати локалізацію цього бота через його панель керування."
+  },
+  "localizer_add_done": {
+    "status": "unverified",
+    "text": "Користувач {user_id} тепер є локалізатором цього бота й може редагувати його локалізацію через панель керування."
+  },
+  "localizer_add_usage": {
+    "status": "unverified",
+    "text": "Використання: /localizer-add <ID або @username>, або дайте відповідь командою на повідомлення користувача."
+  },
+  "localizer_rem_done": {
+    "status": "unverified",
+    "text": "Користувач {user_id} більше не є локалізатором цього бота."
+  },
+  "localizer_rem_not": {
+    "status": "unverified",
+    "text": "Користувач {user_id} не має делегованого статусу локалізатора. (Адміни є локалізаторами автоматично, і ця команда їх не знімає.)"
+  },
+  "localizer_rem_usage": {
+    "status": "unverified",
+    "text": "Використання: /localizer-rem <ID або @username>, або дайте відповідь командою на повідомлення користувача."
   },
   "locallang_usage": {
     "status": "unverified",
@@ -467,13 +739,17 @@
     "status": "unverified",
     "text": "У цьому мості немає Discord-чатів, куди можна надіслати згадку."
   },
+  "mention_opted_out": {
+    "status": "unverified",
+    "text": "Цей користувач вимкнув згадки з інших спільнот."
+  },
   "mention_sent": {
     "status": "unverified",
     "text": "Згадку надіслано."
   },
   "mention_usage": {
     "status": "unverified",
-    "text": "Використання: /mention <id_або_імʼя_користувача>"
+    "text": "Використання: /mention <id_або_ім'я_користувача>"
   },
   "month_names": {
     "status": "unverified",
@@ -498,7 +774,7 @@
   },
   "newschat_bad_emoji": {
     "status": "unverified",
-    "text": "Цей емодзі не можна використати як реакцію. Спробуйте скопіювати емодзі або використати формат `<:name:id>`."
+    "text": "Це емодзі не можна використати як реакцію. Спробуйте скопіювати емодзі або використати формат `<:name:id>`."
   },
   "newschat_disabled": {
     "status": "unverified",
@@ -513,7 +789,7 @@
     "text": "Використання: /newschat add <емодзі> | /newschat disable"
   },
   "no_permission": {
-    "status": "verified",
+    "status": "unverified",
     "text": "У вас немає прав для використання цієї команди."
   },
   "poll_anonymous": {
@@ -538,11 +814,11 @@
   },
   "poll_not_in_bridge": {
     "status": "unverified",
-    "text": "Цей чат не входить до жодного мосту."
+    "text": "Цей чат не пов'язано з жодним із мостів."
   },
   "poll_not_verified": {
     "status": "unverified",
-    "text": "Голосувати можуть лише верифіковані користувачі (які дали згоду на пересилання повідомлень)."
+    "text": "Голосувати можуть лише верифіковані користувачі: спочатку використайте команду /verify."
   },
   "poll_results_header": {
     "status": "unverified",
@@ -568,13 +844,57 @@
     "status": "unverified",
     "text": "Ваш голос враховано."
   },
+  "privacy_btn_block_mention": {
+    "status": "unverified",
+    "text": "Згадки"
+  },
+  "privacy_btn_hide_avatar": {
+    "status": "unverified",
+    "text": "Аватар"
+  },
+  "privacy_btn_hide_whois": {
+    "status": "unverified",
+    "text": "Whois"
+  },
+  "privacy_header": {
+    "status": "unverified",
+    "text": "Тут ви вирішуєте, що бот може розповідати про вас. Натисніть кнопку, щоб увімкнути або вимкнути захист — налаштування діє в усіх чатах усіх мостів."
+  },
+  "privacy_not_yours": {
+    "status": "unverified",
+    "text": "Це меню іншого користувача. Надішліть /privacy, щоб відкрити своє."
+  },
+  "privacy_opt_block_mention": {
+    "status": "unverified",
+    "text": "Без згадок — інші спільноти не зможуть покликати мене командою /mention"
+  },
+  "privacy_opt_hide_avatar": {
+    "status": "unverified",
+    "text": "Сховати мій аватар — копії моїх повідомлень через вебхуки будуть із нейтральною картинкою"
+  },
+  "privacy_opt_hide_whois": {
+    "status": "unverified",
+    "text": "Сховати мене від whois — ніхто не зможе дізнатися про мене більше, ніж нікнейм та аватар"
+  },
+  "privacy_state_off": {
+    "status": "unverified",
+    "text": "вимкнено"
+  },
+  "privacy_state_on": {
+    "status": "unverified",
+    "text": "увімкнено"
+  },
+  "privacy_title": {
+    "status": "unverified",
+    "text": "Приватність"
+  },
   "remadmin_done": {
     "status": "unverified",
     "text": "Користувач {user_id} більше не адміністратор."
   },
   "remadmin_usage": {
     "status": "unverified",
-    "text": "Використання: /remadmin <id_або_імʼя_користувача>"
+    "text": "Використання: /remadmin <id_або_ім'я_користувача> — в усіх мостах цього сервера/групи; додайте `local` — лише в цьому мосту."
   },
   "remindrules_disabled": {
     "status": "unverified",
@@ -598,7 +918,7 @@
   },
   "remindrules_saved": {
     "status": "unverified",
-    "text": "Правила збережено — публікуватимуться в усіх чатах мосту кожні {interval}."
+    "text": "Правила збережено — вони публікуватимуться в усіх чатах мосту кожні {interval}."
   },
   "remindrules_usage_discord": {
     "status": "unverified",
@@ -608,17 +928,29 @@
     "status": "unverified",
     "text": "Використання: /remindrules <5h|30m> [повідомлень] — відповіддю на повідомлення з правилами."
   },
+  "remlocaladmin_done": {
+    "status": "unverified",
+    "text": "Користувача {user_id} позбавлено прав локального адміністратора цього сервера/групи."
+  },
+  "remlocaladmin_not_admin": {
+    "status": "unverified",
+    "text": "Користувач {user_id} не є локальним адміністратором цього сервера/групи."
+  },
+  "remlocaladmin_usage": {
+    "status": "unverified",
+    "text": "Використання: /remlocaladmin <ID або @username>, або дайте відповідь командою /remlocaladmin на повідомлення користувача."
+  },
   "reply_external": {
-    "status": "verified",
-    "text": "(у відповідь на повідомлення з іншого чату)"
+    "status": "unverified",
+    "text": "(відповідаючи на повідомлення з іншого чату)"
   },
   "reply_unknown": {
-    "status": "verified",
+    "status": "unverified",
     "text": "(відповідь на невідоме повідомлення)"
   },
   "reply_webhook": {
     "status": "unverified",
-    "text": "(у відповідь на [повідомлення {name}]({url}))"
+    "text": "(відповідаючи на [повідомлення {name}]({url}))"
   },
   "reply_webhook_someone": {
     "status": "unverified",
@@ -633,56 +965,124 @@
     "text": "Чат відключено від мосту."
   },
   "service_event.bot_started": {
-    "status": "verified",
-    "text": "🤖 Бота запущено."
+    "status": "unverified",
+    "text": "🤖 Бот запущено."
   },
   "service_event.bot_stopped": {
-    "status": "verified",
-    "text": "🛑 Бота зупинено."
+    "status": "unverified",
+    "text": "🛑 Бот зупинено."
   },
   "service_event.daily_auto_removed_bridge": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Міст {bridge_id} видалено з бази даних: у ньому не залишилося чатів."
   },
   "service_event.daily_auto_removed_chat": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Автовидалення з мосту: чат {chat_key} ({platform}) був недоступний понад 24 години."
   },
   "service_event.daily_loop_error": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Помилка циклу daily_check_loop: {error}"
   },
   "service_event.daily_missing_dc_channel": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Не бачу Discord-чат {chat_key}."
   },
   "service_event.daily_missing_tg_chat": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Не бачу Telegram-чат {chat_key}."
   },
   "service_event.daily_no_dc_manage_perm": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Недостатньо прав manage_messages у Discord-чаті {chat_key}."
   },
   "service_event.daily_no_tg_delete_perm": {
-    "status": "verified",
-    "text": "Недостатньо прав видаляти повідомлення в Telegram-чаті {chat_key}."
+    "status": "unverified",
+    "text": "Недостатньо прав на видалення повідомлень у Telegram-чаті {chat_key}."
   },
   "service_event.daily_tg_perm_check_error": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Помилка перевірки прав у Telegram-чаті {chat_key}: {error}"
   },
+  "service_event.feed_error": {
+    "status": "unverified",
+    "text": "Не вдалося прочитати підключене джерело @{account}: {error}"
+  },
+  "service_event.feed_stale": {
+    "status": "unverified",
+    "text": "Підключене джерело @{account} не оновлювалося з {date} — звідти давно нічого не надходить."
+  },
   "setadmin_bridge_dm": {
-    "status": "verified",
-    "text": "Вас призначено адміністратором мосту №{bridge_id}."
+    "status": "unverified",
+    "text": "Вас призначили адміністратором мосту №{bridge_id} на {place}."
   },
   "setadmin_bridge_done": {
-    "status": "verified",
-    "text": "Користувача {user_id} призначено адміністратором мосту."
+    "status": "unverified",
+    "text": "Користувач {user_id} призначений адміністратором мосту №{bridge_id}."
+  },
+  "setadmin_server_dm": {
+    "text": "Вас призначили адміністратором мостів на {place}. Права діють в усіх мостах, у яких бере участь {place}, — і в нинішніх, і в тих, до яких сервер/група приєднається пізніше.",
+    "status": "unverified"
+  },
+  "setadmin_server_done": {
+    "text": "Користувач {user_id} призначений адміністратором мостів на {place} — в усіх мостах, у яких бере участь цей сервер/група, включно з майбутніми.",
+    "status": "unverified"
   },
   "setadmin_usage": {
     "status": "unverified",
-    "text": "Використання: /setadmin <id_або_імʼя_користувача>"
+    "text": "Використання: /setadmin <id_або_ім'я_користувача> — в усіх мостах цього сервера/групи; додайте `local` — лише в цьому мосту."
+  },
+  "setlocaladmin_already": {
+    "status": "unverified",
+    "text": "Користувач {user_id} уже є локальним адміністратором цього сервера/групи."
+  },
+  "setlocaladmin_dm": {
+    "status": "unverified",
+    "text": "Тепер вас призначено локальним адміністратором {server}: у вас права адміністратора чатів у всіх чатах цього сервера/групи."
+  },
+  "setlocaladmin_done": {
+    "status": "unverified",
+    "text": "Користувачеві {user_id} видано права локального адміністратора всього цього сервера/групи."
+  },
+  "setlocaladmin_usage": {
+    "status": "unverified",
+    "text": "Використання: /setlocaladmin <ID або @username>, або дайте відповідь командою /setlocaladmin на повідомлення користувача."
+  },
+  "setname_done": {
+    "status": "unverified",
+    "text": "Ваш псевдонім тепер **{name}**. Апелянти бачитимуть його замість «Консул А» в усіх апеляціях — нинішніх і майбутніх."
+  },
+  "setname_done_other": {
+    "status": "unverified",
+    "text": "Псевдонім {user} тепер **{name}**. Апелянти бачитимуть його в усіх апеляціях — нинішніх і майбутніх."
+  },
+  "setname_reserved": {
+    "status": "unverified",
+    "text": "Такий псевдонім схожий на службовий підпис бота («Консул А» і подібні). Оберіть інший."
+  },
+  "setname_reset": {
+    "status": "unverified",
+    "text": "Псевдонім скинуто. Апелянти знову бачитимуть вас як «Консул А», «Консул Б» і так далі."
+  },
+  "setname_reset_other": {
+    "status": "unverified",
+    "text": "Псевдонім {user} скинуто. Апелянти знову бачитимуть їх як «Консул А», «Консул Б» і так далі."
+  },
+  "setname_taken": {
+    "status": "unverified",
+    "text": "Цей псевдонім уже зайнятий іншим консулом. Оберіть інший."
+  },
+  "setname_target_not_consul": {
+    "status": "unverified",
+    "text": "Цей користувач не консул, псевдонім йому задати не можна."
+  },
+  "setname_too_long": {
+    "status": "unverified",
+    "text": "Псевдонім задовгий: не більше {limit} символів."
+  },
+  "setname_user_forbidden": {
+    "status": "unverified",
+    "text": "Змінювати псевдонім іншого консула можуть лише адміністратори бота. Щоб змінити свій, викличте /setname без параметра `user`."
   },
   "shadowban_done": {
     "status": "unverified",
@@ -690,7 +1090,7 @@
   },
   "shadowban_usage": {
     "status": "unverified",
-    "text": "Використання: /shadow-ban <id_або_імʼя_користувача>"
+    "text": "Використання: /shadow-ban <id_або_ім'я_користувача>"
   },
   "status_members_forms": {
     "status": "unverified",
@@ -710,11 +1110,51 @@
   },
   "status_template": {
     "status": "unverified",
-    "text": "Об'єднує {members} {members_word} із {servers} {servers_word}"
+    "text": "Об'єднує {members} {members_word} з {servers} {servers_word}"
   },
   "sticker": {
-    "status": "verified",
-    "text": "[Стікер]"
+    "status": "unverified",
+    "text": "[Стикер]"
+  },
+  "tgfeed_already_attached": {
+    "status": "unverified",
+    "text": "@{account} вже приєднано сюди."
+  },
+  "tgfeed_attached": {
+    "status": "unverified",
+    "text": "Канал Telegram {name} (@{account}) приєднано до {where}. Його нові дописи надходитимуть туди, включно з чатами, які приєднаються пізніше — бот читає публічну веб-версію каналу, бо він не серед його адміністраторів."
+  },
+  "tgfeed_attached_live": {
+    "status": "unverified",
+    "text": "Канал Telegram {name} (@{account}) приєднано до {where}. Бот — адміністратор каналу, тому дописи надходитимуть одразу після публікації, включно з чатами, які приєднаються пізніше."
+  },
+  "tgfeed_invalid_channel": {
+    "status": "unverified",
+    "text": "Це не канал Telegram. Вкажіть те, що йде після t.me/, @ім'я або посилання на канал."
+  },
+  "tgfeed_not_attached": {
+    "status": "unverified",
+    "text": "@{account} сюди не приєднано."
+  },
+  "tgfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Використання: /remtgfeed <канал у Telegram> — те, що після t.me/, @ім'я або посилання."
+  },
+  "tgfeed_removed": {
+    "status": "unverified",
+    "text": "Дописи @{account} більше сюди не пересилаються."
+  },
+  "tgfeed_throttled": {
+    "status": "unverified",
+    "text": "Telegram зараз обмежує запити бота, тому прочитати @{account} не вдалося. Спробуйте за кілька хвилин."
+  },
+  "tgfeed_unreachable": {
+    "status": "unverified",
+    "text": "Не вдалося прочитати @{account}. Можливо, канал закритий чи не існує, або в нього вимкнено публічну веб-версію — тоді додайте бота до каналу адміністратором і повторіть команду."
+  },
+  "tgfeed_usage": {
+    "status": "unverified",
+    "text": "Використання: /settgfeed <канал у Telegram> — те, що після t.me/, @ім'я або посилання."
   },
   "too_many_requests": {
     "status": "unverified",
@@ -778,7 +1218,7 @@
   },
   "unverify_done": {
     "status": "unverified",
-    "text": "Верифікацію користувача {user_id} скасовано."
+    "text": "Верифікацію користувача {user_id} відкликано."
   },
   "verify_already": {
     "status": "unverified",
@@ -794,11 +1234,11 @@
   },
   "verify_list_disabled": {
     "status": "unverified",
-    "text": "Публікацію ID верифікованих/розверифікованих користувачів у канали синхронізації вимкнено."
+    "text": "Публікацію ID верифікованих/позбавлених верифікації користувачів у канали синхронізації вимкнено."
   },
   "verify_list_enabled": {
     "status": "unverified",
-    "text": "Публікацію ID верифікованих/розверифікованих користувачів у канали синхронізації увімкнено."
+    "text": "Публікацію ID верифікованих/позбавлених верифікації користувачів у канали синхронізації ввімкнено."
   },
   "verify_list_usage": {
     "status": "unverified",
@@ -817,28 +1257,32 @@
     "text": "Дякуємо — вас підтверджено."
   },
   "video_message": {
-    "status": "verified",
+    "status": "unverified",
     "text": "[Відеоповідомлення]"
   },
   "voice_message": {
-    "status": "verified",
+    "status": "unverified",
     "text": "[Голосове повідомлення]"
   },
+  "webhooks_bridge_disabled": {
+    "status": "unverified",
+    "text": "Пересилані повідомлення в каналах цього сервера в цьому мосту знову надходитимуть звичайними повідомленнями бота."
+  },
+  "webhooks_bridge_enabled": {
+    "status": "unverified",
+    "text": "Пересилані повідомлення тепер надходитимуть як повідомлення вебхуків у каналах цього сервера в цьому мосту, включно з каналами, які приєднаються до нього пізніше."
+  },
   "webhooks_disabled": {
-    "status": "verified",
-    "text": "Переслані повідомлення в цьому каналі знову надходитимуть звичайними повідомленнями бота."
+    "status": "unverified",
+    "text": "Пересилані повідомлення знову надходитимуть звичайними повідомленнями бота на всьому цьому сервері."
   },
   "webhooks_enabled": {
-    "status": "verified",
-    "text": "Переслані повідомлення в цьому каналі тепер надходитимуть як повідомлення вебхуків — з аватаром та ім'ям відправника."
-  },
-  "webhooks_thread_error": {
-    "status": "verified",
-    "text": "Вебхуки не працюють у гілках і темах форумів. Використовуйте команду у звичайному текстовому каналі."
+    "status": "unverified",
+    "text": "Пересилані повідомлення тепер надходитимуть як повідомлення вебхуків — з аватаром та ім'ям відправника — в усіх каналах цього сервера, у будь-яких мостах, включно з каналами, доданими пізніше. У гілках і темах форумів формат лишається звичайним: вебхуки там не працюють."
   },
   "webhooks_usage": {
-    "status": "verified",
-    "text": "Використання: /webhooks enable | /webhooks disable"
+    "status": "unverified",
+    "text": "Використання: /webhooks enable | /webhooks disable — для всього цього сервера; додайте `scope: local` — лише для цього мосту."
   },
   "weekday_names": {
     "status": "unverified",
@@ -853,99 +1297,143 @@
     ]
   },
   "whois.dc_template": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Нікнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nСтатус: {status}\nРежим: {mode}\nДата реєстрації Discord: {registered}\nАватар: {avatar}\nБанер: {banner}"
   },
   "whois.discord_left_guild": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Невідомо (користувач покинув сервер)"
   },
   "whois.discord_no_bio": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Біографія відсутня"
   },
   "whois.fetch_error": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Не вдалося отримати дані користувача: {error}"
   },
   "whois.field_bio": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Біо"
   },
   "whois.field_id": {
-    "status": "verified",
+    "status": "unverified",
     "text": "ID"
   },
   "whois.field_joined_server": {
-    "status": "verified",
-    "text": "Дата вступу на сервер"
+    "status": "unverified",
+    "text": "Серед учасників сервера з"
   },
   "whois.field_mode": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Режим"
   },
   "whois.field_nickname": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Нікнейм"
   },
   "whois.field_registered": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Дата реєстрації Discord"
   },
   "whois.field_status": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Статус"
   },
   "whois.field_username": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Юзернейм"
   },
   "whois.mode_dnd": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Не турбувати"
   },
   "whois.mode_idle": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Неактивний"
   },
   "whois.mode_offline": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Офлайн"
   },
   "whois.mode_online": {
-    "status": "verified",
+    "status": "unverified",
     "text": "У мережі"
   },
   "whois.not_verified": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Ця команда доступна лише верифікованим користувачам. Надішліть /verify, щоб підтвердити згоду на пересилання."
   },
   "whois.origin_missing": {
-    "status": "verified",
-    "text": "Початковий запис відсутній у базі даних."
+    "status": "unverified",
+    "text": "Вихідний запис відсутній у базі даних."
   },
   "whois.origin_not_found": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Не вдалося визначити джерело повідомлення."
   },
   "whois.origin_not_telegram": {
-    "status": "verified",
-    "text": "Джерело не Telegram; використайте /whois на відповідній платформі."
+    "status": "unverified",
+    "text": "Джерело повідомлення не Telegram; використовуйте /whois до повідомлень із відповідної платформи."
+  },
+  "whois.private": {
+    "status": "unverified",
+    "text": "Цей користувач обмежив те, що показує whois."
+  },
+  "whois.private_template": {
+    "status": "unverified",
+    "text": "Нікнейм: {nickname}\nАватар: {avatar}\n\nЦей користувач обмежив те, що показує whois."
   },
   "whois.tg_template": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Нікнейм: {nickname}\nЮзернейм: {username}\nID: {id}\nБіо: {bio}"
   },
   "whois.title": {
-    "status": "verified",
+    "status": "unverified",
     "text": "Інформація про користувача"
   },
   "whois.use_context_menu": {
-    "status": "verified",
-    "text": "Слеш-команда не може визначити повідомлення. Використайте контекстне меню: ПКМ на relay-повідомленні → Apps → whois."
+    "status": "unverified",
+    "text": "Slash-команда не може визначити повідомлення. Використайте контекстне меню: ПКМ на relay-повідомленні → Apps → whois."
   },
   "whois.use_reply": {
-    "status": "verified",
-    "text": "Використайте цю команду у відповіді на relay-повідомлення бота."
+    "status": "unverified",
+    "text": "Використовуйте цю команду відповіддю на relay-повідомлення бота."
+  },
+  "ytfeed_already_attached": {
+    "status": "unverified",
+    "text": "{account} вже приєднано сюди."
+  },
+  "ytfeed_attached": {
+    "status": "unverified",
+    "text": "Канал YouTube {name} ({account}) приєднано до {where}. Його нові відео надходитимуть туди, включно з чатами, які приєднаються пізніше."
+  },
+  "ytfeed_invalid_channel": {
+    "status": "unverified",
+    "text": "Це не канал YouTube. Вкажіть @хендл, посилання на канал або ідентифікатор виду UC…"
+  },
+  "ytfeed_not_attached": {
+    "status": "unverified",
+    "text": "{account} сюди не приєднано."
+  },
+  "ytfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Використання: /remytfeed <канал YouTube> — @хендл, посилання на канал або ідентифікатор виду UC…"
+  },
+  "ytfeed_removed": {
+    "status": "unverified",
+    "text": "Відео з {account} більше сюди не пересилаються."
+  },
+  "ytfeed_throttled": {
+    "status": "unverified",
+    "text": "YouTube зараз обмежує запити бота, тому прочитати {account} не вдалося. Спробуйте за кілька хвилин."
+  },
+  "ytfeed_unreachable": {
+    "status": "unverified",
+    "text": "Не вдалося прочитати {account}. Можливо, канал не існує або видалений, або YouTube зараз не відповідає."
+  },
+  "ytfeed_usage": {
+    "status": "unverified",
+    "text": "Використання: /setytfeed <канал YouTube> — @хендл, посилання на канал або ідентифікатор виду UC…"
   }
 }

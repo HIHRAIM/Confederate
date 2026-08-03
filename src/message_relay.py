@@ -247,6 +247,13 @@ def build_telegram_text(header, body_html, body_plain):
     body = _clip_escaped_html(escape_html(body_plain or ""), budget)
     return f"{header_html}\n{body}".strip()
 
+def relay_header_prefix(messenger_name, place_name):
+    """``[Messenger | Community]`` — or just ``[Messenger]`` for a source with no
+    community behind it, such as a Bluesky feed attached with `/setbskyfeed`."""
+    if place_name:
+        return f"[{messenger_name} | {place_name}]"
+    return f"[{messenger_name}]"
+
 def clean_display_name(value, max_len=64):
     """Имена пользователей/чатов попадают в заголовок relay-сообщения:
     убираем переводы строк (защита от подделки заголовка) и ограничиваем длину."""
@@ -283,7 +290,8 @@ def _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id):
             reply_line = localized_reply_unknown(lang)
         else:
             copy_row = db.cur.execute(
-                "SELECT message_id_platform FROM message_copies WHERE message_id=? AND platform=? AND chat_id=?",
+                "SELECT message_id_platform FROM message_copies"
+                " WHERE message_id=? AND platform=? AND chat_id=? AND COALESCE(kind,'main')='main'",
                 (reply_to_msg_db_id, chat["platform"], chat["chat_id"])
             ).fetchone()
             if copy_row:
@@ -332,6 +340,23 @@ def _forward_line(forward_type, forward_name, lang):
         return localized_forward_unknown(lang)
     return None
 
+def apply_gallery_links(platform, text, discord_text, telegram_html, gallery_urls):
+    """Attach the GALLERY links of re-uploaded Telegram files to one copy.
+
+    Discord gets every link in the message footer (the first one expands into a
+    preview, as usual). Telegram gets only the first one — the rest are sent as
+    separate follow-up messages, one per file, so that every file gets its own
+    preview instead of a single one standing in for all of them."""
+    if not gallery_urls:
+        return text, discord_text, telegram_html
+
+    footer = "\n".join(gallery_urls) if platform == "discord" else gallery_urls[0]
+    text = f"{text}\n{footer}".strip()
+    discord_text = f"{discord_text}\n{footer}".strip()
+    if telegram_html is not None:
+        telegram_html = f"{telegram_html}\n{escape_html(footer)}".strip()
+    return text, discord_text, telegram_html
+
 def build_discord_webhook_relay_body(message_db_id, chat, lang, body_discord):
     """Reconstruct a webhook copy's full content (reply + forward prefix lines,
     then body) so that editing the original keeps the prefixes the initial relay
@@ -377,8 +402,12 @@ async def relay_message(
     external_reply=False,
     is_bot_sender=False,
     avatar_url=None,
+    gallery_urls=None,
+    targets=None,
+    file_count=None,
+    file_count_source="telegram",
 ):
-    place_name = clean_display_name(place_name)
+    place_name = clean_display_name(place_name) if place_name else None
     sender_name = clean_display_name(sender_name)
 
     db.cur.execute(
@@ -407,7 +436,8 @@ async def relay_message(
     msg_id = inserted.lastrowid
     db.conn.commit()
 
-    targets = db.get_bridge_chats(bridge_id)
+    if targets is None:
+        targets = db.get_bridge_chats(bridge_id)
 
     for chat in targets:
         if chat["platform"] == origin_platform and chat["chat_id"] == origin_chat_id:
@@ -415,13 +445,14 @@ async def relay_message(
 
         lang = get_chat_lang(chat["chat_id"])
 
+        prefix = relay_header_prefix(messenger_name, place_name)
         if is_bot_sender:
             if chat["platform"] == "discord":
-                header = f"[{messenger_name} | {place_name}] {sender_name} <:bot:1513502696953352363>:"
+                header = f"{prefix} {sender_name} <:bot:1513502696953352363>:"
             else:
-                header = f"[{messenger_name} | {place_name}] {sender_name} 🤖:"
+                header = f"{prefix} {sender_name} 🤖:"
         else:
-            header = f"[{messenger_name} | {place_name}] {sender_name}:"
+            header = f"{prefix} {sender_name}:"
 
         reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id)
 
@@ -490,6 +521,17 @@ async def relay_message(
             if current_telegram_html is not None:
                 current_telegram_html = current_telegram_html.replace("__TG_VIDEO_NOTE__", escape_html(video_marker))
 
+        current_text, current_discord_text, current_telegram_html = apply_gallery_links(
+            chat["platform"], current_text, current_discord_text, current_telegram_html, gallery_urls
+        )
+
+        if file_count:
+            footer = f"[{localized_file_count_text(file_count, lang, source=file_count_source)}]"
+            current_text = f"{current_text}\n{footer}".strip()
+            current_discord_text = f"{current_discord_text}\n{footer}".strip()
+            if current_telegram_html is not None:
+                current_telegram_html = f"{current_telegram_html}\n{escape_html(footer)}".strip()
+
         sent_id = await send_to_chat_func(
             chat,
             header=header,
@@ -511,11 +553,60 @@ async def relay_message(
         db.cur.execute(
             """
             INSERT INTO message_copies
-            (message_id, platform, chat_id, message_id_platform)
-            VALUES (?,?,?,?)
+            (message_id, platform, chat_id, message_id_platform, kind)
+            VALUES (?,?,?,?,'main')
             """,
             (msg_id, chat["platform"], chat["chat_id"], sent_id)
         )
 
+        if chat["platform"] == "telegram" and gallery_urls and len(gallery_urls) > 1:
+            await _send_telegram_gallery_followups(
+                chat, msg_id, gallery_urls[1:], send_to_chat_func,
+                sender_name=sender_name, place_name=place_name,
+                messenger_name=messenger_name, avatar_url=avatar_url,
+                is_bot_sender=is_bot_sender,
+            )
+
     db.conn.commit()
     return msg_id
+
+async def _send_telegram_gallery_followups(
+    chat, msg_id, urls, send_to_chat_func, *, sender_name, place_name,
+    messenger_name, avatar_url, is_bot_sender,
+):
+    """Post the remaining GALLERY links into a Telegram chat, one message per
+    file, right after the main copy.
+
+    They are recorded as ``kind='file'`` copies of the same message, so deleting
+    the original takes them along and a reply to any of them still resolves to
+    the relayed message — while everything that renders the message body keeps
+    working off the single ``kind='main'`` copy."""
+    for url in urls:
+        try:
+            extra_id = await send_to_chat_func(
+                chat,
+                header="",
+                body_plain=url,
+                body_discord=url,
+                body_telegram_html=escape_html(url),
+                reply_line=None,
+                reply_link_line=None,
+                reply_to_platform_message_id=None,
+                sender_name=sender_name,
+                place_name=place_name,
+                messenger_name=messenger_name,
+                avatar_url=avatar_url,
+                is_bot_sender=is_bot_sender,
+            )
+        except Exception:
+            continue
+        if not extra_id:
+            continue
+        db.cur.execute(
+            """
+            INSERT INTO message_copies
+            (message_id, platform, chat_id, message_id_platform, kind)
+            VALUES (?,?,?,?,'file')
+            """,
+            (msg_id, chat["platform"], chat["chat_id"], extra_id)
+        )

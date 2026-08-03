@@ -1,11 +1,11 @@
 {
   "allow_bots_disabled": {
     "status": "unverified",
-    "text": "As mensagens de bots e webhooks não serão mais encaminhadas deste chat."
+    "text": "As mensagens de bots e webhooks não serão mais retransmitidas deste chat."
   },
   "allow_bots_enabled": {
     "status": "unverified",
-    "text": "As mensagens de bots e webhooks agora serão encaminhadas deste chat."
+    "text": "As mensagens de bots e webhooks agora serão retransmitidas deste chat."
   },
   "allow_bots_usage": {
     "status": "unverified",
@@ -15,13 +15,125 @@
     "status": "unverified",
     "text": "Uso: /allow_bots enable | /allow_bots disable"
   },
+  "allow_files_bridge_disabled": {
+    "status": "unverified",
+    "text": "Os arquivos enviados no Telegram não serão mais reenviados ao Discord para os chats desta ponte."
+  },
+  "allow_files_bridge_enabled": {
+    "status": "unverified",
+    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os chats desta ponte, incluindo os que entrarem depois. Só funciona onde todos os chats da ponte permitem."
+  },
+  "allow_files_disabled": {
+    "status": "unverified",
+    "text": "Os arquivos enviados no Telegram não serão mais reenviados ao Discord para os chats deste servidor."
+  },
+  "allow_files_enabled": {
+    "status": "unverified",
+    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os chats deste servidor e em qualquer ponte. Só funciona onde todos os chats da ponte permitem."
+  },
+  "allow_files_no_permission": {
+    "status": "unverified",
+    "text": "Apenas administradores da ponte e administradores do bot podem alterar o consentimento para o reenvio de arquivos."
+  },
+  "allow_files_usage": {
+    "status": "unverified",
+    "text": "Uso: /allow-files enable | /allow-files disable — para todo o servidor; adicione `local` (/allow-files enable local) para abranger apenas a ponte atual."
+  },
+  "allow_files_usage_tg": {
+    "status": "unverified",
+    "text": "Uso: /allow_files enable | /allow_files disable — para todo o grupo; adicione `local` (/allow_files enable local) para abranger apenas a ponte atual."
+  },
+  "appeal_already_open": {
+    "status": "unverified",
+    "text": "Você já tem uma apelação aberta. Basta me escrever nas MDs — suas mensagens chegam aos cônsules."
+  },
+  "appeal_already_resolved": {
+    "status": "unverified",
+    "text": "Esta apelação já foi analisada."
+  },
+  "appeal_btn_condemn": {
+    "status": "unverified",
+    "text": "Permaban aqui"
+  },
+  "appeal_btn_pardon": {
+    "status": "unverified",
+    "text": "Desbanimento global"
+  },
+  "appeal_confirm_btn": {
+    "status": "unverified",
+    "text": "Confirmar"
+  },
+  "appeal_confirm_condemn": {
+    "status": "unverified",
+    "text": "Bloquear o usuário para sempre neste servidor (sem registro no banco de dados) e fechar a apelação?"
+  },
+  "appeal_confirm_pardon": {
+    "status": "unverified",
+    "text": "Remover TODOS os banimentos de rede deste usuário e fechar a apelação?"
+  },
+  "appeal_consul_letters": {
+    "status": "unverified",
+    "text": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  },
+  "appeal_consul_name": {
+    "status": "unverified",
+    "text": "Cônsul {letter}"
+  },
+  "appeal_created": {
+    "status": "unverified",
+    "text": "Apelação criada — verifique suas mensagens diretas."
+  },
+  "appeal_created_dm": {
+    "status": "unverified",
+    "text": "Sua apelação foi apresentada. Descreva sua situação aqui mesmo: cada mensagem que você me enviar nas MDs é encaminhada aos cônsules, e as respostas deles aparecerão aqui."
+  },
+  "appeal_dm_closed": {
+    "status": "unverified",
+    "text": "Não consigo enviar mensagens diretas para você, então a apelação não foi aberta. Permita MDs de membros do servidor (configurações de privacidade) e envie /appeal novamente."
+  },
+  "appeal_dm_place": {
+    "status": "unverified",
+    "text": "MD"
+  },
+  "appeal_failed": {
+    "status": "unverified",
+    "text": "Não foi possível abrir a apelação. Tente mais tarde ou contate a equipe do servidor."
+  },
+  "appeal_not_member": {
+    "status": "unverified",
+    "text": "As apelações são apresentadas pelo servidor de apelações. Entre nele primeiro e depois envie /appeal novamente: {invite}"
+  },
+  "appeal_note_condemned": {
+    "status": "unverified",
+    "text": "Veredicto: a apelação foi rejeitada. O usuário foi notificado e bloqueado para sempre neste servidor."
+  },
+  "appeal_note_pardoned": {
+    "status": "unverified",
+    "text": "Veredicto: a apelação foi aceita. O pedido de desbanimento global foi enviado ao Confederate Guard; o usuário foi notificado e removido deste servidor."
+  },
+  "appeal_thread_info": {
+    "status": "unverified",
+    "text": "Apelação de {mention} ({username}, ID {id}). As mensagens deste tópico são encaminhadas para a MD do usuário; os remetentes são mostrados a ele anonimamente como cônsules."
+  },
+  "appeal_user_condemned": {
+    "status": "unverified",
+    "text": "Sua apelação foi analisada e rejeitada. A decisão é definitiva."
+  },
+  "appeal_user_pardoned": {
+    "status": "unverified",
+    "text": "Sua apelação foi aceita: os banimentos de rede foram removidos. Você foi removido do servidor de apelações — não precisa mais dele."
+  },
+  "appeal_verdict_done": {
+    "status": "unverified",
+    "text": "Pronto."
+  },
   "atb_already_attached": {
     "status": "unverified",
     "text": "Este chat já está conectado a uma ponte."
   },
   "atb_attached": {
     "status": "unverified",
-    "text": "Chat conectado à ponte {bridge_id}."
+    "text": "O chat foi conectado à ponte {bridge_id}."
   },
   "atb_invalid_id": {
     "status": "unverified",
@@ -33,7 +145,7 @@
   },
   "backup_failed": {
     "status": "unverified",
-    "text": "Falha ao criar o backup: {error}"
+    "text": "Não foi possível criar a cópia de segurança: {error}"
   },
   "backup_private_only": {
     "status": "unverified",
@@ -59,13 +171,17 @@
     "status": "unverified",
     "text": "Chats conectados"
   },
+  "bridge_info.field_feeds": {
+    "status": "unverified",
+    "text": "Feeds ligados"
+  },
   "bridge_info.field_number": {
     "status": "unverified",
     "text": "Número"
   },
   "bridge_info.not_in_bridge": {
     "status": "unverified",
-    "text": "Este chat não está conectado a nenhuma ponte."
+    "text": "Este chat não está conectado a uma ponte."
   },
   "bridge_info.tg_template": {
     "status": "unverified",
@@ -85,11 +201,47 @@
   },
   "bridge_join": {
     "status": "unverified",
-    "text": "O chat {channel} de {server} foi conectado à ponte."
+    "text": "O chat {channel} de {server} entrou na ponte."
   },
   "bridge_leave": {
     "status": "unverified",
-    "text": "O chat {channel} de {server} foi desconectado da ponte."
+    "text": "O chat {channel} de {server} foi excluído da ponte."
+  },
+  "bskyfeed_already_attached": {
+    "status": "unverified",
+    "text": "@{account} já está ligado aqui."
+  },
+  "bskyfeed_attached": {
+    "status": "unverified",
+    "text": "A conta do Bluesky {name} (@{account}) foi ligada a {where}. As novas publicações chegarão lá, inclusive aos chats que entrarem depois."
+  },
+  "bskyfeed_invalid_account": {
+    "status": "unverified",
+    "text": "Isso não é uma conta do Bluesky. Informe um handle, @handle, um link do perfil ou um DID."
+  },
+  "bskyfeed_not_attached": {
+    "status": "unverified",
+    "text": "@{account} não está ligado aqui."
+  },
+  "bskyfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Uso: /rembskyfeed <conta do Bluesky> — handle, @handle, link do perfil ou DID."
+  },
+  "bskyfeed_removed": {
+    "status": "unverified",
+    "text": "As publicações de @{account} não são mais encaminhadas para cá."
+  },
+  "bskyfeed_throttled": {
+    "status": "unverified",
+    "text": "O Bluesky está limitando as requisições do bot agora, então não foi possível ler @{account}. Tente novamente em alguns minutos."
+  },
+  "bskyfeed_unreachable": {
+    "status": "unverified",
+    "text": "Não foi possível ler @{account}. A conta pode não existir ou ter sido excluída, ou o Bluesky não está respondendo agora."
+  },
+  "bskyfeed_usage": {
+    "status": "unverified",
+    "text": "Uso: /setbskyfeed <conta do Bluesky> — handle, @handle, link do perfil ou DID."
   },
   "chat_not_in_bridge": {
     "status": "unverified",
@@ -97,11 +249,11 @@
   },
   "consent_body": {
     "status": "unverified",
-    "text": "Este chat está conectado a outros. As suas mensagens serão encaminhadas automaticamente para os chats vinculados. Se você editar ou excluir a sua mensagem em até 30 dias após o envio, ela também será atualizada ou desaparecerá automaticamente nos outros chats. Clique em \"Aceitar\" para concordar com o encaminhamento e continuar conversando. Para mais detalhes, verifique a descrição do chat ou a mensagem fixada."
+    "text": "Este chat está conectado a outros. Suas mensagens serão retransmitidas automaticamente para os chats vinculados. Se você editar ou excluir sua mensagem em até 30 dias após o envio, ela será atualizada ou desaparecerá automaticamente também nos outros chats. Pressione \"Aceito\" para concordar com a retransmissão e continuar conversando. Mais detalhes na descrição do chat ou na mensagem fixada."
   },
   "consent_button": {
     "status": "unverified",
-    "text": "Aceitar"
+    "text": "Aceito"
   },
   "consent_title": {
     "status": "unverified",
@@ -113,11 +265,11 @@
   },
   "deadchat_disabled": {
     "status": "unverified",
-    "text": "Deadchat desativado para este canal."
+    "text": "O deadchat foi desativado para este canal."
   },
   "deadchat_invalid_hours": {
     "status": "unverified",
-    "text": "Especifique a duração em horas (maior que 0)."
+    "text": "Indique a duração em horas (maior que 0)."
   },
   "deadchat_invalid_role": {
     "status": "unverified",
@@ -129,15 +281,15 @@
   },
   "deadtopic.disabled": {
     "status": "unverified",
-    "text": "Prevenção de tópico inativo desativada."
+    "text": "A preservação automática do tópico está desativada."
   },
   "deadtopic.enabled": {
     "status": "unverified",
-    "text": "Prevenção de tópico inativo ativada. A cada 6 dias de inatividade à meia-noite UTC o bot enviará e excluirá uma mensagem fantasma."
+    "text": "A preservação automática do tópico está ativada. A cada 6 dias sem atividade, à meia-noite UTC, o bot enviará e excluirá uma mensagem fantasma."
   },
   "deadtopic.phantom_message": {
     "status": "unverified",
-    "text": "Mensagem fantasma para manter o tópico."
+    "text": "Mensagem fantasma para preservar o tópico."
   },
   "deadtopic.usage": {
     "status": "unverified",
@@ -149,11 +301,11 @@
   },
   "discord_system_event_action.boosted_server": {
     "status": "unverified",
-    "text": "deu boost no servidor"
+    "text": "deu um boost no servidor"
   },
   "discord_system_event_action.created_thread": {
     "status": "unverified",
-    "text": "criou uma thread"
+    "text": "criou um tópico"
   },
   "discord_system_event_action.joined_server": {
     "status": "unverified",
@@ -163,20 +315,41 @@
     "status": "unverified",
     "text": "fixou uma mensagem"
   },
+  "feed_scope_bridge": {
+    "status": "unverified",
+    "text": "a ponte {bridge_id} e todos os seus chats"
+  },
+  "feed_scope_chat": {
+    "status": "unverified",
+    "text": "este chat (ainda não está em nenhuma ponte; assim que entrar, as publicações irão para todos os chats da ponte)"
+  },
+  "feed_stale_note": {
+    "status": "unverified",
+    "text": "Atenção: a publicação mais recente que a fonte oferece para @{account} é de {date}. A fonte parece parada há muito tempo; enquanto for assim, não há nada para encaminhar daqui."
+  },
   "file_count": {
     "status": "unverified",
     "text": "{count} {files} do Telegram"
+  },
+  "file_count_bluesky": {
+    "status": "unverified",
+    "text": "{count} {files} do Bluesky"
+  },
+  "file_count_youtube": {
+    "status": "unverified",
+    "text": "{count} {files} do YouTube"
   },
   "file_forms": {
     "status": "unverified",
     "text": [
       "arquivo",
+      "arquivos",
       "arquivos"
     ]
   },
   "force_leave_failed": {
     "status": "unverified",
-    "text": "Falha ao sair: {error}"
+    "text": "Não foi possível sair: {error}"
   },
   "force_leave_invalid_id": {
     "status": "unverified",
@@ -188,11 +361,11 @@
   },
   "force_leave_success_discord": {
     "status": "unverified",
-    "text": "O bot saiu do servidor {guild_id} e seus dados foram removidos do banco de dados."
+    "text": "O bot saiu do servidor {guild_id}; os dados do servidor foram removidos do banco de dados."
   },
   "force_leave_success_telegram": {
     "status": "unverified",
-    "text": "O bot saiu do chat do Telegram {chat_id} (ou seus dados foram removidos do banco de dados)."
+    "text": "O bot saiu do chat do Telegram {chat_id} (ou os dados foram removidos do banco)."
   },
   "force_leave_unsupported_platform": {
     "status": "unverified",
@@ -210,21 +383,37 @@
     "status": "unverified",
     "text": "(encaminhado de uma fonte desconhecida)"
   },
+  "group_only": {
+    "status": "unverified",
+    "text": "Este comando está disponível apenas em um grupo."
+  },
   "help.cmd_allow_bots": {
     "status": "unverified",
-    "text": "/allow-bots enable|disable — permitir ou bloquear o relay de mensagens de bots"
+    "text": "/allow-bots enable|disable — permitir ou proibir a retransmissão de mensagens de bots"
   },
   "help.cmd_allow_bots_tg": {
     "status": "unverified",
-    "text": "/allow_bots enable|disable — permitir ou bloquear o relay de mensagens de bots"
+    "text": "/allow_bots enable|disable — permitir ou proibir a retransmissão de mensagens de bots"
+  },
+  "help.cmd_allow_files": {
+    "status": "unverified",
+    "text": "/allow-files enable|disable [local] — permitir ou proibir o reenvio de arquivos do Telegram para o Discord (para o servidor, ou `local` para a ponte atual)"
+  },
+  "help.cmd_allow_files_tg": {
+    "status": "unverified",
+    "text": "/allow_files enable|disable [local] — permitir ou proibir o reenvio de arquivos do Telegram para o Discord (para o grupo, ou `local` para a ponte atual)"
+  },
+  "help.cmd_appeal": {
+    "status": "unverified",
+    "text": "/appeal — apresentar uma apelação de banimento (após entrar no servidor de apelações)"
   },
   "help.cmd_atb": {
     "status": "unverified",
-    "text": "/atb <id_ponte> — vincular este chat a uma ponte (admins do bot)"
+    "text": "/atb <id_da_ponte> — vincular este chat a uma ponte (administradores do bot)"
   },
   "help.cmd_backup": {
     "status": "unverified",
-    "text": "/backup — obter um backup do banco de dados (admins do bot)"
+    "text": "/backup — obter uma cópia de segurança do banco de dados (administradores do bot)"
   },
   "help.cmd_bridge": {
     "status": "unverified",
@@ -232,15 +421,15 @@
   },
   "help.cmd_deadchat": {
     "status": "unverified",
-    "text": "/deadchat <cargo> <horas> | disable — mencionar um cargo quando o chat está inativo (somente Discord)"
+    "text": "/deadchat <cargo> <horas> | disable — mencionar um cargo em caso de inatividade (somente Discord)"
   },
   "help.cmd_deadtopic": {
     "status": "unverified",
-    "text": "/deadtopic enable|disable — enviar mensagem fantasma a cada 6 dias de inatividade para manter o tópico ativo"
+    "text": "/deadtopic enable|disable — a cada 6 dias sem atividade, enviar uma mensagem fantasma para preservar o tópico"
   },
   "help.cmd_force_leave": {
     "status": "unverified",
-    "text": "/force_leave <plataforma> <id> — fazer o bot sair de um chat (admins do bot)"
+    "text": "/force_leave <plataforma> <id> — retirar o bot de um chat (administradores do bot)"
   },
   "help.cmd_help": {
     "status": "unverified",
@@ -248,27 +437,43 @@
   },
   "help.cmd_lang": {
     "status": "unverified",
-    "text": "/lang <código> — definir o idioma padrão do bot para todo o servidor/grupo (admins da ponte)"
+    "text": "/lang <código> — definir o idioma padrão do bot para todo o servidor/grupo (administradores da ponte)"
   },
   "help.cmd_list_chats": {
     "status": "unverified",
-    "text": "/list_chats — listar todos os chats do bot (admins do bot)"
+    "text": "/list_chats — lista de todos os chats do bot (administradores do bot)"
   },
   "help.cmd_loc_compare": {
     "status": "unverified",
-    "text": "/loc-compare <código> — comparar uma resposta entre idiomas"
+    "text": "/loc-compare <código> — comparação das traduções de uma mensagem em vários idiomas"
   },
   "help.cmd_loc_reply": {
     "status": "unverified",
-    "text": "/loc-reply <código> <texto> — responder a uma sugestão de localização (admins do bot)"
+    "text": "/loc-reply <código> <texto> — responder a uma sugestão de localização (administradores do bot)"
   },
   "help.cmd_loc_suggest": {
     "status": "unverified",
-    "text": "/loc-suggest <idioma> <código> <texto> — sugerir uma localização"
+    "text": "/loc-suggest <idioma> <código> <texto> — sugerir uma variante de localização"
   },
   "help.cmd_locale": {
     "status": "unverified",
-    "text": "/locale [código] — status da localização ou arquivo de um idioma"
+    "text": "/locale [código] — status da localização ou o arquivo do idioma escolhido"
+  },
+  "help.cmd_localizer_add": {
+    "status": "unverified",
+    "text": "/localizer-add <usuário> — conceder o status de localizador: edição da localização pelo painel de controle (administradores do bot)"
+  },
+  "help.cmd_localizer_add_tg": {
+    "status": "unverified",
+    "text": "/localizer-add <ID | @username | resposta> — conceder o status de localizador: edição da localização pelo painel de controle (administradores do bot)"
+  },
+  "help.cmd_localizer_rem": {
+    "status": "unverified",
+    "text": "/localizer-rem <usuário> — revogar o status delegado de localizador (administradores do bot)"
+  },
+  "help.cmd_localizer_rem_tg": {
+    "status": "unverified",
+    "text": "/localizer-rem <ID | @username | resposta> — revogar o status delegado de localizador (administradores do bot)"
   },
   "help.cmd_locallang": {
     "status": "unverified",
@@ -276,35 +481,75 @@
   },
   "help.cmd_mention": {
     "status": "unverified",
-    "text": "/mention <user> — mencionar um usuário do Discord de outra comunidade da ponte (1 hora de espera por usuário)"
+    "text": "/mention <user> — mencionar um usuário do Discord de outra comunidade da ponte (recarga de 1 hora por usuário)"
   },
   "help.cmd_newschat": {
     "status": "unverified",
-    "text": "/newschat add <emoji> | disable — reagir automaticamente a mensagens em um canal de notícias (somente Discord)"
+    "text": "/newschat add <emoji> | disable — reação automática às mensagens em um canal de notícias (somente Discord)"
   },
   "help.cmd_poll": {
     "status": "unverified",
     "text": "/poll <texto> <tempo> <opções> — votação anônima em todos os chats da ponte"
   },
+  "help.cmd_privacy": {
+    "status": "unverified",
+    "text": "/privacy — decida o que o bot pode revelar sobre você"
+  },
   "help.cmd_remadmin": {
     "status": "unverified",
-    "text": "/remadmin <user> — remover um Bridge Admin"
+    "text": "/remadmin <user> [local] — remove os direitos de administrador de pontes no servidor/grupo todo ou só nesta ponte"
+  },
+  "help.cmd_rembskyfeed": {
+    "status": "unverified",
+    "text": "/rembskyfeed <conta> — desliga uma conta do Bluesky desta ponte"
   },
   "help.cmd_remindrules": {
     "status": "unverified",
-    "text": "/remindrules <tempo> [mensagens] — publicar regras periodicamente em todos os chats da ponte (ex.: 2h, 30m)"
+    "text": "/remindrules <tempo> [mensagens] — publicar periodicamente as regras em todos os chats da ponte (por exemplo: 2h, 30m)"
+  },
+  "help.cmd_remlocaladmin": {
+    "status": "unverified",
+    "text": "/remlocaladmin <usuário> — revogar os direitos delegados de administrador local (administradores do bot)"
+  },
+  "help.cmd_remtgfeed": {
+    "status": "unverified",
+    "text": "/remtgfeed <canal> — desliga um canal do Telegram desta ponte"
+  },
+  "help.cmd_remytfeed": {
+    "status": "unverified",
+    "text": "/remytfeed <canal> — desliga um canal do YouTube desta ponte"
   },
   "help.cmd_rfb": {
     "status": "unverified",
-    "text": "/rfb — remover este chat da ponte"
+    "text": "/rfb — desconectar este chat da ponte"
   },
   "help.cmd_setadmin": {
     "status": "unverified",
-    "text": "/setadmin <user> — adicionar um Bridge Admin"
+    "text": "/setadmin <user> [local] — nomeia administrador de pontes em todas as pontes deste servidor/grupo ou só nesta ponte"
+  },
+  "help.cmd_setbskyfeed": {
+    "status": "unverified",
+    "text": "/setbskyfeed <conta> — liga uma conta pública do Bluesky a esta ponte"
+  },
+  "help.cmd_setlocaladmin": {
+    "status": "unverified",
+    "text": "/setlocaladmin <usuário> — delegar direitos de administrador local de todo o servidor/grupo (administradores do bot)"
+  },
+  "help.cmd_setname": {
+    "status": "unverified",
+    "text": "/setname [name] [user] — define o pseudônimo que os recorrentes veem em vez de “Cônsul A” (para cônsules; sem nome redefine, o parâmetro `user` é só para administradores do bot)"
+  },
+  "help.cmd_settgfeed": {
+    "status": "unverified",
+    "text": "/settgfeed <canal> — liga um canal público do Telegram a esta ponte"
+  },
+  "help.cmd_setytfeed": {
+    "status": "unverified",
+    "text": "/setytfeed <canal> — liga um canal público do YouTube a esta ponte"
   },
   "help.cmd_shadowban": {
     "status": "unverified",
-    "text": "/shadow-ban <user> — ocultar mensagens do usuário do relay"
+    "text": "/shadow-ban <user> — ocultar as mensagens de um usuário da retransmissão"
   },
   "help.cmd_unverify": {
     "status": "unverified",
@@ -312,27 +557,27 @@
   },
   "help.cmd_verify": {
     "status": "unverified",
-    "text": "/verify — confirmar o consentimento para o encaminhamento de mensagens"
+    "text": "/verify — confirmar o consentimento ao encaminhamento de mensagens"
   },
   "help.cmd_verify_list": {
     "status": "unverified",
-    "text": "/verify-list enable|disable — publicar os IDs de usuários (não) verificados nos canais de sincronização para Confederate Guard (admins do bot)"
+    "text": "/verify-list enable|disable — publicar os IDs de usuários (des)verificados nos canais de sincronização para o Confederate Guard (administradores do bot)"
   },
   "help.cmd_webhooks": {
     "status": "unverified",
-    "text": "/webhooks enable|disable — mostrar mensagens encaminhadas como webhooks (avatar e nome do remetente)"
+    "text": "/webhooks enable|disable [scope: local] — mostra as mensagens encaminhadas como webhooks (avatar e nome do remetente), no servidor todo ou só nesta ponte"
   },
   "help.cmd_whois": {
     "status": "unverified",
-    "text": "/whois — informações sobre o autor da mensagem (responda a uma mensagem relay do bot)"
+    "text": "/whois — informações sobre o autor de uma mensagem (em resposta a uma mensagem relay do bot)"
   },
   "help.section_admins": {
     "status": "unverified",
-    "text": "Para admines de ponte"
+    "text": "Para administradores da ponte"
   },
   "help.section_bot_admins": {
     "status": "unverified",
-    "text": "Para admins do bot"
+    "text": "Para administradores do bot"
   },
   "help.section_everyone": {
     "status": "unverified",
@@ -344,7 +589,7 @@
   },
   "lang_save_error": {
     "status": "unverified",
-    "text": "Falha ao salvar o idioma."
+    "text": "Não foi possível salvar o idioma."
   },
   "lang_set": {
     "status": "unverified",
@@ -364,7 +609,7 @@
   },
   "list_chats_no_telegram": {
     "status": "unverified",
-    "text": "Não há chats do Telegram no banco de dados."
+    "text": "Não há chats do Telegram no banco."
   },
   "list_chats_telegram_header": {
     "status": "unverified",
@@ -376,11 +621,11 @@
   },
   "loc_compare_header": {
     "status": "unverified",
-    "text": "Comparação da resposta `{key}` entre idiomas:"
+    "text": "Comparação da mensagem `{key}` em vários idiomas:"
   },
   "loc_compare_not_found": {
     "status": "unverified",
-    "text": "Nenhuma resposta com o código `{key}` foi encontrada nas localizações."
+    "text": "Nenhuma mensagem com o código `{key}` foi encontrada nas localizações."
   },
   "loc_compare_untranslated": {
     "status": "unverified",
@@ -388,11 +633,11 @@
   },
   "loc_compare_usage": {
     "status": "unverified",
-    "text": "Uso: /loc_compare <código>"
+    "text": "Uso: /loc_compare <código da mensagem>"
   },
   "loc_cooldown": {
     "status": "unverified",
-    "text": "Este arquivo foi solicitado recentemente. Tente novamente mais tarde (no máximo uma vez a cada 10 minutos por servidor/grupo)."
+    "text": "Este arquivo já foi solicitado recentemente. Tente mais tarde (no máximo uma vez a cada 10 minutos por servidor/grupo)."
   },
   "loc_file_caption": {
     "status": "unverified",
@@ -404,7 +649,7 @@
   },
   "loc_list_header": {
     "status": "unverified",
-    "text": "Idiomas de localização disponíveis (🟩 verificado, 🟧 não verificado, 🟥 não traduzido):"
+    "text": "Idiomas de localização disponíveis (🟩 — verificado, 🟧 — não verificado, 🟥 — não traduzido):"
   },
   "loc_reply_dm_body": {
     "status": "unverified",
@@ -412,11 +657,11 @@
   },
   "loc_reply_dm_title": {
     "status": "unverified",
-    "text": "Resposta à sua sugestão de localização"
+    "text": "Resposta de um administrador do bot"
   },
   "loc_reply_failed": {
     "status": "unverified",
-    "text": "Não foi possível enviar uma mensagem direta ao usuário (os DMs podem estar fechados)."
+    "text": "Não foi possível enviar uma mensagem direta ao usuário (as MDs dele podem estar fechadas)."
   },
   "loc_reply_not_found": {
     "status": "unverified",
@@ -436,7 +681,7 @@
   },
   "loc_suggest_confirm": {
     "status": "unverified",
-    "text": "Obrigado! Sua sugestão foi enviada. Código da sua mensagem: {code}"
+    "text": "Obrigado! Sua sugestão foi enviada à equipe. O código da sua mensagem: {code}"
   },
   "loc_suggest_no_support": {
     "status": "unverified",
@@ -448,11 +693,39 @@
   },
   "loc_suggest_usage": {
     "status": "unverified",
-    "text": "Uso: /loc-suggest <idioma> <código> <texto>"
+    "text": "Uso: /loc-suggest <idioma> <código da mensagem> <texto>"
   },
   "loc_unknown_lang": {
     "status": "unverified",
     "text": "Idioma desconhecido: {lang}. Disponíveis: {supported}."
+  },
+  "localizer_add_already": {
+    "status": "unverified",
+    "text": "O usuário {user_id} já é localizador deste bot."
+  },
+  "localizer_add_dm": {
+    "status": "unverified",
+    "text": "Você recebeu o status de localizador: agora pode editar a localização deste bot pelo painel de controle dele."
+  },
+  "localizer_add_done": {
+    "status": "unverified",
+    "text": "O usuário {user_id} agora é localizador deste bot e pode editar a localização dele pelo painel de controle."
+  },
+  "localizer_add_usage": {
+    "status": "unverified",
+    "text": "Uso: /localizer-add <ID ou @username>, ou responda com o comando à mensagem do usuário."
+  },
+  "localizer_rem_done": {
+    "status": "unverified",
+    "text": "O usuário {user_id} não é mais localizador deste bot."
+  },
+  "localizer_rem_not": {
+    "status": "unverified",
+    "text": "O usuário {user_id} não tem o status delegado de localizador. (Os administradores são localizadores automaticamente e este comando não retira o status deles.)"
+  },
+  "localizer_rem_usage": {
+    "status": "unverified",
+    "text": "Uso: /localizer-rem <ID ou @username>, ou responda com o comando à mensagem do usuário."
   },
   "locallang_usage": {
     "status": "unverified",
@@ -464,7 +737,11 @@
   },
   "mention_no_discord": {
     "status": "unverified",
-    "text": "Esta ponte não tem chats do Discord para onde enviar a menção."
+    "text": "Nesta ponte não há chats do Discord para onde enviar a menção."
+  },
+  "mention_opted_out": {
+    "status": "unverified",
+    "text": "Este usuário desativou as menções de outras comunidades."
   },
   "mention_sent": {
     "status": "unverified",
@@ -472,7 +749,7 @@
   },
   "mention_usage": {
     "status": "unverified",
-    "text": "Uso: /mention <id_ou_nome_de_usuário>"
+    "text": "Uso: /mention <id_ou_nome_do_usuário>"
   },
   "month_names": {
     "status": "unverified",
@@ -493,19 +770,19 @@
   },
   "newschat_added": {
     "status": "unverified",
-    "text": "Emoji `{emoji}` adicionado para este canal."
+    "text": "O emoji `{emoji}` foi adicionado para este canal."
   },
   "newschat_bad_emoji": {
     "status": "unverified",
-    "text": "Esse emoji não pode ser usado como reação. Tente copiar/colar um emoji ou usar o formato `<:name:id>`."
+    "text": "Este emoji não pode ser usado como reação. Tente copiar o emoji ou usar o formato `<:name:id>`."
   },
   "newschat_disabled": {
     "status": "unverified",
-    "text": "Newschat desativado para este canal."
+    "text": "O newschat foi desativado para este canal."
   },
   "newschat_specify_emoji": {
     "status": "unverified",
-    "text": "Especifique um emoji. Exemplos:\n• Unicode: 😀\n• Personalizado: `<:Name:1234567890>`\n• Animado: `<a:Name:1234567890>`"
+    "text": "Indique um emoji. Exemplos:\n• Unicode: 😀\n• Personalizado: `<:Name:1234567890>`\n• Animado: `<a:Name:1234567890>`"
   },
   "newschat_usage": {
     "status": "unverified",
@@ -521,7 +798,7 @@
   },
   "poll_closed": {
     "status": "unverified",
-    "text": "Esta votação já está encerrada."
+    "text": "Esta votação já foi encerrada."
   },
   "poll_created": {
     "status": "unverified",
@@ -529,19 +806,19 @@
   },
   "poll_duration_invalid": {
     "status": "unverified",
-    "text": "Formato de tempo inválido. Exemplos: 1h, 2d, 1m. Máximo: 30 dias."
+    "text": "Formato de tempo inválido. Exemplos: 1h, 2d, 1m. O máximo é 30 dias."
   },
   "poll_ends": {
     "status": "unverified",
-    "text": "A votação termina: {ends}"
+    "text": "A votação terminará: {ends}"
   },
   "poll_not_in_bridge": {
     "status": "unverified",
-    "text": "Este chat não faz parte de nenhuma ponte."
+    "text": "Este chat não está vinculado a nenhuma das pontes."
   },
   "poll_not_verified": {
     "status": "unverified",
-    "text": "Apenas usuários verificados (que consentiram com o encaminhamento de mensagens) podem votar."
+    "text": "Apenas usuários verificados podem votar: use primeiro o comando /verify."
   },
   "poll_results_header": {
     "status": "unverified",
@@ -549,7 +826,7 @@
   },
   "poll_too_few": {
     "status": "unverified",
-    "text": "São necessárias pelo menos 2 opções."
+    "text": "São necessárias pelo menos 2 opções de resposta."
   },
   "poll_total_votes": {
     "status": "unverified",
@@ -557,15 +834,59 @@
   },
   "poll_usage_discord": {
     "status": "unverified",
-    "text": "Uso: /poll <texto> <tempo: 1h, 2d; máx 30d> <opção 1> <opção 2> [opção 3] [opção 4] [opção 5]"
+    "text": "Uso: /poll <texto> <tempo: 1h, 2d; máx. 30d> <opção 1> <opção 2> [opção 3] [opção 4] [opção 5]"
   },
   "poll_usage_telegram": {
     "status": "unverified",
-    "text": "Uso: /poll <texto> | <tempo: 1h, 2d, 1m; máx 30d> | <opção 1> | <opção 2> | … (até 10 opções)"
+    "text": "Uso: /poll <texto> | <tempo: 1h, 2d, 1m; máx. 30d> | <opção 1> | <opção 2> | … (até 10 opções)"
   },
   "poll_vote_recorded": {
     "status": "unverified",
     "text": "Seu voto foi registrado."
+  },
+  "privacy_btn_block_mention": {
+    "status": "unverified",
+    "text": "Menções"
+  },
+  "privacy_btn_hide_avatar": {
+    "status": "unverified",
+    "text": "Avatar"
+  },
+  "privacy_btn_hide_whois": {
+    "status": "unverified",
+    "text": "Whois"
+  },
+  "privacy_header": {
+    "status": "unverified",
+    "text": "Aqui você decide o que o bot pode revelar sobre você. Toque num botão para ativar ou desativar uma proteção — o ajuste vale em todos os chats de todas as pontes."
+  },
+  "privacy_not_yours": {
+    "status": "unverified",
+    "text": "Este menu é de outra pessoa. Use /privacy para abrir o seu."
+  },
+  "privacy_opt_block_mention": {
+    "status": "unverified",
+    "text": "Sem menções — outras comunidades não poderão me chamar com /mention"
+  },
+  "privacy_opt_hide_avatar": {
+    "status": "unverified",
+    "text": "Ocultar meu avatar — as cópias das minhas mensagens enviadas por webhook levarão uma imagem neutra"
+  },
+  "privacy_opt_hide_whois": {
+    "status": "unverified",
+    "text": "Ocultar-me do whois — ninguém poderá saber de mim mais do que o apelido e o avatar"
+  },
+  "privacy_state_off": {
+    "status": "unverified",
+    "text": "desativado"
+  },
+  "privacy_state_on": {
+    "status": "unverified",
+    "text": "ativado"
+  },
+  "privacy_title": {
+    "status": "unverified",
+    "text": "Privacidade"
   },
   "remadmin_done": {
     "status": "unverified",
@@ -573,11 +894,11 @@
   },
   "remadmin_usage": {
     "status": "unverified",
-    "text": "Uso: /remadmin <id_ou_nome_de_usuário>"
+    "text": "Uso: /remadmin <id_ou_nome> — em todas as pontes deste servidor/grupo; adicione `local` apenas para esta ponte."
   },
   "remindrules_disabled": {
     "status": "unverified",
-    "text": "Lembrete de regras desativado para esta ponte."
+    "text": "O lembrete de regras foi desativado para esta ponte."
   },
   "remindrules_fetch_failed": {
     "status": "unverified",
@@ -585,11 +906,11 @@
   },
   "remindrules_invalid_duration": {
     "status": "unverified",
-    "text": "O primeiro parâmetro deve ser uma duração, por ex. 2h (2 horas) ou 30m (30 minutos)."
+    "text": "O primeiro parâmetro é uma duração, por exemplo 2h (2 horas) ou 30m (30 minutos)."
   },
   "remindrules_no_content": {
     "status": "unverified",
-    "text": "Forneça o texto das regras em `text` ou passe o `message_id` de uma mensagem deste canal."
+    "text": "Indique o texto das regras em `text` ou passe o `message_id` de uma mensagem deste canal."
   },
   "remindrules_reply_required": {
     "status": "unverified",
@@ -597,7 +918,7 @@
   },
   "remindrules_saved": {
     "status": "unverified",
-    "text": "Regras salvas — serão publicadas em todos os chats da ponte a cada {interval}."
+    "text": "As regras foram salvas — serão publicadas em todos os chats da ponte a cada {interval}."
   },
   "remindrules_usage_discord": {
     "status": "unverified",
@@ -606,6 +927,18 @@
   "remindrules_usage_telegram": {
     "status": "unverified",
     "text": "Uso: /remindrules <5h|30m> [mensagens] — em resposta à mensagem com as regras."
+  },
+  "remlocaladmin_done": {
+    "status": "unverified",
+    "text": "O usuário {user_id} perdeu os direitos de administrador local deste servidor/grupo."
+  },
+  "remlocaladmin_not_admin": {
+    "status": "unverified",
+    "text": "O usuário {user_id} não é administrador local deste servidor/grupo."
+  },
+  "remlocaladmin_usage": {
+    "status": "unverified",
+    "text": "Uso: /remlocaladmin <ID ou @username>, ou responda com /remlocaladmin à mensagem do usuário."
   },
   "reply_external": {
     "status": "unverified",
@@ -617,7 +950,7 @@
   },
   "reply_webhook": {
     "status": "unverified",
-    "text": "(respondendo à [mensagem de {name}]({url}))"
+    "text": "(respondendo a [uma mensagem de {name}]({url}))"
   },
   "reply_webhook_someone": {
     "status": "unverified",
@@ -629,7 +962,7 @@
   },
   "rfb_removed": {
     "status": "unverified",
-    "text": "Chat removido da ponte."
+    "text": "O chat foi desconectado da ponte."
   },
   "service_event.bot_started": {
     "status": "unverified",
@@ -641,55 +974,123 @@
   },
   "service_event.daily_auto_removed_bridge": {
     "status": "unverified",
-    "text": "A ponte {bridge_id} foi removida do banco de dados porque não restaram chats."
+    "text": "A ponte {bridge_id} foi removida do banco de dados: não restaram chats nela."
   },
   "service_event.daily_auto_removed_chat": {
     "status": "unverified",
-    "text": "Removido automaticamente da ponte: o chat {chat_key} ({platform}) ficou inacessível por mais de 24 horas."
+    "text": "Remoção automática da ponte: o chat {chat_key} ({platform}) ficou inacessível por mais de 24 horas."
   },
   "service_event.daily_loop_error": {
     "status": "unverified",
-    "text": "Erro no daily_check_loop: {error}"
+    "text": "Erro do ciclo daily_check_loop: {error}"
   },
   "service_event.daily_missing_dc_channel": {
     "status": "unverified",
-    "text": "Não consigo acessar o canal do Discord {chat_key}."
+    "text": "Não vejo o chat do Discord {chat_key}."
   },
   "service_event.daily_missing_tg_chat": {
     "status": "unverified",
-    "text": "Não consigo acessar o chat do Telegram {chat_key}."
+    "text": "Não vejo o chat do Telegram {chat_key}."
   },
   "service_event.daily_no_dc_manage_perm": {
     "status": "unverified",
-    "text": "Permissão manage_messages ausente no chat do Discord {chat_key}."
+    "text": "Permissões manage_messages insuficientes no chat do Discord {chat_key}."
   },
   "service_event.daily_no_tg_delete_perm": {
     "status": "unverified",
-    "text": "Permissão ausente para apagar mensagens no chat do Telegram {chat_key}."
+    "text": "Permissões insuficientes para excluir mensagens no chat do Telegram {chat_key}."
   },
   "service_event.daily_tg_perm_check_error": {
     "status": "unverified",
-    "text": "Erro ao verificar permissões no chat do Telegram {chat_key}: {error}"
+    "text": "Erro ao verificar as permissões no chat do Telegram {chat_key}: {error}"
+  },
+  "service_event.feed_error": {
+    "status": "unverified",
+    "text": "Não foi possível ler a fonte seguida @{account}: {error}"
+  },
+  "service_event.feed_stale": {
+    "status": "unverified",
+    "text": "A fonte conectada @{account} não se move desde {date} — há muito tempo nada chega de lá."
   },
   "setadmin_bridge_dm": {
     "status": "unverified",
-    "text": "Você foi nomeado administrador da ponte №{bridge_id}."
+    "text": "Você foi nomeado administrador da ponte nº {bridge_id}, em {place}."
   },
   "setadmin_bridge_done": {
     "status": "unverified",
-    "text": "O usuário {user_id} foi nomeado administrador da ponte."
+    "text": "O usuário {user_id} agora é administrador da ponte nº {bridge_id}."
+  },
+  "setadmin_server_dm": {
+    "text": "Você foi nomeado administrador de pontes em {place}. Os direitos valem em todas as pontes de que {place} participa — as atuais e as que entrarem depois.",
+    "status": "unverified"
+  },
+  "setadmin_server_done": {
+    "text": "O usuário {user_id} agora é administrador de pontes em {place} — em todas as pontes de que este servidor/grupo participa, inclusive nas futuras.",
+    "status": "unverified"
   },
   "setadmin_usage": {
     "status": "unverified",
-    "text": "Uso: /setadmin <id_ou_nome_de_usuário>"
+    "text": "Uso: /setadmin <id_ou_nome> — em todas as pontes deste servidor/grupo; adicione `local` apenas para esta ponte."
+  },
+  "setlocaladmin_already": {
+    "status": "unverified",
+    "text": "O usuário {user_id} já é administrador local deste servidor/grupo."
+  },
+  "setlocaladmin_dm": {
+    "status": "unverified",
+    "text": "Você foi nomeado administrador local de {server}: você tem direitos de administrador de chats em todos os chats deste servidor/grupo."
+  },
+  "setlocaladmin_done": {
+    "status": "unverified",
+    "text": "O usuário {user_id} recebeu direitos de administrador local de todo este servidor/grupo."
+  },
+  "setlocaladmin_usage": {
+    "status": "unverified",
+    "text": "Uso: /setlocaladmin <ID ou @username>, ou responda com /setlocaladmin à mensagem do usuário."
+  },
+  "setname_done": {
+    "status": "unverified",
+    "text": "O seu pseudônimo agora é **{name}**. Os recorrentes o verão em vez de “Cônsul A” em todos os recursos, atuais e futuros."
+  },
+  "setname_done_other": {
+    "status": "unverified",
+    "text": "O pseudônimo de {user} agora é **{name}**. Os recorrentes o verão em todos os recursos, atuais e futuros."
+  },
+  "setname_reserved": {
+    "status": "unverified",
+    "text": "Esse pseudônimo se parece com a assinatura anônima do próprio bot (“Cônsul A” e semelhantes). Escolha outro."
+  },
+  "setname_reset": {
+    "status": "unverified",
+    "text": "O seu pseudônimo foi redefinido. Os recorrentes voltarão a vê-lo como “Cônsul A”, “Cônsul B” e assim por diante."
+  },
+  "setname_reset_other": {
+    "status": "unverified",
+    "text": "O pseudônimo de {user} foi redefinido. Os recorrentes voltarão a vê-lo como “Cônsul A”, “Cônsul B” e assim por diante."
+  },
+  "setname_taken": {
+    "status": "unverified",
+    "text": "Outro cônsul já usa esse pseudônimo. Escolha outro."
+  },
+  "setname_target_not_consul": {
+    "status": "unverified",
+    "text": "Esse usuário não é cônsul, portanto não pode receber um pseudônimo."
+  },
+  "setname_too_long": {
+    "status": "unverified",
+    "text": "O pseudônimo é longo demais: no máximo {limit} caracteres."
+  },
+  "setname_user_forbidden": {
+    "status": "unverified",
+    "text": "Apenas administradores do bot podem alterar o pseudônimo de outro cônsul. Para alterar o seu, use /setname sem o parâmetro `user`."
   },
   "shadowban_done": {
     "status": "unverified",
-    "text": "Usuário {user_id} em shadow-ban — as mensagens dele não serão encaminhadas."
+    "text": "O usuário {user_id} foi ocultado (shadow-ban) — as mensagens dele não serão retransmitidas."
   },
   "shadowban_usage": {
     "status": "unverified",
-    "text": "Uso: /shadow-ban <id_ou_nome_de_usuário>"
+    "text": "Uso: /shadow-ban <id_ou_nome_do_usuário>"
   },
   "status_members_forms": {
     "status": "unverified",
@@ -709,15 +1110,55 @@
   },
   "status_template": {
     "status": "unverified",
-    "text": "Conecta {members} {members_word} de {servers} {servers_word}"
+    "text": "Une {members} {members_word} de {servers} {servers_word}"
   },
   "sticker": {
     "status": "unverified",
-    "text": "[Sticker]"
+    "text": "[Figurinha]"
+  },
+  "tgfeed_already_attached": {
+    "status": "unverified",
+    "text": "@{account} já está ligado aqui."
+  },
+  "tgfeed_attached": {
+    "status": "unverified",
+    "text": "O canal do Telegram {name} (@{account}) foi ligado a {where}. As novas publicações chegarão lá, inclusive aos chats que entrarem depois — o bot lê a versão web pública do canal, já que não é administrador dele."
+  },
+  "tgfeed_attached_live": {
+    "status": "unverified",
+    "text": "O canal do Telegram {name} (@{account}) foi ligado a {where}. O bot é administrador do canal, então as publicações chegarão assim que forem publicadas, inclusive aos chats que entrarem depois."
+  },
+  "tgfeed_invalid_channel": {
+    "status": "unverified",
+    "text": "Isso não é um canal do Telegram. Informe o que vem depois de t.me/, @nome ou um link do canal."
+  },
+  "tgfeed_not_attached": {
+    "status": "unverified",
+    "text": "@{account} não está ligado aqui."
+  },
+  "tgfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Uso: /remtgfeed <canal do Telegram> — o que vem depois de t.me/, @nome ou um link."
+  },
+  "tgfeed_removed": {
+    "status": "unverified",
+    "text": "As publicações de @{account} não são mais encaminhadas para cá."
+  },
+  "tgfeed_throttled": {
+    "status": "unverified",
+    "text": "O Telegram está limitando as requisições do bot agora, então não foi possível ler @{account}. Tente novamente em alguns minutos."
+  },
+  "tgfeed_unreachable": {
+    "status": "unverified",
+    "text": "Não foi possível ler @{account}. O canal pode ser privado ou não existir, ou tem a versão web pública desativada — nesse caso adicione o bot ao canal como administrador e repita o comando."
+  },
+  "tgfeed_usage": {
+    "status": "unverified",
+    "text": "Uso: /settgfeed <canal do Telegram> — o que vem depois de t.me/, @nome ou um link."
   },
   "too_many_requests": {
     "status": "unverified",
-    "text": "Muitas solicitações — tente novamente mais tarde."
+    "text": "Solicitações demais — tente mais tarde."
   },
   "ts_ago": {
     "status": "unverified",
@@ -731,6 +1172,7 @@
     "status": "unverified",
     "text": [
       "dia",
+      "dias",
       "dias"
     ]
   },
@@ -738,6 +1180,7 @@
     "status": "unverified",
     "text": [
       "hora",
+      "horas",
       "horas"
     ]
   },
@@ -745,6 +1188,7 @@
     "status": "unverified",
     "text": [
       "minuto",
+      "minutos",
       "minutos"
     ]
   },
@@ -752,6 +1196,7 @@
     "status": "unverified",
     "text": [
       "mês",
+      "meses",
       "meses"
     ]
   },
@@ -759,6 +1204,7 @@
     "status": "unverified",
     "text": [
       "segundo",
+      "segundos",
       "segundos"
     ]
   },
@@ -766,6 +1212,7 @@
     "status": "unverified",
     "text": [
       "ano",
+      "anos",
       "anos"
     ]
   },
@@ -787,11 +1234,11 @@
   },
   "verify_list_disabled": {
     "status": "unverified",
-    "text": "A publicação dos IDs de usuários verificados/não verificados nos canais de sincronização está desativada."
+    "text": "A publicação dos IDs de usuários verificados/desverificados nos canais de sincronização está desativada."
   },
   "verify_list_enabled": {
     "status": "unverified",
-    "text": "A publicação dos IDs de usuários verificados/não verificados nos canais de sincronização está ativada."
+    "text": "A publicação dos IDs de usuários verificados/desverificados nos canais de sincronização está ativada."
   },
   "verify_list_usage": {
     "status": "unverified",
@@ -799,7 +1246,7 @@
   },
   "verify_message_sent": {
     "status": "unverified",
-    "text": "Mensagem de verificação enviada — verifique o canal."
+    "text": "A mensagem de verificação foi enviada — verifique o canal."
   },
   "verify_send_failed": {
     "status": "unverified",
@@ -807,7 +1254,7 @@
   },
   "verify_thanks": {
     "status": "unverified",
-    "text": "Obrigado — você foi verificado."
+    "text": "Obrigado — você está confirmado."
   },
   "video_message": {
     "status": "unverified",
@@ -817,21 +1264,25 @@
     "status": "unverified",
     "text": "[Mensagem de voz]"
   },
+  "webhooks_bridge_disabled": {
+    "status": "unverified",
+    "text": "As mensagens encaminhadas nos canais deste servidor dentro desta ponte voltarão a chegar como mensagens comuns do bot."
+  },
+  "webhooks_bridge_enabled": {
+    "status": "unverified",
+    "text": "As mensagens encaminhadas passarão a chegar como mensagens de webhook nos canais deste servidor dentro desta ponte, inclusive nos canais que entrarem nela depois."
+  },
   "webhooks_disabled": {
     "status": "unverified",
-    "text": "As mensagens encaminhadas neste canal voltarão a aparecer como mensagens normais do bot."
+    "text": "As mensagens encaminhadas voltarão a chegar como mensagens comuns do bot em todo este servidor."
   },
   "webhooks_enabled": {
     "status": "unverified",
-    "text": "As mensagens encaminhadas neste canal agora aparecerão como mensagens de webhook — com o avatar e o nome do remetente."
-  },
-  "webhooks_thread_error": {
-    "status": "unverified",
-    "text": "Os webhooks não funcionam em tópicos nem em posts de fórum. Use este comando em um canal de texto normal."
+    "text": "As mensagens encaminhadas passarão a chegar como mensagens de webhook — com o avatar e o nome do remetente — em todos os canais deste servidor, em qualquer ponte, inclusive nos canais adicionados depois. Em tópicos e posts de fórum o formato continua normal, porque webhooks não funcionam lá."
   },
   "webhooks_usage": {
     "status": "unverified",
-    "text": "Uso: /webhooks enable | /webhooks disable"
+    "text": "Uso: /webhooks enable | /webhooks disable — para todo o servidor; adicione `scope: local` apenas para esta ponte."
   },
   "weekday_names": {
     "status": "unverified",
@@ -847,15 +1298,15 @@
   },
   "whois.dc_template": {
     "status": "unverified",
-    "text": "Apelido: {nickname}\nUsuário: {username}\nID: {id}\nStatus: {status}\nModo: {mode}\nData de registro no Discord: {registered}\nAvatar: {avatar}\nBanner: {banner}"
+    "text": "Apelido: {nickname}\nNome de usuário: {username}\nID: {id}\nStatus: {status}\nModo: {mode}\nData de registro no Discord: {registered}\nAvatar: {avatar}\nBanner: {banner}"
   },
   "whois.discord_left_guild": {
     "status": "unverified",
-    "text": "Desconhecido (usuário saiu do servidor)"
+    "text": "Desconhecido (o usuário saiu do servidor)"
   },
   "whois.discord_no_bio": {
     "status": "unverified",
-    "text": "Sem bio"
+    "text": "Sem biografia"
   },
   "whois.fetch_error": {
     "status": "unverified",
@@ -871,7 +1322,7 @@
   },
   "whois.field_joined_server": {
     "status": "unverified",
-    "text": "Data de entrada no servidor"
+    "text": "Membro do servidor desde"
   },
   "whois.field_mode": {
     "status": "unverified",
@@ -911,23 +1362,31 @@
   },
   "whois.not_verified": {
     "status": "unverified",
-    "text": "Este comando está disponível apenas para usuários verificados. Envie /verify para confirmar o consentimento de encaminhamento."
+    "text": "Este comando está disponível apenas para usuários verificados. Envie /verify para confirmar o consentimento ao encaminhamento."
   },
   "whois.origin_missing": {
     "status": "unverified",
-    "text": "O registro de origem está ausente no banco de dados."
+    "text": "O registro original não existe no banco de dados."
   },
   "whois.origin_not_found": {
     "status": "unverified",
-    "text": "Não foi possível encontrar a origem dessa mensagem."
+    "text": "Não foi possível determinar a origem da mensagem."
   },
   "whois.origin_not_telegram": {
     "status": "unverified",
-    "text": "A origem não é do Telegram; use /whois na plataforma correspondente."
+    "text": "A origem da mensagem não é o Telegram; use /whois em mensagens da plataforma correspondente."
+  },
+  "whois.private": {
+    "status": "unverified",
+    "text": "Este usuário limitou o que o whois pode mostrar."
+  },
+  "whois.private_template": {
+    "status": "unverified",
+    "text": "Apelido: {nickname}\nAvatar: {avatar}\n\nEste usuário limitou o que o whois pode mostrar."
   },
   "whois.tg_template": {
     "status": "unverified",
-    "text": "Apelido: {nickname}\nUsuário: {username}\nID: {id}\nBio: {bio}"
+    "text": "Apelido: {nickname}\nNome de usuário: {username}\nID: {id}\nBio: {bio}"
   },
   "whois.title": {
     "status": "unverified",
@@ -935,10 +1394,46 @@
   },
   "whois.use_context_menu": {
     "status": "unverified",
-    "text": "Slash commands não conseguem detectar a mensagem. Use o menu de contexto: clique direito na mensagem relay → Apps → whois."
+    "text": "O comando slash não consegue determinar a mensagem. Use o menu de contexto: clique direito na mensagem relay → Apps → whois."
   },
   "whois.use_reply": {
     "status": "unverified",
-    "text": "Use este comando respondendo a uma mensagem relay do bot."
+    "text": "Use este comando em resposta a uma mensagem relay do bot."
+  },
+  "ytfeed_already_attached": {
+    "status": "unverified",
+    "text": "{account} já está ligado aqui."
+  },
+  "ytfeed_attached": {
+    "status": "unverified",
+    "text": "O canal do YouTube {name} ({account}) foi ligado a {where}. Os novos vídeos chegarão lá, inclusive aos chats que entrarem depois."
+  },
+  "ytfeed_invalid_channel": {
+    "status": "unverified",
+    "text": "Isso não é um canal do YouTube. Informe um @handle, um link do canal ou um identificador UC…"
+  },
+  "ytfeed_not_attached": {
+    "status": "unverified",
+    "text": "{account} não está ligado aqui."
+  },
+  "ytfeed_rem_usage": {
+    "status": "unverified",
+    "text": "Uso: /remytfeed <canal do YouTube> — @handle, link do canal ou identificador UC…"
+  },
+  "ytfeed_removed": {
+    "status": "unverified",
+    "text": "Os vídeos de {account} não são mais encaminhados para cá."
+  },
+  "ytfeed_throttled": {
+    "status": "unverified",
+    "text": "O YouTube está limitando as requisições do bot agora, então não foi possível ler {account}. Tente novamente em alguns minutos."
+  },
+  "ytfeed_unreachable": {
+    "status": "unverified",
+    "text": "Não foi possível ler {account}. O canal pode não existir ou ter sido excluído, ou o YouTube não está respondendo agora."
+  },
+  "ytfeed_usage": {
+    "status": "unverified",
+    "text": "Uso: /setytfeed <canal do YouTube> — @handle, link do canal ou identificador UC…"
   }
 }
