@@ -135,13 +135,21 @@
     "status": "unverified",
     "text": "Чат підключено до мосту {bridge_id}."
   },
+  "atb_attached_new": {
+    "status": "unverified",
+    "text": "Створено новий міст {bridge_id}, чат підключено до нього. Повідомте номер іншим чатам — вони підключаються командою /atb {bridge_id}."
+  },
   "atb_invalid_id": {
     "status": "unverified",
-    "text": "Невірний ID мосту."
+    "text": "Невірний ID мосту. Вкажіть число або `new`, щоб створити міст із найменшим вільним номером."
+  },
+  "atb_no_free_id": {
+    "status": "unverified",
+    "text": "Вільних номерів мостів нижче {limit} не залишилося. Звільніть номер, від'єднавши чати невикористовуваного мосту, і повторіть."
   },
   "atb_usage": {
     "status": "unverified",
-    "text": "Використання: /atb <id_мосту>"
+    "text": "Використання: /atb <id_мосту> — або /atb new, щоб створити міст із найменшим вільним номером."
   },
   "backup_failed": {
     "status": "unverified",
@@ -409,7 +417,7 @@
   },
   "help.cmd_atb": {
     "status": "unverified",
-    "text": "/atb <id_мосту> — прив'язати цей чат до мосту (адміни бота)"
+    "text": "/atb <id_мосту | new> — прив'язати цей чат до мосту або створити новий (адміни бота)"
   },
   "help.cmd_backup": {
     "status": "unverified",
@@ -515,6 +523,10 @@
     "status": "unverified",
     "text": "/remtgfeed <канал> — від'єднати канал Telegram від цього мосту"
   },
+  "help.cmd_remwikifeed": {
+    "status": "unverified",
+    "text": "/remwikifeed <посилання на вікі> — припинити пересилку активності цієї вікі (адміни бота й мосту)"
+  },
   "help.cmd_remytfeed": {
     "status": "unverified",
     "text": "/remytfeed <канал> — від'єднати канал YouTube від цього мосту"
@@ -543,6 +555,10 @@
     "status": "unverified",
     "text": "/settgfeed <канал> — приєднати публічний канал Telegram до цього мосту"
   },
+  "help.cmd_setwikifeed": {
+    "status": "unverified",
+    "text": "/setwikifeed <посилання на вікі> — пересилати активність MediaWiki у цей міст (адміни бота й мосту)"
+  },
   "help.cmd_setytfeed": {
     "status": "unverified",
     "text": "/setytfeed <канал> — приєднати публічний канал YouTube до цього мосту"
@@ -570,6 +586,14 @@
   "help.cmd_whois": {
     "status": "unverified",
     "text": "/whois — інформація про автора повідомлення (відповіддю на relay-повідомлення бота)"
+  },
+  "help.cmd_wikifeed_settings": {
+    "status": "unverified",
+    "text": "/wikifeed-settings <посилання на вікі> <параметр>=<значення> — фільтри та формат виводу вікі (адміни бота й мосту)"
+  },
+  "help.cmd_wikifeeds": {
+    "status": "unverified",
+    "text": "/wikifeeds — список відстежуваних тут вікі та їхніх налаштувань"
   },
   "help.section_admins": {
     "status": "unverified",
@@ -1399,6 +1423,362 @@
   "whois.use_reply": {
     "status": "unverified",
     "text": "Використовуйте цю команду відповіддю на relay-повідомлення бота."
+  },
+  "wiki_ev_approve": {
+    "status": "unverified",
+    "text": "{user} затверджує версію {title}"
+  },
+  "wiki_ev_approve_other": {
+    "status": "unverified",
+    "text": "{user} змінює статус перевірки ({action}) у {title}"
+  },
+  "wiki_ev_block": {
+    "status": "unverified",
+    "text": "{user} блокує {target}{duration}"
+  },
+  "wiki_ev_contentmodel": {
+    "status": "unverified",
+    "text": "{user} змінює модель вмісту {title}"
+  },
+  "wiki_ev_contentmodel_new": {
+    "status": "unverified",
+    "text": "{user} створює {title} з нестандартною моделлю вмісту"
+  },
+  "wiki_ev_delete": {
+    "status": "unverified",
+    "text": "{user} вилучає {title}"
+  },
+  "wiki_ev_delete_revision": {
+    "status": "unverified",
+    "text": "{user} змінює видимість версій {title}"
+  },
+  "wiki_ev_discussion": {
+    "status": "unverified",
+    "text": "{user} починає обговорення в {title}"
+  },
+  "wiki_ev_discussion_reply": {
+    "status": "unverified",
+    "text": "{user} відповідає в {title}"
+  },
+  "wiki_ev_dump": {
+    "status": "unverified",
+    "text": "{user} змінює дамп даних ({action})"
+  },
+  "wiki_ev_edit": {
+    "status": "unverified",
+    "text": "{user} редагує {title}{size}"
+  },
+  "wiki_ev_farm_create": {
+    "status": "unverified",
+    "text": "{user} створює вікі {target}"
+  },
+  "wiki_ev_farm_other": {
+    "status": "unverified",
+    "text": "{user} виконує адміністративну дію ({action}) над {title}"
+  },
+  "wiki_ev_farm_request": {
+    "status": "unverified",
+    "text": "{user} запитує вікі ({title})"
+  },
+  "wiki_ev_farm_settings": {
+    "status": "unverified",
+    "text": "{user} змінює налаштування вікі ({title})"
+  },
+  "wiki_ev_filter_hit": {
+    "status": "unverified",
+    "text": "{user} спрацьовує на фільтрі зловживань у {title}"
+  },
+  "wiki_ev_filter_modify": {
+    "status": "unverified",
+    "text": "{user} змінює фільтр зловживань {title}"
+  },
+  "wiki_ev_filter_other": {
+    "status": "unverified",
+    "text": "{user} змінює автоматичний фільтр ({action})"
+  },
+  "wiki_ev_global_block": {
+    "status": "unverified",
+    "text": "{user} глобально блокує {target}{duration}"
+  },
+  "wiki_ev_global_other": {
+    "status": "unverified",
+    "text": "{user} виконує глобальну дію з обліковим записом ({action}) над {title}"
+  },
+  "wiki_ev_global_rename": {
+    "status": "unverified",
+    "text": "{user} глобально перейменовує учасника на {target}"
+  },
+  "wiki_ev_global_unblock": {
+    "status": "unverified",
+    "text": "{user} знімає глобальне блокування з {target}"
+  },
+  "wiki_ev_import": {
+    "status": "unverified",
+    "text": "{user} імпортує {title}"
+  },
+  "wiki_ev_import_request": {
+    "status": "unverified",
+    "text": "{user} починає запит на імпорт ({title})"
+  },
+  "wiki_ev_interwiki": {
+    "status": "unverified",
+    "text": "{user} змінює таблицю інтервікі ({action})"
+  },
+  "wiki_ev_managetags": {
+    "status": "unverified",
+    "text": "{user} змінює опис мітки {title}"
+  },
+  "wiki_ev_merge": {
+    "status": "unverified",
+    "text": "{user} об'єднує історію {title} з {target}"
+  },
+  "wiki_ev_merged": {
+    "status": "unverified",
+    "text": "{count} змін сторінки {title} від {users}{size}"
+  },
+  "wiki_ev_move": {
+    "status": "unverified",
+    "text": "{user} перейменовує {title} на {target}"
+  },
+  "wiki_ev_move_redir": {
+    "status": "unverified",
+    "text": "{user} перейменовує {title} на {target} поверх перенаправлення"
+  },
+  "wiki_ev_new": {
+    "status": "unverified",
+    "text": "{user} створює {title}{size}"
+  },
+  "wiki_ev_newuser": {
+    "status": "unverified",
+    "text": "{target} створює обліковий запис"
+  },
+  "wiki_ev_newuser_auto": {
+    "status": "unverified",
+    "text": "обліковий запис {target} створено автоматично"
+  },
+  "wiki_ev_newuser_created_by": {
+    "status": "unverified",
+    "text": "{user} створює обліковий запис {target}"
+  },
+  "wiki_ev_other": {
+    "status": "unverified",
+    "text": "{user} виконує {action} над {title}"
+  },
+  "wiki_ev_pagelang": {
+    "status": "unverified",
+    "text": "{user} змінює мову сторінки {title}"
+  },
+  "wiki_ev_patrol": {
+    "status": "unverified",
+    "text": "{user} позначає версію {title} як перевірену"
+  },
+  "wiki_ev_patrol_auto": {
+    "status": "unverified",
+    "text": "версію {title} перевірено автоматично"
+  },
+  "wiki_ev_profile": {
+    "status": "unverified",
+    "text": "{user} змінює профіль або коментар ({action}) у {title}"
+  },
+  "wiki_ev_protect": {
+    "status": "unverified",
+    "text": "{user} захищає {title}"
+  },
+  "wiki_ev_protect_modify": {
+    "status": "unverified",
+    "text": "{user} змінює захист {title}"
+  },
+  "wiki_ev_reblock": {
+    "status": "unverified",
+    "text": "{user} змінює блокування {target}{duration}"
+  },
+  "wiki_ev_renameuser": {
+    "status": "unverified",
+    "text": "{user} перейменовує учасника на {target}"
+  },
+  "wiki_ev_restore": {
+    "status": "unverified",
+    "text": "{user} відновлює {title}"
+  },
+  "wiki_ev_rights": {
+    "status": "unverified",
+    "text": "{user} змінює групи учасника {target}: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_rights_auto": {
+    "status": "unverified",
+    "text": "{target} автоматично підвищено: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_structured": {
+    "status": "unverified",
+    "text": "{user} змінює структуровані дані ({action}) у {title}"
+  },
+  "wiki_ev_tag": {
+    "status": "unverified",
+    "text": "{user} змінює мітки в {title}"
+  },
+  "wiki_ev_translate_mark": {
+    "status": "unverified",
+    "text": "{user} позначає {title} до перекладу"
+  },
+  "wiki_ev_translate_other": {
+    "status": "unverified",
+    "text": "{user} змінює налаштування перекладу ({action}) у {title}"
+  },
+  "wiki_ev_translate_review": {
+    "status": "unverified",
+    "text": "{user} перевіряє переклад {title}"
+  },
+  "wiki_ev_translate_unmark": {
+    "status": "unverified",
+    "text": "{user} знімає {title} з перекладу"
+  },
+  "wiki_ev_unapprove": {
+    "status": "unverified",
+    "text": "{user} знімає затвердження з {title}"
+  },
+  "wiki_ev_unblock": {
+    "status": "unverified",
+    "text": "{user} розблоковує {target}"
+  },
+  "wiki_ev_unprotect": {
+    "status": "unverified",
+    "text": "{user} знімає захист із {title}"
+  },
+  "wiki_ev_upload": {
+    "status": "unverified",
+    "text": "{user} завантажує {title}"
+  },
+  "wiki_ev_upload_overwrite": {
+    "status": "unverified",
+    "text": "{user} завантажує нову версію {title}"
+  },
+  "wiki_ev_upload_revert": {
+    "status": "unverified",
+    "text": "{user} повертає {title} до попередньої версії"
+  },
+  "wiki_flag_bot": {
+    "status": "unverified",
+    "text": "бот"
+  },
+  "wiki_flag_minor": {
+    "status": "unverified",
+    "text": "мала"
+  },
+  "wiki_users_and_more": {
+    "status": "unverified",
+    "text": "{users} і ще {count}"
+  },
+  "wikifeed_already_attached": {
+    "status": "unverified",
+    "text": "{wiki} уже підключена тут."
+  },
+  "wikifeed_attached": {
+    "status": "unverified",
+    "text": "Вікі {name} ({wiki}) підключено до {where}. Її активність пересилатиметься туди, включно з чатами, які приєднаються пізніше."
+  },
+  "wikifeed_bad_value": {
+    "status": "unverified",
+    "text": "{option} не приймає значення {value}. Допустимо: {allowed}."
+  },
+  "wikifeed_chat_only_note": {
+    "status": "unverified",
+    "text": "Цей чат поки не входить до мосту, тому активність надходить лише сюди. Щойно чат приєднається до мосту, вона піде в усі його чати, а налаштування перейде до адмінів мосту."
+  },
+  "wikifeed_discussions_note": {
+    "status": "unverified",
+    "text": "Обговорення цієї вікі теж пересилаються."
+  },
+  "wikifeed_invalid_url": {
+    "status": "unverified",
+    "text": "Це не схоже на посилання на вікі. Вкажіть адресу будь-якої її сторінки, головної сторінки або api.php."
+  },
+  "wikifeed_list_empty": {
+    "status": "unverified",
+    "text": "Тут поки немає відстежуваних вікі. Додайте: /setwikifeed <посилання на вікі>."
+  },
+  "wikifeed_list_entry": {
+    "status": "unverified",
+    "text": "• {name} ({wiki})\n   події: {groups}\n   простори назв: {namespaces} · редагування ботів: {bots} · малі редагування: {minor}\n   Discord: {format} · доставка: {delivery} · вебхук: {webhook}"
+  },
+  "wikifeed_list_header": {
+    "status": "unverified",
+    "text": "Відстежувані тут вікі:"
+  },
+  "wikifeed_no_subscription": {
+    "status": "unverified",
+    "text": "{wiki} тут не відстежується, налаштовувати нічого."
+  },
+  "wikifeed_not_attached": {
+    "status": "unverified",
+    "text": "{wiki} тут не підключена."
+  },
+  "wikifeed_not_mediawiki": {
+    "status": "unverified",
+    "text": "За адресою {wiki} не знайдено MediaWiki. Перевірте адресу — бот читає лише сайти на MediaWiki."
+  },
+  "wikifeed_private": {
+    "status": "unverified",
+    "text": "{wiki} потребує облікового запису для читання, тому бот не може її відстежувати."
+  },
+  "wikifeed_rem_usage": {
+    "status": "unverified",
+    "text": "Використання: /remwikifeed <посилання на вікі> — будь-яке посилання на вікі, яку треба відключити."
+  },
+  "wikifeed_removed": {
+    "status": "unverified",
+    "text": "Активність {wiki} більше не пересилається сюди."
+  },
+  "wikifeed_settings_saved": {
+    "status": "unverified",
+    "text": "Налаштування {wiki} оновлено для всіх чатів мосту."
+  },
+  "wikifeed_settings_usage": {
+    "status": "unverified",
+    "text": "Використання: /wikifeed-settings <посилання на вікі> <параметр>=<значення> …\nПараметри: events (список типів, або all/none), namespaces (числа, або all), bots (on/off), minor (on/off), format (embed/text), delivery (auto/message), webhook (own/shared).\nПриклад: /wikifeed-settings example.org events=edit,new,delete bots=off webhook=own"
+  },
+  "wikifeed_throttled": {
+    "status": "unverified",
+    "text": "{wiki} обмежує частоту запитів або наздоганяє свою базу. Спробуйте за кілька хвилин."
+  },
+  "wikifeed_unknown_groups": {
+    "status": "unverified",
+    "text": "Невідомі типи подій: {items}. Доступні: {available}."
+  },
+  "wikifeed_unknown_namespaces": {
+    "status": "unverified",
+    "text": "Простори назв задаються числами (0 основний, 6 Файл, 14 Категорія, …). Не числа: {items}."
+  },
+  "wikifeed_unknown_option": {
+    "status": "unverified",
+    "text": "Невідомий параметр: {items}. Доступні: events, namespaces, bots, minor, format, delivery, webhook."
+  },
+  "wikifeed_unreachable": {
+    "status": "unverified",
+    "text": "Не вдалося прочитати {wiki}. Можливо, вікі недоступна або адресу вказано неправильно."
+  },
+  "wikifeed_usage": {
+    "status": "unverified",
+    "text": "Використання: /setwikifeed <посилання на вікі> — будь-яка її сторінка, головна сторінка або api.php."
+  },
+  "wikifeed_value_all": {
+    "status": "unverified",
+    "text": "усі"
+  },
+  "wikifeed_value_off": {
+    "status": "unverified",
+    "text": "приховувати"
+  },
+  "wikifeed_value_on": {
+    "status": "unverified",
+    "text": "показувати"
+  },
+  "wikifeed_value_own": {
+    "status": "unverified",
+    "text": "власний"
+  },
+  "wikifeed_value_shared": {
+    "status": "unverified",
+    "text": "спільний"
   },
   "ytfeed_already_attached": {
     "status": "unverified",

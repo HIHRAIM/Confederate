@@ -135,13 +135,21 @@
     "status": "unverified",
     "text": "The chat has been attached to bridge {bridge_id}."
   },
+  "atb_attached_new": {
+    "status": "unverified",
+    "text": "A new bridge {bridge_id} has been created and this chat attached to it. Give the number to the other chats — they join with /atb {bridge_id}."
+  },
   "atb_invalid_id": {
     "status": "unverified",
-    "text": "Invalid bridge ID."
+    "text": "Invalid bridge ID. Give a number, or `new` to open a bridge on the lowest free number."
+  },
+  "atb_no_free_id": {
+    "status": "unverified",
+    "text": "There are no free bridge numbers below {limit} left. Free one up by detaching the chats of a bridge that is no longer used, then try again."
   },
   "atb_usage": {
     "status": "unverified",
-    "text": "Usage: /atb <bridge_id>"
+    "text": "Usage: /atb <bridge_id> — or /atb new to open a bridge on the lowest free number."
   },
   "backup_failed": {
     "status": "unverified",
@@ -409,7 +417,7 @@
   },
   "help.cmd_atb": {
     "status": "unverified",
-    "text": "/atb <bridge_id> — attach this chat to a bridge (bot admins)"
+    "text": "/atb <bridge_id | new> — attach this chat to a bridge, or open a new one (bot admins)"
   },
   "help.cmd_backup": {
     "status": "unverified",
@@ -515,6 +523,10 @@
     "status": "unverified",
     "text": "/remtgfeed <channel> — stop relaying a Telegram channel into this bridge"
   },
+  "help.cmd_remwikifeed": {
+    "status": "unverified",
+    "text": "/remwikifeed <link to a wiki> — stop relaying that wiki's activity (bot & bridge admins)"
+  },
   "help.cmd_remytfeed": {
     "status": "unverified",
     "text": "/remytfeed <channel> — stop relaying a YouTube channel into this bridge"
@@ -543,6 +555,10 @@
     "status": "unverified",
     "text": "/settgfeed <channel> — relay a public Telegram channel into this bridge"
   },
+  "help.cmd_setwikifeed": {
+    "status": "unverified",
+    "text": "/setwikifeed <link to a wiki> — relay a MediaWiki's activity into this bridge (bot & bridge admins)"
+  },
   "help.cmd_setytfeed": {
     "status": "unverified",
     "text": "/setytfeed <channel> — relay a public YouTube channel into this bridge"
@@ -570,6 +586,14 @@
   "help.cmd_whois": {
     "status": "unverified",
     "text": "/whois — information about a message's author (as a reply to a bot relay message)"
+  },
+  "help.cmd_wikifeed_settings": {
+    "status": "unverified",
+    "text": "/wikifeed-settings <link to a wiki> <option>=<value> — filters and output format for a wiki (bot & bridge admins)"
+  },
+  "help.cmd_wikifeeds": {
+    "status": "unverified",
+    "text": "/wikifeeds — list the wikis followed here and their settings"
   },
   "help.section_admins": {
     "status": "unverified",
@@ -1399,6 +1423,362 @@
   "whois.use_reply": {
     "status": "unverified",
     "text": "Use this command as a reply to a bot relay message."
+  },
+  "wiki_ev_approve": {
+    "status": "unverified",
+    "text": "{user} approved a revision of {title}"
+  },
+  "wiki_ev_approve_other": {
+    "status": "unverified",
+    "text": "{user} changed review status ({action}) of {title}"
+  },
+  "wiki_ev_block": {
+    "status": "unverified",
+    "text": "{user} blocked {target}{duration}"
+  },
+  "wiki_ev_contentmodel": {
+    "status": "unverified",
+    "text": "{user} changed the content model of {title}"
+  },
+  "wiki_ev_contentmodel_new": {
+    "status": "unverified",
+    "text": "{user} created {title} with a non-default content model"
+  },
+  "wiki_ev_delete": {
+    "status": "unverified",
+    "text": "{user} deleted {title}"
+  },
+  "wiki_ev_delete_revision": {
+    "status": "unverified",
+    "text": "{user} changed revision visibility on {title}"
+  },
+  "wiki_ev_discussion": {
+    "status": "unverified",
+    "text": "{user} started a discussion in {title}"
+  },
+  "wiki_ev_discussion_reply": {
+    "status": "unverified",
+    "text": "{user} replied in {title}"
+  },
+  "wiki_ev_dump": {
+    "status": "unverified",
+    "text": "{user} changed a data dump ({action})"
+  },
+  "wiki_ev_edit": {
+    "status": "unverified",
+    "text": "{user} edited {title}{size}"
+  },
+  "wiki_ev_farm_create": {
+    "status": "unverified",
+    "text": "{user} created the wiki {target}"
+  },
+  "wiki_ev_farm_other": {
+    "status": "unverified",
+    "text": "{user} performed wiki administration ({action}) on {title}"
+  },
+  "wiki_ev_farm_request": {
+    "status": "unverified",
+    "text": "{user} requested a wiki ({title})"
+  },
+  "wiki_ev_farm_settings": {
+    "status": "unverified",
+    "text": "{user} changed wiki settings ({title})"
+  },
+  "wiki_ev_filter_hit": {
+    "status": "unverified",
+    "text": "{user} tripped an abuse filter on {title}"
+  },
+  "wiki_ev_filter_modify": {
+    "status": "unverified",
+    "text": "{user} changed abuse filter {title}"
+  },
+  "wiki_ev_filter_other": {
+    "status": "unverified",
+    "text": "{user} changed an automated filter ({action})"
+  },
+  "wiki_ev_global_block": {
+    "status": "unverified",
+    "text": "{user} globally blocked {target}{duration}"
+  },
+  "wiki_ev_global_other": {
+    "status": "unverified",
+    "text": "{user} performed a global account action ({action}) on {title}"
+  },
+  "wiki_ev_global_rename": {
+    "status": "unverified",
+    "text": "{user} globally renamed a user to {target}"
+  },
+  "wiki_ev_global_unblock": {
+    "status": "unverified",
+    "text": "{user} removed the global block on {target}"
+  },
+  "wiki_ev_import": {
+    "status": "unverified",
+    "text": "{user} imported {title}"
+  },
+  "wiki_ev_import_request": {
+    "status": "unverified",
+    "text": "{user} started an import request ({title})"
+  },
+  "wiki_ev_interwiki": {
+    "status": "unverified",
+    "text": "{user} changed the interwiki table ({action})"
+  },
+  "wiki_ev_managetags": {
+    "status": "unverified",
+    "text": "{user} changed the tag definition {title}"
+  },
+  "wiki_ev_merge": {
+    "status": "unverified",
+    "text": "{user} merged the history of {title} into {target}"
+  },
+  "wiki_ev_merged": {
+    "status": "unverified",
+    "text": "{count} changes to {title} by {users}{size}"
+  },
+  "wiki_ev_move": {
+    "status": "unverified",
+    "text": "{user} moved {title} to {target}"
+  },
+  "wiki_ev_move_redir": {
+    "status": "unverified",
+    "text": "{user} moved {title} to {target} over a redirect"
+  },
+  "wiki_ev_new": {
+    "status": "unverified",
+    "text": "{user} created {title}{size}"
+  },
+  "wiki_ev_newuser": {
+    "status": "unverified",
+    "text": "{target} created an account"
+  },
+  "wiki_ev_newuser_auto": {
+    "status": "unverified",
+    "text": "an account was created automatically for {target}"
+  },
+  "wiki_ev_newuser_created_by": {
+    "status": "unverified",
+    "text": "{user} created the account {target}"
+  },
+  "wiki_ev_other": {
+    "status": "unverified",
+    "text": "{user} performed {action} on {title}"
+  },
+  "wiki_ev_pagelang": {
+    "status": "unverified",
+    "text": "{user} changed the language of {title}"
+  },
+  "wiki_ev_patrol": {
+    "status": "unverified",
+    "text": "{user} marked a revision of {title} as patrolled"
+  },
+  "wiki_ev_patrol_auto": {
+    "status": "unverified",
+    "text": "a revision of {title} was patrolled automatically"
+  },
+  "wiki_ev_profile": {
+    "status": "unverified",
+    "text": "{user} changed a profile or comment ({action}) on {title}"
+  },
+  "wiki_ev_protect": {
+    "status": "unverified",
+    "text": "{user} protected {title}"
+  },
+  "wiki_ev_protect_modify": {
+    "status": "unverified",
+    "text": "{user} changed the protection of {title}"
+  },
+  "wiki_ev_reblock": {
+    "status": "unverified",
+    "text": "{user} changed the block on {target}{duration}"
+  },
+  "wiki_ev_renameuser": {
+    "status": "unverified",
+    "text": "{user} renamed a user to {target}"
+  },
+  "wiki_ev_restore": {
+    "status": "unverified",
+    "text": "{user} restored {title}"
+  },
+  "wiki_ev_rights": {
+    "status": "unverified",
+    "text": "{user} changed group membership for {target}: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_rights_auto": {
+    "status": "unverified",
+    "text": "{target} was promoted automatically: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_structured": {
+    "status": "unverified",
+    "text": "{user} changed structured data ({action}) on {title}"
+  },
+  "wiki_ev_tag": {
+    "status": "unverified",
+    "text": "{user} changed tags on {title}"
+  },
+  "wiki_ev_translate_mark": {
+    "status": "unverified",
+    "text": "{user} marked {title} for translation"
+  },
+  "wiki_ev_translate_other": {
+    "status": "unverified",
+    "text": "{user} changed translation setup ({action}) on {title}"
+  },
+  "wiki_ev_translate_review": {
+    "status": "unverified",
+    "text": "{user} reviewed a translation of {title}"
+  },
+  "wiki_ev_translate_unmark": {
+    "status": "unverified",
+    "text": "{user} removed {title} from translation"
+  },
+  "wiki_ev_unapprove": {
+    "status": "unverified",
+    "text": "{user} withdrew approval of {title}"
+  },
+  "wiki_ev_unblock": {
+    "status": "unverified",
+    "text": "{user} unblocked {target}"
+  },
+  "wiki_ev_unprotect": {
+    "status": "unverified",
+    "text": "{user} removed protection from {title}"
+  },
+  "wiki_ev_upload": {
+    "status": "unverified",
+    "text": "{user} uploaded {title}"
+  },
+  "wiki_ev_upload_overwrite": {
+    "status": "unverified",
+    "text": "{user} uploaded a new version of {title}"
+  },
+  "wiki_ev_upload_revert": {
+    "status": "unverified",
+    "text": "{user} reverted {title} to an older version"
+  },
+  "wiki_flag_bot": {
+    "status": "unverified",
+    "text": "bot"
+  },
+  "wiki_flag_minor": {
+    "status": "unverified",
+    "text": "minor"
+  },
+  "wiki_users_and_more": {
+    "status": "unverified",
+    "text": "{users} and {count} more"
+  },
+  "wikifeed_already_attached": {
+    "status": "unverified",
+    "text": "{wiki} is already attached here."
+  },
+  "wikifeed_attached": {
+    "status": "unverified",
+    "text": "The wiki {name} ({wiki}) is now attached to {where}. Its activity will be relayed there, including to chats that join later."
+  },
+  "wikifeed_bad_value": {
+    "status": "unverified",
+    "text": "{option} does not accept {value}. Allowed: {allowed}."
+  },
+  "wikifeed_chat_only_note": {
+    "status": "unverified",
+    "text": "This chat is in no bridge yet, so for now the activity arrives here only. Once the chat joins a bridge it goes to every chat of that bridge, and the setting becomes the bridge admins' to manage."
+  },
+  "wikifeed_discussions_note": {
+    "status": "unverified",
+    "text": "Discussions of this wiki are relayed too."
+  },
+  "wikifeed_invalid_url": {
+    "status": "unverified",
+    "text": "That does not look like a link to a wiki. Give the address of any of its pages, its main page, or its api.php."
+  },
+  "wikifeed_list_empty": {
+    "status": "unverified",
+    "text": "No wiki is followed here yet. Add one with /setwikifeed <link to a wiki>."
+  },
+  "wikifeed_list_entry": {
+    "status": "unverified",
+    "text": "• {name} ({wiki})\n   events: {groups}\n   namespaces: {namespaces} · bot edits: {bots} · minor edits: {minor}\n   Discord: {format} · delivery: {delivery} · webhook: {webhook}"
+  },
+  "wikifeed_list_header": {
+    "status": "unverified",
+    "text": "Wikis followed here:"
+  },
+  "wikifeed_no_subscription": {
+    "status": "unverified",
+    "text": "{wiki} is not followed here, so there is nothing to configure."
+  },
+  "wikifeed_not_attached": {
+    "status": "unverified",
+    "text": "{wiki} is not attached here."
+  },
+  "wikifeed_not_mediawiki": {
+    "status": "unverified",
+    "text": "No MediaWiki was found at {wiki}. Check the address — the bot only reads MediaWiki sites."
+  },
+  "wikifeed_private": {
+    "status": "unverified",
+    "text": "{wiki} requires an account to read it, so the bot cannot follow it."
+  },
+  "wikifeed_rem_usage": {
+    "status": "unverified",
+    "text": "Usage: /remwikifeed <link to a wiki> — any link to the wiki you want to stop following."
+  },
+  "wikifeed_removed": {
+    "status": "unverified",
+    "text": "Activity from {wiki} is no longer relayed here."
+  },
+  "wikifeed_settings_saved": {
+    "status": "unverified",
+    "text": "Settings for {wiki} updated for every chat of the bridge."
+  },
+  "wikifeed_settings_usage": {
+    "status": "unverified",
+    "text": "Usage: /wikifeed-settings <link to a wiki> <option>=<value> …\nOptions: events (a list of types, or all/none), namespaces (numbers, or all), bots (on/off), minor (on/off), format (embed/text), delivery (auto/message), webhook (own/shared).\nExample: /wikifeed-settings example.org events=edit,new,delete bots=off webhook=own"
+  },
+  "wikifeed_throttled": {
+    "status": "unverified",
+    "text": "{wiki} is rate-limiting the bot or is catching up with its database. Try again in a few minutes."
+  },
+  "wikifeed_unknown_groups": {
+    "status": "unverified",
+    "text": "Unknown event types: {items}. Available: {available}."
+  },
+  "wikifeed_unknown_namespaces": {
+    "status": "unverified",
+    "text": "Namespaces are numbers (0 main, 6 File, 14 Category, …). Not numbers: {items}."
+  },
+  "wikifeed_unknown_option": {
+    "status": "unverified",
+    "text": "Unknown option: {items}. Available: events, namespaces, bots, minor, format, delivery, webhook."
+  },
+  "wikifeed_unreachable": {
+    "status": "unverified",
+    "text": "Could not read {wiki}. The wiki may be down or the address may be wrong."
+  },
+  "wikifeed_usage": {
+    "status": "unverified",
+    "text": "Usage: /setwikifeed <link to a wiki> — any page of it, its main page, or its api.php."
+  },
+  "wikifeed_value_all": {
+    "status": "unverified",
+    "text": "all"
+  },
+  "wikifeed_value_off": {
+    "status": "unverified",
+    "text": "off"
+  },
+  "wikifeed_value_on": {
+    "status": "unverified",
+    "text": "on"
+  },
+  "wikifeed_value_own": {
+    "status": "unverified",
+    "text": "its own"
+  },
+  "wikifeed_value_shared": {
+    "status": "unverified",
+    "text": "shared"
   },
   "ytfeed_already_attached": {
     "status": "unverified",

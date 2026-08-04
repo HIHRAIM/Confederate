@@ -54,6 +54,9 @@ def _consistent_snapshot_bytes(db_path):
                 pass
 
 def _master_key():
+    """The backup key from the environment. Refuses to proceed when unset:
+    silently writing a plaintext copy of the whole database would be worse
+    than failing the backup."""
     key = os.environ.get("BACKUP_KEY")
     if not key:
         raise RuntimeError(
@@ -62,12 +65,17 @@ def _master_key():
     return key.encode("utf-8")
 
 def _subkeys(master):
+    """Derive separate encryption and authentication keys from the master
+    key — one key must never do both jobs."""
     base = hashlib.sha256(master).digest()
     k_enc = hashlib.blake2b(b"enc", key=base, digest_size=32).digest()
     k_mac = hashlib.blake2b(b"mac", key=base, digest_size=32).digest()
     return k_enc, k_mac
 
 def _keystream(k_enc, nonce, length):
+    """Keystream bytes: keyed BLAKE2 over nonce+counter, concatenated until
+    long enough. The nonce makes the stream unique per backup, which is what
+    keeps XOR safe here."""
     out = bytearray()
     counter = 0
     while len(out) < length:
@@ -76,6 +84,8 @@ def _keystream(k_enc, nonce, length):
     return bytes(out[:length])
 
 def _xor(a, b):
+    """XOR two equal-length byte strings (via one big-integer operation,
+    which is far faster than a Python loop over megabytes)."""
     if not a:
         return b""
     return (int.from_bytes(a, "big") ^ int.from_bytes(b, "big")).to_bytes(len(a), "big")

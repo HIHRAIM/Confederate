@@ -135,13 +135,21 @@
     "status": "unverified",
     "text": "El chat ha sido conectado al puente {bridge_id}."
   },
+  "atb_attached_new": {
+    "status": "unverified",
+    "text": "Se ha creado el puente {bridge_id} y este chat se ha conectado a él. Comparte el número con los demás chats: se conectan con /atb {bridge_id}."
+  },
   "atb_invalid_id": {
     "status": "unverified",
-    "text": "ID de puente no válido."
+    "text": "ID de puente no válido. Indica un número o `new` para crear un puente con el número libre más bajo."
+  },
+  "atb_no_free_id": {
+    "status": "unverified",
+    "text": "No quedan números de puente libres por debajo de {limit}. Libera uno desconectando los chats de un puente que ya no se use e inténtalo de nuevo."
   },
   "atb_usage": {
     "status": "unverified",
-    "text": "Uso: /atb <id_del_puente>"
+    "text": "Uso: /atb <id_del_puente> — o /atb new para crear un puente con el número libre más bajo."
   },
   "backup_failed": {
     "status": "unverified",
@@ -409,7 +417,7 @@
   },
   "help.cmd_atb": {
     "status": "unverified",
-    "text": "/atb <id_del_puente> — vincular este chat a un puente (administradores del bot)"
+    "text": "/atb <id_del_puente | new> — vincular este chat a un puente o crear uno nuevo (administradores del bot)"
   },
   "help.cmd_backup": {
     "status": "unverified",
@@ -515,6 +523,10 @@
     "status": "unverified",
     "text": "/remtgfeed <canal> — desconecta un canal de Telegram de este puente"
   },
+  "help.cmd_remwikifeed": {
+    "status": "unverified",
+    "text": "/remwikifeed <enlace a un wiki> — dejar de retransmitir la actividad de ese wiki (administradores del bot y del puente)"
+  },
   "help.cmd_remytfeed": {
     "status": "unverified",
     "text": "/remytfeed <canal> — desconecta un canal de YouTube de este puente"
@@ -543,6 +555,10 @@
     "status": "unverified",
     "text": "/settgfeed <canal> — une un canal público de Telegram a este puente"
   },
+  "help.cmd_setwikifeed": {
+    "status": "unverified",
+    "text": "/setwikifeed <enlace a un wiki> — retransmitir la actividad de un MediaWiki a este puente (administradores del bot y del puente)"
+  },
   "help.cmd_setytfeed": {
     "status": "unverified",
     "text": "/setytfeed <canal> — une un canal público de YouTube a este puente"
@@ -570,6 +586,14 @@
   "help.cmd_whois": {
     "status": "unverified",
     "text": "/whois — información sobre el autor de un mensaje (respondiendo a un mensaje relay del bot)"
+  },
+  "help.cmd_wikifeed_settings": {
+    "status": "unverified",
+    "text": "/wikifeed-settings <enlace a un wiki> <opción>=<valor> — filtros y formato de salida de un wiki (administradores del bot y del puente)"
+  },
+  "help.cmd_wikifeeds": {
+    "status": "unverified",
+    "text": "/wikifeeds — lista los wikis seguidos aquí y sus ajustes"
   },
   "help.section_admins": {
     "status": "unverified",
@@ -1399,6 +1423,362 @@
   "whois.use_reply": {
     "status": "unverified",
     "text": "Usa este comando como respuesta a un mensaje relay del bot."
+  },
+  "wiki_ev_approve": {
+    "status": "unverified",
+    "text": "{user} aprueba una revisión de {title}"
+  },
+  "wiki_ev_approve_other": {
+    "status": "unverified",
+    "text": "{user} cambia el estado de revisión ({action}) de {title}"
+  },
+  "wiki_ev_block": {
+    "status": "unverified",
+    "text": "{user} bloquea a {target}{duration}"
+  },
+  "wiki_ev_contentmodel": {
+    "status": "unverified",
+    "text": "{user} cambia el modelo de contenido de {title}"
+  },
+  "wiki_ev_contentmodel_new": {
+    "status": "unverified",
+    "text": "{user} crea {title} con un modelo de contenido no estándar"
+  },
+  "wiki_ev_delete": {
+    "status": "unverified",
+    "text": "{user} borra {title}"
+  },
+  "wiki_ev_delete_revision": {
+    "status": "unverified",
+    "text": "{user} cambia la visibilidad de revisiones de {title}"
+  },
+  "wiki_ev_discussion": {
+    "status": "unverified",
+    "text": "{user} inicia una discusión en {title}"
+  },
+  "wiki_ev_discussion_reply": {
+    "status": "unverified",
+    "text": "{user} responde en {title}"
+  },
+  "wiki_ev_dump": {
+    "status": "unverified",
+    "text": "{user} cambia un volcado de datos ({action})"
+  },
+  "wiki_ev_edit": {
+    "status": "unverified",
+    "text": "{user} edita {title}{size}"
+  },
+  "wiki_ev_farm_create": {
+    "status": "unverified",
+    "text": "{user} crea el wiki {target}"
+  },
+  "wiki_ev_farm_other": {
+    "status": "unverified",
+    "text": "{user} realiza una acción administrativa ({action}) en {title}"
+  },
+  "wiki_ev_farm_request": {
+    "status": "unverified",
+    "text": "{user} solicita un wiki ({title})"
+  },
+  "wiki_ev_farm_settings": {
+    "status": "unverified",
+    "text": "{user} cambia los ajustes del wiki ({title})"
+  },
+  "wiki_ev_filter_hit": {
+    "status": "unverified",
+    "text": "{user} activa un filtro de abusos en {title}"
+  },
+  "wiki_ev_filter_modify": {
+    "status": "unverified",
+    "text": "{user} cambia el filtro de abusos {title}"
+  },
+  "wiki_ev_filter_other": {
+    "status": "unverified",
+    "text": "{user} cambia un filtro automático ({action})"
+  },
+  "wiki_ev_global_block": {
+    "status": "unverified",
+    "text": "{user} bloquea globalmente a {target}{duration}"
+  },
+  "wiki_ev_global_other": {
+    "status": "unverified",
+    "text": "{user} realiza una acción global de cuenta ({action}) en {title}"
+  },
+  "wiki_ev_global_rename": {
+    "status": "unverified",
+    "text": "{user} renombra globalmente a un usuario como {target}"
+  },
+  "wiki_ev_global_unblock": {
+    "status": "unverified",
+    "text": "{user} retira el bloqueo global de {target}"
+  },
+  "wiki_ev_import": {
+    "status": "unverified",
+    "text": "{user} importa {title}"
+  },
+  "wiki_ev_import_request": {
+    "status": "unverified",
+    "text": "{user} inicia una solicitud de importación ({title})"
+  },
+  "wiki_ev_interwiki": {
+    "status": "unverified",
+    "text": "{user} cambia la tabla interwiki ({action})"
+  },
+  "wiki_ev_managetags": {
+    "status": "unverified",
+    "text": "{user} cambia la definición de la etiqueta {title}"
+  },
+  "wiki_ev_merge": {
+    "status": "unverified",
+    "text": "{user} fusiona el historial de {title} con {target}"
+  },
+  "wiki_ev_merged": {
+    "status": "unverified",
+    "text": "{count} cambios en {title} por {users}{size}"
+  },
+  "wiki_ev_move": {
+    "status": "unverified",
+    "text": "{user} traslada {title} a {target}"
+  },
+  "wiki_ev_move_redir": {
+    "status": "unverified",
+    "text": "{user} traslada {title} a {target} sobre una redirección"
+  },
+  "wiki_ev_new": {
+    "status": "unverified",
+    "text": "{user} crea {title}{size}"
+  },
+  "wiki_ev_newuser": {
+    "status": "unverified",
+    "text": "{target} crea una cuenta"
+  },
+  "wiki_ev_newuser_auto": {
+    "status": "unverified",
+    "text": "se creó automáticamente una cuenta para {target}"
+  },
+  "wiki_ev_newuser_created_by": {
+    "status": "unverified",
+    "text": "{user} crea la cuenta {target}"
+  },
+  "wiki_ev_other": {
+    "status": "unverified",
+    "text": "{user} realiza {action} en {title}"
+  },
+  "wiki_ev_pagelang": {
+    "status": "unverified",
+    "text": "{user} cambia el idioma de {title}"
+  },
+  "wiki_ev_patrol": {
+    "status": "unverified",
+    "text": "{user} marca una revisión de {title} como verificada"
+  },
+  "wiki_ev_patrol_auto": {
+    "status": "unverified",
+    "text": "una revisión de {title} se verificó automáticamente"
+  },
+  "wiki_ev_profile": {
+    "status": "unverified",
+    "text": "{user} cambia un perfil o comentario ({action}) en {title}"
+  },
+  "wiki_ev_protect": {
+    "status": "unverified",
+    "text": "{user} protege {title}"
+  },
+  "wiki_ev_protect_modify": {
+    "status": "unverified",
+    "text": "{user} cambia la protección de {title}"
+  },
+  "wiki_ev_reblock": {
+    "status": "unverified",
+    "text": "{user} cambia el bloqueo de {target}{duration}"
+  },
+  "wiki_ev_renameuser": {
+    "status": "unverified",
+    "text": "{user} renombra a un usuario como {target}"
+  },
+  "wiki_ev_restore": {
+    "status": "unverified",
+    "text": "{user} restaura {title}"
+  },
+  "wiki_ev_rights": {
+    "status": "unverified",
+    "text": "{user} cambia los grupos de {target}: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_rights_auto": {
+    "status": "unverified",
+    "text": "{target} fue promovido automáticamente: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_structured": {
+    "status": "unverified",
+    "text": "{user} cambia datos estructurados ({action}) en {title}"
+  },
+  "wiki_ev_tag": {
+    "status": "unverified",
+    "text": "{user} cambia las etiquetas de {title}"
+  },
+  "wiki_ev_translate_mark": {
+    "status": "unverified",
+    "text": "{user} marca {title} para traducción"
+  },
+  "wiki_ev_translate_other": {
+    "status": "unverified",
+    "text": "{user} cambia la configuración de traducción ({action}) en {title}"
+  },
+  "wiki_ev_translate_review": {
+    "status": "unverified",
+    "text": "{user} revisa una traducción de {title}"
+  },
+  "wiki_ev_translate_unmark": {
+    "status": "unverified",
+    "text": "{user} retira {title} de traducción"
+  },
+  "wiki_ev_unapprove": {
+    "status": "unverified",
+    "text": "{user} retira la aprobación de {title}"
+  },
+  "wiki_ev_unblock": {
+    "status": "unverified",
+    "text": "{user} desbloquea a {target}"
+  },
+  "wiki_ev_unprotect": {
+    "status": "unverified",
+    "text": "{user} desprotege {title}"
+  },
+  "wiki_ev_upload": {
+    "status": "unverified",
+    "text": "{user} sube {title}"
+  },
+  "wiki_ev_upload_overwrite": {
+    "status": "unverified",
+    "text": "{user} sube una nueva versión de {title}"
+  },
+  "wiki_ev_upload_revert": {
+    "status": "unverified",
+    "text": "{user} revierte {title} a una versión anterior"
+  },
+  "wiki_flag_bot": {
+    "status": "unverified",
+    "text": "bot"
+  },
+  "wiki_flag_minor": {
+    "status": "unverified",
+    "text": "menor"
+  },
+  "wiki_users_and_more": {
+    "status": "unverified",
+    "text": "{users} y {count} más"
+  },
+  "wikifeed_already_attached": {
+    "status": "unverified",
+    "text": "{wiki} ya está conectado aquí."
+  },
+  "wikifeed_attached": {
+    "status": "unverified",
+    "text": "El wiki {name} ({wiki}) está conectado a {where}. Su actividad se retransmitirá allí, incluidos los chats que se unan más adelante."
+  },
+  "wikifeed_bad_value": {
+    "status": "unverified",
+    "text": "{option} no acepta el valor {value}. Permitidos: {allowed}."
+  },
+  "wikifeed_chat_only_note": {
+    "status": "unverified",
+    "text": "Este chat todavía no pertenece a ningún puente, así que por ahora la actividad llega solo aquí. Cuando el chat se una a un puente, irá a todos los chats de ese puente y la configuración pasará a sus administradores."
+  },
+  "wikifeed_discussions_note": {
+    "status": "unverified",
+    "text": "Las discusiones de este wiki también se retransmiten."
+  },
+  "wikifeed_invalid_url": {
+    "status": "unverified",
+    "text": "Eso no parece un enlace a un wiki. Indica la dirección de cualquiera de sus páginas, su página principal o su api.php."
+  },
+  "wikifeed_list_empty": {
+    "status": "unverified",
+    "text": "Todavía no se sigue ningún wiki aquí. Añade uno con /setwikifeed <enlace a un wiki>."
+  },
+  "wikifeed_list_entry": {
+    "status": "unverified",
+    "text": "• {name} ({wiki})\n   eventos: {groups}\n   espacios de nombres: {namespaces} · ediciones de bots: {bots} · ediciones menores: {minor}\n   Discord: {format} · entrega: {delivery} · webhook: {webhook}"
+  },
+  "wikifeed_list_header": {
+    "status": "unverified",
+    "text": "Wikis seguidos aquí:"
+  },
+  "wikifeed_no_subscription": {
+    "status": "unverified",
+    "text": "{wiki} no se sigue aquí, así que no hay nada que configurar."
+  },
+  "wikifeed_not_attached": {
+    "status": "unverified",
+    "text": "{wiki} no está conectado aquí."
+  },
+  "wikifeed_not_mediawiki": {
+    "status": "unverified",
+    "text": "No se encontró ningún MediaWiki en {wiki}. Revisa la dirección: el bot solo lee sitios MediaWiki."
+  },
+  "wikifeed_private": {
+    "status": "unverified",
+    "text": "{wiki} requiere una cuenta para leerlo, así que el bot no puede seguirlo."
+  },
+  "wikifeed_rem_usage": {
+    "status": "unverified",
+    "text": "Uso: /remwikifeed <enlace a un wiki> — cualquier enlace al wiki que quieras dejar de seguir."
+  },
+  "wikifeed_removed": {
+    "status": "unverified",
+    "text": "La actividad de {wiki} ya no se retransmite aquí."
+  },
+  "wikifeed_settings_saved": {
+    "status": "unverified",
+    "text": "Ajustes de {wiki} actualizados para todos los chats del puente."
+  },
+  "wikifeed_settings_usage": {
+    "status": "unverified",
+    "text": "Uso: /wikifeed-settings <enlace a un wiki> <opción>=<valor> …\nOpciones: events (lista de tipos, o all/none), namespaces (números, o all), bots (on/off), minor (on/off), format (embed/text), delivery (auto/message), webhook (own/shared).\nEjemplo: /wikifeed-settings example.org events=edit,new,delete bots=off webhook=own"
+  },
+  "wikifeed_throttled": {
+    "status": "unverified",
+    "text": "{wiki} está limitando las peticiones del bot o poniéndose al día con su base de datos. Inténtalo de nuevo en unos minutos."
+  },
+  "wikifeed_unknown_groups": {
+    "status": "unverified",
+    "text": "Tipos de evento desconocidos: {items}. Disponibles: {available}."
+  },
+  "wikifeed_unknown_namespaces": {
+    "status": "unverified",
+    "text": "Los espacios de nombres son números (0 principal, 6 Archivo, 14 Categoría, …). No son números: {items}."
+  },
+  "wikifeed_unknown_option": {
+    "status": "unverified",
+    "text": "Opción desconocida: {items}. Disponibles: events, namespaces, bots, minor, format, delivery, webhook."
+  },
+  "wikifeed_unreachable": {
+    "status": "unverified",
+    "text": "No se pudo leer {wiki}. Puede que el wiki esté caído o que la dirección sea incorrecta."
+  },
+  "wikifeed_usage": {
+    "status": "unverified",
+    "text": "Uso: /setwikifeed <enlace a un wiki> — cualquiera de sus páginas, su página principal o su api.php."
+  },
+  "wikifeed_value_all": {
+    "status": "unverified",
+    "text": "todos"
+  },
+  "wikifeed_value_off": {
+    "status": "unverified",
+    "text": "ocultar"
+  },
+  "wikifeed_value_on": {
+    "status": "unverified",
+    "text": "mostrar"
+  },
+  "wikifeed_value_own": {
+    "status": "unverified",
+    "text": "propio"
+  },
+  "wikifeed_value_shared": {
+    "status": "unverified",
+    "text": "compartido"
   },
   "ytfeed_already_attached": {
     "status": "unverified",

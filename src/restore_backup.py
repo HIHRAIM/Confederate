@@ -12,6 +12,9 @@ from backup_crypto import decrypt_bytes
 from env_loader import load_env
 
 def main():
+    """Decrypt one backup file. Returns a shell exit code: 2 for a usage or
+    missing-key problem, 1 when decryption fails (wrong key or a damaged
+    file — the authentication tag cannot tell those apart), 0 on success."""
     if len(sys.argv) != 3:
         print("usage: python restore_backup.py <input.db.enc> <output.db>")
         return 2

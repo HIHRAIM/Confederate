@@ -64,9 +64,11 @@ def normalize_source(raw):
     return text if len(text) <= 253 and HANDLE_RE.match(text) else None
 
 def source_url(actor):
+    """Link to the account's profile, for `/bridge` listings."""
     return f"https://bsky.app/profile/{actor}"
 
 def post_url(actor, rkey):
+    """Link to one post of the account."""
     return f"https://bsky.app/profile/{actor}/post/{rkey}"
 
 _TID_ALPHABET = "234567abcdefghijklmnopqrstuvwxyz"
@@ -89,6 +91,7 @@ def _tid_to_int(rkey):
     return value
 
 def _rkey(uri):
+    """The record key — the last path segment of an at:// URI."""
     return uri.rsplit("/", 1)[-1] if uri else None
 
 def _parse_time(value):
@@ -113,6 +116,7 @@ def _sort_id(uri, when):
     return (seconds * 1_000_000) << 10 if seconds else 0
 
 def _display_name(user):
+    """An account's shown name, falling back to its handle, or None."""
     return ((user or {}).get("displayName") or (user or {}).get("handle") or "").strip() or None
 
 def _looks_truncated(shown, uri):
@@ -180,6 +184,7 @@ def _collect_media(post):
     out = []
 
     def add(urls, kind, **extra):
+        """Append one attachment with its rendition ladder, largest first."""
         urls = [u for u in urls if u]
         if not urls:
             return

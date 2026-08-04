@@ -1,3 +1,13 @@
+"""Template for src/config.py — this deployment's ids and channels.
+
+Copy it to src/config.py and fill in the values; the real file is deliberately
+untracked (it names one particular set of servers), so this template is the
+documentation of what the bot expects to find there.
+
+Tokens are never written here: they come from src/.env through env_loader.
+Chat keys follow the bot's own convention — 'guild:channel' on Discord,
+'group:topic' on Telegram (topic 0 = the plain group).
+"""
 import os
 
 from env_loader import load_env
@@ -89,3 +99,6 @@ APPEAL_BANINFO_CHANNELS = {
 CONSULS = {
     ROLE_ID,
 }
+
+WIKI_CONTACT = "https://github.com/HIHRAIM/Confederate"
+

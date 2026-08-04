@@ -135,13 +135,21 @@
     "status": "verified",
     "text": "Чат подключён к мосту {bridge_id}."
   },
+  "atb_attached_new": {
+    "status": "unverified",
+    "text": "Создан новый мост {bridge_id}, чат подключён к нему. Сообщите номер другим чатам — они подключаются командой /atb {bridge_id}."
+  },
   "atb_invalid_id": {
-    "status": "verified",
-    "text": "Неверный ID моста."
+    "status": "unverified",
+    "text": "Неверный ID моста. Укажите число или `new`, чтобы создать мост с наименьшим свободным номером."
+  },
+  "atb_no_free_id": {
+    "status": "unverified",
+    "text": "Свободных номеров мостов ниже {limit} не осталось. Освободите номер, отключив чаты неиспользуемого моста, и повторите."
   },
   "atb_usage": {
-    "status": "verified",
-    "text": "Использование: /atb <id_моста>"
+    "status": "unverified",
+    "text": "Использование: /atb <id_моста> — или /atb new, чтобы создать мост с наименьшим свободным номером."
   },
   "backup_failed": {
     "status": "verified",
@@ -408,8 +416,8 @@
     "text": "/appeal — подать апелляцию на бан (после входа на сервер апелляций)"
   },
   "help.cmd_atb": {
-    "status": "verified",
-    "text": "/atb <id_моста> — привязать этот чат к мосту (админы бота)"
+    "status": "unverified",
+    "text": "/atb <id_моста | new> — привязать этот чат к мосту или создать новый (админы бота)"
   },
   "help.cmd_backup": {
     "status": "verified",
@@ -515,6 +523,10 @@
     "status": "verified",
     "text": "/remtgfeed <канал> — отключить канал Telegram от этого моста"
   },
+  "help.cmd_remwikifeed": {
+    "status": "unverified",
+    "text": "/remwikifeed <ссылка на вики> — прекратить пересылку активности этой вики (админы бота и моста)"
+  },
   "help.cmd_remytfeed": {
     "status": "verified",
     "text": "/remytfeed <канал> — отключить канал YouTube от этого моста"
@@ -543,6 +555,10 @@
     "status": "verified",
     "text": "/settgfeed <канал> — присоединить публичный канал Telegram к этому мосту"
   },
+  "help.cmd_setwikifeed": {
+    "status": "unverified",
+    "text": "/setwikifeed <ссылка на вики> — пересылать активность MediaWiki в этот мост (админы бота и моста)"
+  },
   "help.cmd_setytfeed": {
     "status": "verified",
     "text": "/setytfeed <канал> — присоединить публичный канал YouTube к этому мосту"
@@ -570,6 +586,14 @@
   "help.cmd_whois": {
     "status": "verified",
     "text": "/whois — информация об авторе сообщения (ответом на relay-сообщение бота)"
+  },
+  "help.cmd_wikifeed_settings": {
+    "status": "unverified",
+    "text": "/wikifeed-settings <ссылка на вики> <параметр>=<значение> — фильтры и формат вывода вики (админы бота и моста)"
+  },
+  "help.cmd_wikifeeds": {
+    "status": "unverified",
+    "text": "/wikifeeds — список отслеживаемых здесь вики и их настроек"
   },
   "help.section_admins": {
     "status": "verified",
@@ -1399,6 +1423,362 @@
   "whois.use_reply": {
     "status": "verified",
     "text": "Используйте эту команду ответом на relay-сообщение бота."
+  },
+  "wiki_ev_approve": {
+    "status": "unverified",
+    "text": "{user} утверждает версию {title}"
+  },
+  "wiki_ev_approve_other": {
+    "status": "unverified",
+    "text": "{user} меняет статус проверки ({action}) у {title}"
+  },
+  "wiki_ev_block": {
+    "status": "unverified",
+    "text": "{user} блокирует {target}{duration}"
+  },
+  "wiki_ev_contentmodel": {
+    "status": "unverified",
+    "text": "{user} меняет модель содержимого {title}"
+  },
+  "wiki_ev_contentmodel_new": {
+    "status": "unverified",
+    "text": "{user} создаёт {title} с нестандартной моделью содержимого"
+  },
+  "wiki_ev_delete": {
+    "status": "unverified",
+    "text": "{user} удаляет {title}"
+  },
+  "wiki_ev_delete_revision": {
+    "status": "unverified",
+    "text": "{user} меняет видимость версий {title}"
+  },
+  "wiki_ev_discussion": {
+    "status": "unverified",
+    "text": "{user} начинает обсуждение в {title}"
+  },
+  "wiki_ev_discussion_reply": {
+    "status": "unverified",
+    "text": "{user} отвечает в {title}"
+  },
+  "wiki_ev_dump": {
+    "status": "unverified",
+    "text": "{user} меняет дамп данных ({action})"
+  },
+  "wiki_ev_edit": {
+    "status": "unverified",
+    "text": "{user} правит {title}{size}"
+  },
+  "wiki_ev_farm_create": {
+    "status": "unverified",
+    "text": "{user} создаёт вики {target}"
+  },
+  "wiki_ev_farm_other": {
+    "status": "unverified",
+    "text": "{user} выполняет административное действие ({action}) над {title}"
+  },
+  "wiki_ev_farm_request": {
+    "status": "unverified",
+    "text": "{user} запрашивает вики ({title})"
+  },
+  "wiki_ev_farm_settings": {
+    "status": "unverified",
+    "text": "{user} меняет настройки вики ({title})"
+  },
+  "wiki_ev_filter_hit": {
+    "status": "unverified",
+    "text": "{user} срабатывает на фильтре злоупотреблений на {title}"
+  },
+  "wiki_ev_filter_modify": {
+    "status": "unverified",
+    "text": "{user} меняет фильтр злоупотреблений {title}"
+  },
+  "wiki_ev_filter_other": {
+    "status": "unverified",
+    "text": "{user} меняет автоматический фильтр ({action})"
+  },
+  "wiki_ev_global_block": {
+    "status": "unverified",
+    "text": "{user} глобально блокирует {target}{duration}"
+  },
+  "wiki_ev_global_other": {
+    "status": "unverified",
+    "text": "{user} выполняет глобальное действие с учётной записью ({action}) над {title}"
+  },
+  "wiki_ev_global_rename": {
+    "status": "unverified",
+    "text": "{user} глобально переименовывает участника в {target}"
+  },
+  "wiki_ev_global_unblock": {
+    "status": "unverified",
+    "text": "{user} снимает глобальную блокировку с {target}"
+  },
+  "wiki_ev_import": {
+    "status": "unverified",
+    "text": "{user} импортирует {title}"
+  },
+  "wiki_ev_import_request": {
+    "status": "unverified",
+    "text": "{user} начинает запрос на импорт ({title})"
+  },
+  "wiki_ev_interwiki": {
+    "status": "unverified",
+    "text": "{user} меняет таблицу интервики ({action})"
+  },
+  "wiki_ev_managetags": {
+    "status": "unverified",
+    "text": "{user} меняет описание метки {title}"
+  },
+  "wiki_ev_merge": {
+    "status": "unverified",
+    "text": "{user} объединяет историю {title} с {target}"
+  },
+  "wiki_ev_merged": {
+    "status": "unverified",
+    "text": "{count} правок страницы {title} от {users}{size}"
+  },
+  "wiki_ev_move": {
+    "status": "unverified",
+    "text": "{user} переименовывает {title} в {target}"
+  },
+  "wiki_ev_move_redir": {
+    "status": "unverified",
+    "text": "{user} переименовывает {title} в {target} поверх перенаправления"
+  },
+  "wiki_ev_new": {
+    "status": "unverified",
+    "text": "{user} создаёт {title}{size}"
+  },
+  "wiki_ev_newuser": {
+    "status": "unverified",
+    "text": "{target} создаёт учётную запись"
+  },
+  "wiki_ev_newuser_auto": {
+    "status": "unverified",
+    "text": "учётная запись {target} создана автоматически"
+  },
+  "wiki_ev_newuser_created_by": {
+    "status": "unverified",
+    "text": "{user} создаёт учётную запись {target}"
+  },
+  "wiki_ev_other": {
+    "status": "unverified",
+    "text": "{user} выполняет {action} над {title}"
+  },
+  "wiki_ev_pagelang": {
+    "status": "unverified",
+    "text": "{user} меняет язык страницы {title}"
+  },
+  "wiki_ev_patrol": {
+    "status": "unverified",
+    "text": "{user} отмечает версию {title} как проверенную"
+  },
+  "wiki_ev_patrol_auto": {
+    "status": "unverified",
+    "text": "версия {title} проверена автоматически"
+  },
+  "wiki_ev_profile": {
+    "status": "unverified",
+    "text": "{user} меняет профиль или комментарий ({action}) у {title}"
+  },
+  "wiki_ev_protect": {
+    "status": "unverified",
+    "text": "{user} защищает {title}"
+  },
+  "wiki_ev_protect_modify": {
+    "status": "unverified",
+    "text": "{user} меняет защиту {title}"
+  },
+  "wiki_ev_reblock": {
+    "status": "unverified",
+    "text": "{user} меняет блокировку {target}{duration}"
+  },
+  "wiki_ev_renameuser": {
+    "status": "unverified",
+    "text": "{user} переименовывает участника в {target}"
+  },
+  "wiki_ev_restore": {
+    "status": "unverified",
+    "text": "{user} восстанавливает {title}"
+  },
+  "wiki_ev_rights": {
+    "status": "unverified",
+    "text": "{user} меняет группы участника {target}: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_rights_auto": {
+    "status": "unverified",
+    "text": "{target} автоматически повышен: {old_groups} → {new_groups}"
+  },
+  "wiki_ev_structured": {
+    "status": "unverified",
+    "text": "{user} меняет структурированные данные ({action}) у {title}"
+  },
+  "wiki_ev_tag": {
+    "status": "unverified",
+    "text": "{user} меняет метки у {title}"
+  },
+  "wiki_ev_translate_mark": {
+    "status": "unverified",
+    "text": "{user} помечает {title} к переводу"
+  },
+  "wiki_ev_translate_other": {
+    "status": "unverified",
+    "text": "{user} меняет настройку перевода ({action}) у {title}"
+  },
+  "wiki_ev_translate_review": {
+    "status": "unverified",
+    "text": "{user} проверяет перевод {title}"
+  },
+  "wiki_ev_translate_unmark": {
+    "status": "unverified",
+    "text": "{user} снимает {title} с перевода"
+  },
+  "wiki_ev_unapprove": {
+    "status": "unverified",
+    "text": "{user} снимает утверждение с {title}"
+  },
+  "wiki_ev_unblock": {
+    "status": "unverified",
+    "text": "{user} разблокирует {target}"
+  },
+  "wiki_ev_unprotect": {
+    "status": "unverified",
+    "text": "{user} снимает защиту с {title}"
+  },
+  "wiki_ev_upload": {
+    "status": "unverified",
+    "text": "{user} загружает {title}"
+  },
+  "wiki_ev_upload_overwrite": {
+    "status": "unverified",
+    "text": "{user} загружает новую версию {title}"
+  },
+  "wiki_ev_upload_revert": {
+    "status": "unverified",
+    "text": "{user} возвращает {title} к прежней версии"
+  },
+  "wiki_flag_bot": {
+    "status": "unverified",
+    "text": "бот"
+  },
+  "wiki_flag_minor": {
+    "status": "unverified",
+    "text": "малая"
+  },
+  "wiki_users_and_more": {
+    "status": "unverified",
+    "text": "{users} и ещё {count}"
+  },
+  "wikifeed_already_attached": {
+    "status": "unverified",
+    "text": "{wiki} уже подключена здесь."
+  },
+  "wikifeed_attached": {
+    "status": "unverified",
+    "text": "Вики {name} ({wiki}) подключена к {where}. Её активность будет пересылаться туда, включая чаты, которые присоединятся позже."
+  },
+  "wikifeed_bad_value": {
+    "status": "unverified",
+    "text": "{option} не принимает значение {value}. Допустимо: {allowed}."
+  },
+  "wikifeed_chat_only_note": {
+    "status": "unverified",
+    "text": "Этот чат пока не входит в мост, поэтому активность приходит только сюда. Как только чат присоединится к мосту, она пойдёт во все его чаты, а настройка перейдёт к админам моста."
+  },
+  "wikifeed_discussions_note": {
+    "status": "unverified",
+    "text": "Обсуждения этой вики тоже пересылаются."
+  },
+  "wikifeed_invalid_url": {
+    "status": "unverified",
+    "text": "Это не похоже на ссылку на вики. Укажите адрес любой её страницы, главной страницы или api.php."
+  },
+  "wikifeed_list_empty": {
+    "status": "unverified",
+    "text": "Здесь пока нет отслеживаемых вики. Добавьте: /setwikifeed <ссылка на вики>."
+  },
+  "wikifeed_list_entry": {
+    "status": "unverified",
+    "text": "• {name} ({wiki})\n   события: {groups}\n   пространства имён: {namespaces} · правки ботов: {bots} · малые правки: {minor}\n   Discord: {format} · доставка: {delivery} · вебхук: {webhook}"
+  },
+  "wikifeed_list_header": {
+    "status": "unverified",
+    "text": "Отслеживаемые здесь вики:"
+  },
+  "wikifeed_no_subscription": {
+    "status": "unverified",
+    "text": "{wiki} здесь не отслеживается, настраивать нечего."
+  },
+  "wikifeed_not_attached": {
+    "status": "unverified",
+    "text": "{wiki} здесь не подключена."
+  },
+  "wikifeed_not_mediawiki": {
+    "status": "unverified",
+    "text": "По адресу {wiki} не найдено MediaWiki. Проверьте адрес — бот читает только сайты на MediaWiki."
+  },
+  "wikifeed_private": {
+    "status": "unverified",
+    "text": "{wiki} требует учётную запись для чтения, поэтому бот не может её отслеживать."
+  },
+  "wikifeed_rem_usage": {
+    "status": "unverified",
+    "text": "Использование: /remwikifeed <ссылка на вики> — любая ссылка на вики, которую нужно отключить."
+  },
+  "wikifeed_removed": {
+    "status": "unverified",
+    "text": "Активность {wiki} больше не пересылается сюда."
+  },
+  "wikifeed_settings_saved": {
+    "status": "unverified",
+    "text": "Настройки {wiki} обновлены для всех чатов моста."
+  },
+  "wikifeed_settings_usage": {
+    "status": "unverified",
+    "text": "Использование: /wikifeed-settings <ссылка на вики> <параметр>=<значение> …\nПараметры: events (список типов, либо all/none), namespaces (числа, либо all), bots (on/off), minor (on/off), format (embed/text), delivery (auto/message), webhook (own/shared).\nПример: /wikifeed-settings example.org events=edit,new,delete bots=off webhook=own"
+  },
+  "wikifeed_throttled": {
+    "status": "unverified",
+    "text": "{wiki} ограничивает частоту запросов или догоняет свою базу. Попробуйте через несколько минут."
+  },
+  "wikifeed_unknown_groups": {
+    "status": "unverified",
+    "text": "Неизвестные типы событий: {items}. Доступны: {available}."
+  },
+  "wikifeed_unknown_namespaces": {
+    "status": "unverified",
+    "text": "Пространства имён задаются числами (0 основное, 6 Файл, 14 Категория, …). Не числа: {items}."
+  },
+  "wikifeed_unknown_option": {
+    "status": "unverified",
+    "text": "Неизвестный параметр: {items}. Доступны: events, namespaces, bots, minor, format, delivery, webhook."
+  },
+  "wikifeed_unreachable": {
+    "status": "unverified",
+    "text": "Не удалось прочитать {wiki}. Возможно, вики недоступна или адрес указан неверно."
+  },
+  "wikifeed_usage": {
+    "status": "unverified",
+    "text": "Использование: /setwikifeed <ссылка на вики> — любая её страница, главная страница или api.php."
+  },
+  "wikifeed_value_all": {
+    "status": "unverified",
+    "text": "все"
+  },
+  "wikifeed_value_off": {
+    "status": "unverified",
+    "text": "скрывать"
+  },
+  "wikifeed_value_on": {
+    "status": "unverified",
+    "text": "показывать"
+  },
+  "wikifeed_value_own": {
+    "status": "unverified",
+    "text": "собственный"
+  },
+  "wikifeed_value_shared": {
+    "status": "unverified",
+    "text": "общий"
   },
   "ytfeed_already_attached": {
     "status": "verified",

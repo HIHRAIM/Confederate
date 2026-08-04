@@ -1,3 +1,20 @@
+"""Entry point: start both halves of the bridge and the loops that belong to
+neither of them.
+
+Run it from this directory — the database and .env are opened by relative
+path: ``python main.py``.
+
+What lives here is the cross-platform machinery: the service-chat reporter
+every loop uses to complain, the followed-source poller (scheduling, backoff
+and throttling; the readers themselves are in sources/), the poll closer, the
+consent/verification cleanup and the daily reachability sweep. Loops that only
+concern Discord — status, backups, dead chats and topics, appeal maintenance —
+are started by the client itself in discord_bot/client.py.
+
+Import order matters at the bottom of the imports: `db.init()` runs before
+either bot package is imported further, so the schema exists before anything
+queries it.
+"""
 import asyncio
 import logging
 import time
@@ -19,6 +36,13 @@ db.init()
 db.cleanup_old_messages(days=30)
 
 def _normalize_service_chat_key(platform, raw_key):
+    """Parse a config.SERVICE_CHATS entry into ``(prefix, target)``.
+
+    The entries are written by hand and come in two shapes: 'group:topic' /
+    'guild:channel', or a bare id — which means a group with no topic on
+    Telegram and a channel of unknown guild on Discord. Returns (None, None)
+    for anything unparsable rather than raising: a typo in the config must
+    not stop the bot from starting."""
     key = str(raw_key).strip()
     if not key:
         return None, None
@@ -42,6 +66,9 @@ def _normalize_service_chat_key(platform, raw_key):
     return None, None
 
 async def send_service_event(event_key, **kwargs):
+    """Report an operational event to the service chats of both platforms,
+    each in its own language. Every send is guarded — the service chats are
+    where failures are reported, so a failure there must stay a log line."""
     from telegram_bot import bot as tg
     from discord_bot import bot as dc
 
@@ -83,6 +110,14 @@ async def send_service_event(event_key, **kwargs):
             logger.warning("send_service_event failed for discord %s: %s", chat_key, e)
 
 async def rules_loop():
+    """Legacy rules poster, kept alongside DiscordBot.bridge_rules_loop.
+
+    It reads bridge_rules.hours as HOURS while the command that writes the
+    column stores MINUTES, so with the intervals the commands produce its
+    time check effectively never passes and the client-side loop is what
+    actually posts. Left running because it costs one query a minute and
+    removing it is a behaviour change, not a refactor — see the findings list
+    in the stage-1 report."""
     import time
     from discord_bot import bot as dc
     from telegram_bot import bot as tg
@@ -198,6 +233,7 @@ async def pending_cleanup_loop():
             db.cleanup_expired_verified()
             db.cleanup_old_loc_suggestions()
             db.cleanup_old_polls()
+            db.cleanup_wiki_relay_records()
 
         except Exception as e:
             try:
@@ -210,7 +246,8 @@ async def pending_cleanup_loop():
 FEED_TICK_SECONDS = 30
 FEED_MAX_POSTS_PER_CYCLE = 5
 
-FEED_POLL_INTERVALS = {"telegram": 60, "bluesky": 120, "youtube": 5 * 60}
+FEED_POLL_INTERVALS = {"telegram": 60, "bluesky": 120, "youtube": 5 * 60,
+                       "wiki": 90, "wikidisc": 180}
 FEED_DEFAULT_INTERVAL = 10 * 60
 FEED_FETCHES_PER_KIND_PER_TICK = 1
 
@@ -274,13 +311,18 @@ async def feed_loop():
     """Poll every followed source and relay what is new.
 
     Covers the Bluesky accounts of `/setbskyfeed`, the YouTube channels of
-    `/setytfeed` and the Telegram channels of
+    `/setytfeed`, the wikis of `/setwikifeed` and the Telegram channels of
     `/settgfeed` that the bot is not a member of — a channel it *is* in delivers
     its posts through `channel_post` and never appears here. A source is read
     once however many chats follow it, and each attachment advances its own
     `last_post_id`. A failing source is put aside for a while and reported to the
     service chats at most once an hour: an outage at the far end must turn into
-    neither a flood of messages nor a flood of requests."""
+    neither a flood of messages nor a flood of requests.
+
+    A wiki hands its whole batch to `relay_wiki_posts` instead of being
+    walked post by post: it is the one source that merges several changes
+    into one message and filters per chat, so the cap on how many messages a
+    poll may produce lives there rather than in the slice taken here."""
     import aiohttp
     from discord_bot import (
         bot as dc, feed_module, feed_stale_since, relay_feed_post, warm_feed_avatars,
@@ -329,8 +371,12 @@ async def feed_loop():
                                         db.set_feed_last_post(kind, source, feed["chat_id"],
                                                               last_id or "0", title=title)
                                     continue
-                                for post in fresh[-FEED_MAX_POSTS_PER_CYCLE:]:
-                                    await relay_feed_post(feed, post)
+                                if kind in ("wiki", "wikidisc"):
+                                    from discord_bot.wiki import relay_wiki_posts
+                                    await relay_wiki_posts(feed, fresh)
+                                else:
+                                    for post in fresh[-FEED_MAX_POSTS_PER_CYCLE:]:
+                                        await relay_feed_post(feed, post)
                                 db.set_feed_last_post(kind, source, feed["chat_id"],
                                                       fresh[-1]["id"], title=title)
                             except Exception as e:
@@ -457,6 +503,9 @@ async def daily_check_loop():
         await asyncio.sleep(24 * 3600)
 
 async def main():
+    """Start both bots and the cross-platform loops as one task group, then
+    wait. The service chats are told once the bots have had five seconds to
+    connect, and told again on the way out however the gather ends."""
     tasks = [
         asyncio.create_task(tg_main()),
         asyncio.create_task(discord_bot.start(DISCORD_TOKEN)),

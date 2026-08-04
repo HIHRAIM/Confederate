@@ -1,9 +1,29 @@
+"""The platform-neutral core of the relay.
+
+Two jobs live here. First, markup translation between the platforms:
+Telegram sends formatting as entity offsets into the UTF-16 encoding of the
+text, Discord expects markdown, and Telegram accepts a small subset of HTML
+back — plus Discord's self-localizing timestamps, which Telegram cannot
+render at all and are spelled out in the target chat's language instead.
+
+Second, `relay_message`: the fan-out every inbound handler ends in. It
+records the origin message, walks the target chats, renders per-target
+language and per-target form, and hands each one to a `send_to_chat`
+callback the platform half supplies — this module never talks to Discord or
+Telegram itself.
+"""
 import db
 import time
 import html
 import re
 
 def _utf16_index_map(text: str):
+    """Map UTF-16 code-unit offsets to Python string indexes.
+
+    Telegram's entity offsets count UTF-16 code units, so anything outside
+    the basic plane — an emoji, most notably — makes them disagree with
+    Python's per-character indexing. Slicing on a raw offset would cut a
+    surrogate pair in half."""
     pos_map = {0: 0}
     utf16_pos = 0
     for i, ch in enumerate(text):
@@ -12,10 +32,19 @@ def _utf16_index_map(text: str):
     return pos_map
 
 def _wrap_blockquote(segment: str) -> str:
+    """Prefix every line of a segment with Discord's '> ' quote marker."""
     lines = segment.splitlines() or [segment]
     return "\n".join(f"> {ln}" if ln else ">" for ln in lines)
 
 def telegram_entities_to_discord(text: str, entities):
+    """Render Telegram formatting entities as Discord markdown.
+
+    Entities are ranges, possibly overlapping, so the markers are collected
+    per index and emitted in one pass — closing markers before opening ones
+    at the same position, so nested spans do not cross. A blockquote is the
+    exception: it rewrites the text itself and restarts the conversion,
+    because its marker goes at the head of every line rather than around the
+    span."""
     if not text:
         return ""
     if not entities:
@@ -26,9 +55,11 @@ def telegram_entities_to_discord(text: str, entities):
     closes = {}
 
     def add_open(i, token):
+        """Queue an opening marker at a string index."""
         opens.setdefault(i, []).append(token)
 
     def add_close(i, token):
+        """Queue a closing marker at a string index."""
         closes.setdefault(i, []).append(token)
 
     for e in entities:
@@ -76,6 +107,13 @@ def telegram_entities_to_discord(text: str, entities):
     return "".join(out)
 
 def discord_to_telegram_html(text: str):
+    """Render Discord markdown as the HTML subset Telegram accepts.
+
+    The text is escaped first and the tags built on the escaped form, so a
+    literal '<' in someone's message can never become markup. Order matters:
+    links and code blocks are converted before the inline emphasis rules, so
+    that markdown inside a URL or a code span is left alone. Italic is last
+    and guarded against matching the '**' of bold."""
     if not text:
         return ""
 
@@ -117,11 +155,13 @@ def discord_to_telegram_html(text: str):
     return "\n".join(converted)
 
 def escape_html(text: str):
+    """Escape text for Telegram's HTML parse mode (None becomes empty)."""
     return html.escape(text or "")
 
 _DISCORD_TS_RE = re.compile(r"(?:<|&lt;)t:(-?\d+)(?::([tTdDfFsSR]))?(?:>|&gt;)")
 
 def _ts_ordinal(n):
+    """English ordinal of a day number: 1 → 1st, 2 → 2nd, 13 → 13th."""
     if 10 <= n % 100 <= 20:
         suffix = "th"
     else:
@@ -142,6 +182,8 @@ def convert_discord_timestamps(text, lang="en"):
     plural = plural_ru if lang in ("ru", "uk") else plural_pl if lang == "pl" else plural_en
 
     def fmt_time(dt, secs):
+        """Clock time in the target language's convention (12-hour with
+        AM/PM for English, 24-hour elsewhere)."""
         if lang == "en":
             hour = dt.hour % 12 or 12
             ampm = "AM" if dt.hour < 12 else "PM"
@@ -149,6 +191,7 @@ def convert_discord_timestamps(text, lang="en"):
         return f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}" if secs else f"{dt.hour:02d}:{dt.minute:02d}"
 
     def fmt_num(dt):
+        """All-numeric date in the target language's field order."""
         if lang == "en":
             return f"{dt.month:02d}/{dt.day:02d}/{dt.year}"
         if lang in ("es", "pt"):
@@ -156,6 +199,8 @@ def convert_discord_timestamps(text, lang="en"):
         return f"{dt.day:02d}.{dt.month:02d}.{dt.year}"
 
     def fmt_long(dt):
+        """Spelled-out date with the localized month name and whatever
+        connectives the language wants ('de', 'г.', …)."""
         month = months[dt.month - 1] if isinstance(months, (list, tuple)) and len(months) >= 12 else str(dt.month)
         if lang == "en":
             return f"{month} {_ts_ordinal(dt.day)}, {dt.year}"
@@ -168,6 +213,9 @@ def convert_discord_timestamps(text, lang="en"):
         return f"{dt.day} {month} {dt.year}"
 
     def fmt_relative(unix):
+        """"in 3 hours" / "5 days ago", with the plural form the target
+        language needs for that number. Frozen at render time — unlike
+        Discord's live <t:…:R>, a relayed copy cannot keep counting."""
         delta = unix - int(datetime.now().timestamp())
         past = delta < 0
         s = abs(delta)
@@ -192,6 +240,8 @@ def convert_discord_timestamps(text, lang="en"):
             return f"{val} {unit}"
 
     def repl(m):
+        """Replace one <t:unix:style> match; an unparsable timestamp is left
+        exactly as it was rather than dropped."""
         try:
             unix = int(m.group(1))
             dt = datetime.fromtimestamp(unix)
@@ -223,12 +273,15 @@ DISCORD_MSG_LIMIT = 2000
 TELEGRAM_MSG_LIMIT = 4096
 
 def clip_text(text, limit):
+    """Cut text to a platform limit, marking the cut with an ellipsis."""
     text = text or ""
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
 
 def _clip_escaped_html(escaped, limit):
+    """Cut already-escaped text without leaving a half-written entity —
+    a trailing '&amp' fragment would render as literal garbage."""
     if len(escaped) <= limit:
         return escaped
     cut = escaped[: max(limit - 1, 0)]
@@ -406,7 +459,39 @@ async def relay_message(
     targets=None,
     file_count=None,
     file_count_source="telegram",
+    body_renderer=None,
 ):
+    """Record one origin message and deliver a copy of it to every target chat.
+
+    This is the fan-out both platforms end in, and the only place that writes
+    the `messages` and `message_copies` rows the edit, delete, reply and whois
+    paths all depend on — the row is inserted before any send, so a copy can
+    never exist without an origin to attach it to.
+
+    Per target chat it: resolves that chat's language, builds the
+    ``[Messenger | Place] Sender:`` header (bot senders get the marker their
+    platform can render), resolves the reply to either a native reference or a
+    localized "unknown message" line, prepends the forward line, substitutes
+    the placeholder markers (`__TG_FILES_n__`, `__TG_STICKER__`,
+    `__TG_VOICE__`, `__TG_VIDEO_NOTE__`) with localized text, attaches the
+    GALLERY links, and appends the "[N files from …]" footer. The origin chat
+    is skipped — it already has the message.
+
+    `send_to_chat_func` does the actual sending; a target it returns nothing
+    for is simply left without a copy, which is what keeps one unreachable
+    chat from failing the whole relay. `targets` overrides the bridge's chat
+    list, which is how feed posts reach the chats `feed_targets` resolves.
+    Returns the new `messages.id`.
+
+    `body_renderer` is for senders whose text is not one fixed string but
+    something written per reader — wiki activity, which is composed in each
+    chat's own language and may come with a Discord embed. It is called once
+    per target as ``body_renderer(chat, lang)`` and returns a dict with any
+    of ``text`` / ``discord`` / ``telegram_html`` / ``embed``; whatever it
+    provides replaces the corresponding argument for that chat, and a chat it
+    returns ``None`` for is skipped entirely (that is how per-chat filters
+    drop an event without dropping the whole relay).
+    """
     place_name = clean_display_name(place_name) if place_name else None
     sender_name = clean_display_name(sender_name)
 
@@ -445,6 +530,12 @@ async def relay_message(
 
         lang = get_chat_lang(chat["chat_id"])
 
+        rendered = None
+        if body_renderer is not None:
+            rendered = body_renderer(chat, lang)
+            if rendered is None:
+                continue
+
         prefix = relay_header_prefix(messenger_name, place_name)
         if is_bot_sender:
             if chat["platform"] == "discord":
@@ -467,6 +558,12 @@ async def relay_message(
         current_text = text
         current_discord_text = discord_text or current_text
         current_telegram_html = telegram_html
+        current_embed = None
+        if rendered is not None:
+            current_text = rendered.get("text", current_text)
+            current_discord_text = rendered.get("discord", current_text)
+            current_telegram_html = rendered.get("telegram_html", None)
+            current_embed = rendered.get("embed")
 
         eff_forward_type = None if is_bot_sender else forward_type
         eff_forward_name = None if is_bot_sender else forward_name
@@ -532,6 +629,9 @@ async def relay_message(
             if current_telegram_html is not None:
                 current_telegram_html = f"{current_telegram_html}\n{escape_html(footer)}".strip()
 
+        send_kwargs = {}
+        if current_embed is not None:
+            send_kwargs["embed"] = current_embed
         sent_id = await send_to_chat_func(
             chat,
             header=header,
@@ -546,6 +646,7 @@ async def relay_message(
             messenger_name=messenger_name,
             avatar_url=avatar_url,
             is_bot_sender=is_bot_sender,
+            **send_kwargs,
         )
         if not sent_id:
             continue

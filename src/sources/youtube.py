@@ -82,11 +82,14 @@ def normalize_source(raw):
     return text if HANDLE_RE.match(text) else None
 
 def source_url(source):
+    """Link to the channel, for `/bridge` listings — the /channel/ form for a
+    raw id, the plain path for a handle."""
     if CHANNEL_ID_RE.match(source or ""):
         return f"https://www.youtube.com/channel/{source}"
     return f"https://www.youtube.com/{source}"
 
 def post_url(video_id):
+    """Watch link of one video."""
     return WATCH_URL.format(video_id=video_id)
 
 def _parse_time(value):
@@ -99,6 +102,7 @@ def _parse_time(value):
         return None
 
 def _text(node):
+    """Stripped text of an XML node, or None when absent or empty."""
     return (node.text or "").strip() if node is not None and node.text else None
 
 def parse_feed(xml, source):

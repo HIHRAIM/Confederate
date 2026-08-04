@@ -51,6 +51,7 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
      - `APPEAL_PARDON_CHANNELS["discord"]` — channel(s) where the appellant's bare user ID is posted once the consuls grant an appeal, so Confederate Guard can lift their bans.
      - `APPEAL_BANINFO_CHANNELS["discord"]` — channel(s) where `<user_id> <thread_id>` is posted for every new appeal so Confederate Guard can publish the appellant's ban summary into the thread.
      - `CONSULS` — role IDs on Purgatorium whose holders may use the appeal verdict buttons.
+     - `WIKI_CONTACT` (optional) — a link or address the operators of a followed wiki can use to reach you. It goes into the User-Agent of every request the wiki relay makes, which MediaWiki's API etiquette requires (Wikimedia answers 403 without one). Defaults to this project's repository if unset.
 
    > The `VERIFIED`/`UNVERIFIED` mechanic is only needed when the bot runs alongside [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard). If you don't run Confederate Guard, leave the sets empty or turn the publishing off at runtime with `/verify-list disable` (it is enabled by default).
 
@@ -60,6 +61,54 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
    ```bash
    python src/main.py
    ```
+
+---
+
+## Project structure
+
+The code lives in `src/`, split into packages by domain. `ARCHITECTURE.md` describes how the pieces work together and carries a feature → file table; `src/CLAUDE.md` holds the working rules for the codebase.
+
+```
+src/
+  main.py              entry point: both bots plus the cross-platform loops
+                       (feeds, polls, rules, consent cleanup, daily checks)
+  config.py            this deployment's ids (untracked; config.example.py is the template)
+  env_loader.py        reads src/.env
+  utils.py             localization runtime, role checks, rate limiter
+  message_relay.py     platform-neutral relay core and markup conversion
+  wiki_events.py       what a wiki change means: grouping, filters, wording
+  backup_crypto.py     encrypted database snapshots
+  restore_backup.py    their restore tool
+
+  db/                  SQLite layer: one connection, one module per domain
+    __init__.py          connection (conn/cur), init(), the whole public API
+    schema.py            every CREATE TABLE + additive migrations
+    bridges.py  messages.py  admins.py  users.py
+    feeds.py    appeals.py   settings.py  polls.py
+
+  discord_bot/         the Discord half
+    client.py            the client, its loops, Confederate Guard plumbing
+    events.py            inbound events (messages, edits, deletes)
+    relay.py             delivery, webhook copies, edit/delete propagation
+    mentions.py          mention/embed/forward extraction
+    appeals.py           Purgatorium appeal system
+    feeds.py             feed kinds, avatars, GALLERY upload, attach/relay
+    wiki.py              wiki delivery: filtering, embeds, burst merging
+    commands/            slash commands: bridges, admins, settings, feeds,
+                         user, polls, locale, wiki
+
+  telegram_bot/        the Telegram half, mirroring the Discord one
+    client.py            bot/dispatcher/router, polling, resolvers
+    relay.py             inbound relay, albums, consent replay, edits
+    files.py             file re-upload to GALLERY
+    feeds.py             posts of followed channels the bot administrates
+    commands/            same domains as the Discord side
+
+  sources/             feed readers, one per kind, behind one interface
+    bluesky.py  youtube.py  telegram.py  wiki.py  fandom.py
+
+  i18n/                the six localization files
+```
 
 ---
 
@@ -83,10 +132,12 @@ Permission roles used below:
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
-| `/atb <bridge_id>` | Attach current Discord channel to a bridge | ❌ | ❌ | ✅ |
+| `/atb <bridge_id \| new>` | Attach current Discord channel to a bridge — `new` opens one on the lowest free number | ❌ | ❌ | ✅ |
 | `/setbskyfeed <account>` · `/rembskyfeed <account>` | Attach/detach a public Bluesky account: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/setytfeed <channel>` · `/remytfeed <channel>` | Attach/detach a public YouTube channel: its uploads are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/settgfeed <channel>` · `/remtgfeed <channel>` | Attach/detach a public Telegram channel: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
+| `/setwikifeed <link>` · `/remwikifeed <link>` | Attach/detach a MediaWiki: its activity is relayed to every chat of this bridge | ❌ | ✅ | ✅ |
+| `/wikifeed-settings <link> <option>=<value>` | Filters and output format of a followed wiki | ❌ | ✅ | ✅ |
 | `/rfb [channel_or_chat_id]` | Remove channel from a bridge (current channel if no ID given) | ❌ | ✅ | ✅ |
 | `/setadmin <user> [scope: local]` | Grant Bridge Admin rights across every bridge of this server — or, with `local`, in this bridge alone; DMs the user | ❌ | ✅ | ✅ |
 | `/remadmin <user> [scope: local]` | Revoke Bridge Admin rights across this server, or in this bridge alone | ❌ | ❌ | ✅ |
@@ -100,6 +151,7 @@ Permission roles used below:
 | `/locallang <ru\|uk\|pl\|en\|es\|pt>` | Set bot language for this channel/thread (overrides the server-wide `/lang`) | ❌ | ✅ | ✅ |
 | `/webhooks <enable\|disable> [scope: local]` | Relay incoming messages as per-sender webhooks (avatar + name), for the whole server or — with `local` — for this bridge only | ❌ | ✅ | ✅ |
 | `/bridge` | Show the bridge, connected chats, and bridge admins | ✅ | ✅ | ✅ |
+| `/wikifeeds` | List the wikis followed here and their settings | ✅ | ✅ | ✅ |
 | `/verify` | Request/refresh user verification prompt | ✅ | ✅ | ✅ |
 | `/whois` (as reply to relay message, or context menu on message) | Show original sender identity (incl. online status) | ✅ | ✅ | ✅ |
 | `/privacy` | Choose what the bot may share about you: hide yourself from `/whois`, hide your avatar in webhook copies, refuse `/mention` pings | ✅ | ✅ | ✅ |
@@ -127,10 +179,12 @@ Permission roles used below:
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
-| `/atb <bridge_id>` | Attach current Telegram chat/topic to a bridge | ❌ | ❌ | ✅ |
+| `/atb <bridge_id \| new>` | Attach current Telegram chat/topic to a bridge — `new` opens one on the lowest free number | ❌ | ❌ | ✅ |
 | `/setbskyfeed <account>` · `/rembskyfeed <account>` | Attach/detach a public Bluesky account: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/setytfeed <channel>` · `/remytfeed <channel>` | Attach/detach a public YouTube channel: its uploads are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/settgfeed <channel>` · `/remtgfeed <channel>` | Attach/detach a public Telegram channel: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
+| `/setwikifeed <link>` · `/remwikifeed <link>` | Attach/detach a MediaWiki: its activity is relayed to every chat of this bridge | ❌ | ✅ | ✅ |
+| `/wikifeed-settings <link> <option>=<value>` | Filters and output format of a followed wiki | ❌ | ✅ | ✅ |
 | `/rfb` | Remove current chat/topic from a bridge (run inside the target chat) | ❌ | ✅ | ✅ |
 | `/setadmin <user_id_or_username> [local]` | Grant Bridge Admin rights across every bridge of this group — or, with `local`, in this bridge alone; DMs the user | ❌ | ✅ | ✅ |
 | `/remadmin <user_id_or_username> [local]` | Revoke Bridge Admin rights across this group, or in this bridge alone | ❌ | ❌ | ✅ |
@@ -140,6 +194,7 @@ Permission roles used below:
 | `/locallang <ru\|uk\|pl\|en\|es\|pt>` | Set bot language for the current chat/topic (overrides the group-wide `/lang`) | ❌ | ✅ | ✅ |
 | `/remindrules <5h\|30m> [messages]` (as reply) | Post rules to all bridge chats on a schedule | ❌ | ✅ | ✅ |
 | `/bridge` | Show the bridge, connected chats, and bridge admins | ✅ | ✅ | ✅ |
+| `/wikifeeds` | List the wikis followed here and their settings | ✅ | ✅ | ✅ |
 | `/verify` | Request/refresh user verification prompt | ✅ | ✅ | ✅ |
 | `/whois` (as reply to relay message) | Show original sender identity | ✅ | ✅ | ✅ |
 | `/privacy` | Choose what the bot may share about you: hide yourself from `/whois`, hide your avatar in webhook copies, refuse `/mention` pings | ✅ | ✅ | ✅ |
@@ -284,6 +339,53 @@ A feed can also go quiet because the source itself stopped: where a source dates
 
 Polled sources are checked at a pace their host tolerates: the bot wakes every 30 seconds and asks at most one source of each kind, the one waiting longest, so a bridge with many sources of one kind never arrives at that kind's host as a burst. A Telegram channel is due about once a minute, a Bluesky account once every two minutes, a YouTube channel once every five — the Atom feed is a cached document that a new upload takes a few minutes to reach anyway. A source that stops answering is set aside for 15 minutes, doubling with each further failure up to 4 hours; a source that answers `429` is set aside for a flat 15 minutes together with the rest of its site, because there the far end is working and will take the bot back shortly. The newest post at the moment of attaching counts as already seen, so a new feed never dumps its backlog into the chats, and at most 5 posts per attached feed are relayed in one cycle.
 
+### Wiki activity
+
+`/setwikifeed <link to a wiki>` follows any MediaWiki and relays its recent changes into the bridge. Any link to the wiki works — an article, its main page, or its `api.php`; the bot finds the API endpoint itself and stores the subscription under one key, so two admins pasting two different pages do not follow the same wiki twice. Relaying starts from the moment of attaching: the history is never replayed. Like every other followed source, the subscription belongs to the **bridge** — chats that join later start receiving automatically — and `/remwikifeed` detaches it.
+
+Unlike the other feed commands, this one answers to **Bot Admins and Bridge Admins** rather than chat admins, because the activity pours into every chat of the bridge. In a chat that has not joined a bridge yet there are no bridge admins to ask, so its own chat admins may set it up and the reply says the setting becomes the bridge's once it joins one.
+
+**What is relayed.** Edits and page creations, file uploads, and the standard MediaWiki logs: deletions and restorations, moves, protection, blocks, rights changes, account creations, imports, history merges, tags, content-model and page-language changes.
+
+Extensions are covered too, grouped so that one switch turns off one kind of noise. Which log types belong to which extension was taken from the log-type list the wikis themselves publish, not guessed:
+
+- **`filters`** — Abuse Filter, and the spam and title blacklists (everywhere).
+- **`wikifarm`** — ManageWiki, CreateWiki, DataDump, ImportDump and the wiki-request queue (Miraheze and other farms running that stack).
+- **`global`** — cross-wiki account actions: GlobalBlocking, CentralAuth, global renames and vanishing (Wikimedia, Miraheze), and Phalanx, Fandom's equivalent.
+- **`interwiki`** — the Interwiki table.
+- **`translate`** — the Translate extension: page translation and translation review (translatewiki, mediawiki.org, Miraheze).
+- **`approval`** — revision approval: ApprovedRevs, FlaggedRevs, and Wikipedia's PageTriage curation.
+- **`structured`** — Cargo tables, Sprite sheets, TemplateClassification (Fandom-only).
+- **`profile`** — social features: CurseProfile and article comments (Fandom and the Gamepedia-era wikis).
+
+A log type the bot has never seen — every farm invents a few — still arrives, described generically, rather than being dropped.
+
+**Fandom Discussions.** On a Fandom wiki that has Discussions switched on, `/setwikifeed` also follows the forum and says so; posts and replies arrive like any other event and are filtered by the `discussion` group. A Fandom wiki without the feature, and every wiki that is not on Fandom, simply gets the one stream and no mention of a feature it does not have. Discussions are tracked as a separate subscription under the same wiki key — their post ids come from a different counter than `rcid`, and sharing one position between the two streams would let the first forum post silently stop the wiki's edits from ever being relayed again — but they share the wiki's settings row, so it is still configured once.
+
+**How it looks.** On Discord each change is an embed: the sentence links to the diff, the edit summary is the body, the wiki's name is in the footer, and the stripe colour follows the event type so a channel can be skimmed by colour. On Telegram the same change is one plain readable line with the link — not an embed with the fields stripped out. Both are written in the target chat's own language.
+
+Relayed activity is attributed to the wiki by name and to its hosting: a change from a Fandom wiki is headed `[Fandom]`, one from Miraheze `[Miraheze]`, one from Wiki.gg `[Wiki.gg]`, and only a self-hosted wiki (or a farm the bot does not know) falls back to the generic `[Wiki]`. Where the bridge relays through webhooks, each wiki gets a webhook of its own, named after the wiki and wearing its hosting's logo — the `webhook` setting below turns that off in favour of one shared webhook per channel. A channel holds at most 15 webhooks, so a channel following many wikis will fall back to the shared one once that limit is reached.
+
+**Bursts.** An active wiki can produce hundreds of edits a minute. Nothing is ever dropped — every change the poll fetched is delivered — but several changes to the same page collapse into a single line naming the page once, so a page being worked on hard reads as one event rather than fifteen. A poll reads up to 500 changes, the maximum the MediaWiki API serves in one request.
+
+**Settings** belong to the subscription, so a wiki is configured once for the whole bridge: change them in any chat of the bridge and every chat that receives the wiki follows. `/wikifeeds` lists the followed wikis and their settings; `/wikifeed-settings` changes them:
+
+| Option | Values | Meaning |
+|---|---|---|
+| `events` | `edit`, `new`, `upload`, `delete`, `move`, `protect`, `block`, `rights`, `newusers`, `import`, `merge`, `tag`, `contentmodel`, `pagelang`, `patrol`, `filters`, `wikifarm`, `global`, `interwiki`, `translate`, `approval`, `structured`, `profile`, `discussion`, `other` — or `all`/`none` | which event types to relay (patrol is off by default: it is noisy) |
+| `namespaces` | namespace numbers, or `all` | which namespaces to relay (0 main, 6 File, 14 Category, …) |
+| `bots` | `on`/`off` | relay edits flagged as made by a bot (off by default) |
+| `minor` | `on`/`off` | relay edits flagged as minor |
+| `format` | `embed`/`text` | how Discord shows the activity |
+| `delivery` | `auto`/`message` | `auto` follows the bridge's `/webhooks` setting; `message` always uses a plain bot message |
+| `webhook` | `own`/`shared` | `own` gives the wiki its own Discord webhook, named after it and wearing its hosting's logo; `shared` sends it through the bridge's common webhook instead |
+
+On Discord these are typed options (`/wikifeed-settings wiki:… events:… bots:…`); on Telegram they are `key=value` pairs (`/wikifeed-settings example.org events=edit,new bots=off`). Both go through one validation path, so an unknown value is refused the same way on either platform instead of being stored.
+
+Wiki activity reaches **threads and forum posts** as well as ordinary channels: Discord webhooks cannot post into a thread, so there the bot falls back to a normal message instead of losing the activity — and `delivery: message` forces that everywhere, for admins who want human relay through webhooks but wiki activity as plain bot messages.
+
+Requests to a wiki carry a User-Agent naming this bot and a contact address (`WIKI_CONTACT` in the config), which MediaWiki's API etiquette requires — Wikimedia refuses anything else — and `maxlag`, so a wiki catching up with its database can defer the bot instead of being made slower. A wiki that rate-limits us, is unreachable, requires an account, or is not a MediaWiki at all each produce their own clear error rather than silence.
+
 ### Shadow bans
 
 `/shadow-ban <user>` (Bridge Admins) silently drops a user from the relay: their new messages are deleted in the origin chat and never forwarded, with no notification to them.
@@ -376,7 +478,8 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
 - **Consul aliases (`/setname`)**: kept **indefinitely**, until changed or reset with `/setname` (by the consul themselves or a Bot Admin). Unlike the consul anonymization map, they are deliberately **not** deleted together with the appeal after 30 days — an alias has to outlive the appeals it was used in, otherwise it would vanish after the first verdict. Losing the `CONSULS` role does not delete the alias either; it starts working again if the role comes back.
 - **Privacy switches (`/privacy`)**: kept until the user changes them; never expired, so a protection stays on until it is switched off.
 - **Polls (question, options, votes and poll messages)**: deleted **7 days** after the poll closes; deleting a poll message on Discord closes and removes it everywhere at once.
-- **Followed sources (`/setbskyfeed`, `/setytfeed`, `/settgfeed`)**: kept until detached with `/rembskyfeed` / `/remytfeed` / `/remtgfeed`, or removed when the bot leaves the server/group whose chat they were attached in.
+- **Followed sources (`/setbskyfeed`, `/setytfeed`, `/settgfeed`, `/setwikifeed`)**: kept until detached with `/rembskyfeed` / `/remytfeed` / `/remtgfeed` / `/remwikifeed`, or removed when the bot leaves the server/group whose chat they were attached in. A wiki's filter and format settings belong to the subscription and are deleted together with it.
+- **Wiki relay bookkeeping**: each chat keeps the records of only its **100 most recent** relayed wiki changes, and nothing older than **30 days**. Wiki activity cannot be edited after the fact, so the rows exist only briefly to link the copies of one change across a bridge; past that window, deleting one relayed wiki message no longer removes the others.
 - **Webhook-relay scopes (`/webhooks`)**: kept until turned off, or removed when the bot leaves the server.
 - **Settings/admin/bridge mappings**: kept until manually changed/removed, or automatically cleaned when the bot leaves a server/chat.
 
@@ -385,3 +488,14 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
 - The bot uses stored data only to operate bridge relays, moderation, permissions, and automation.
 - It does not implement analytics/tracking pipelines in this repository.
 - Data is local to the bot runtime environment unless your deployment adds external backup/logging.
+
+---
+
+## Acknowledgements
+
+The wiki-relay feature owes its existence to two earlier projects. Neither was copied from: the implementation here was written independently against [MediaWiki's own API documentation](https://www.mediawiki.org/wiki/API:Main_page), and no source code, comment text or localization string from either project appears in Confederate. They are named because their behaviour showed what such a feature should do.
+
+- **[Wiki-Bot](https://github.com/Markus-Rost/discord-wiki-bot)** by Markus-Rost, licensed **ISC**. Wiki commands for Discord, and the original source of the idea that a chat bot should bring a wiki into a conversation. Confederate's wiki relay is *inspired by* it.
+- **[RcGcDb](https://gitlab.com/chicken-riders/rcgcdb)** by Frisk (chicken-riders), licensed **GPL-3.0**. The backend that distributes wiki activity into Discord — the same job Confederate's wiki relay does. Confederate's *behaviour is modelled after* what that project demonstrates is worth relaying: which MediaWiki API queries answer the question, which kinds of events a wiki produces, and which fields of an event a reader actually cares about. Those are facts about MediaWiki and about the problem, not expression, and they were reimplemented from scratch here.
+
+Confederate is licensed under **Apache-2.0**, and nothing in the wiki relay is derived from GPL-3.0 code.

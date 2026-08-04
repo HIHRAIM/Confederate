@@ -1,3 +1,16 @@
+"""Shared helpers with no platform of their own: the localization runtime,
+role checks, the rate limiter and the plumbing followed sources need.
+
+The localization runtime is the bulk of it. The six i18n/<lang>.json files are
+read once at import into three shapes — `_LOCALE` (nested, for the legacy
+localized_* accessors), `_LOCALE_FLAT` (per language, for the localization
+commands) and `_LOCALE_STATUS` (translation status per key) — so a lookup at
+relay time is a dict access. A consequence worth knowing: edits to the JSON
+files take effect on restart, not immediately.
+
+Not this module's zone: anything that sends (the two bot packages), the
+database (db/), or message rendering (message_relay.py).
+"""
 import re
 import time
 from config import ADMINS, SERVICE_CHATS
@@ -5,6 +18,8 @@ import db
 import itertools
 
 def is_admin(platform, user_id):
+    """Whether the user is a Bot Admin — the top role, hard-coded in
+    config.ADMINS rather than stored, so it survives any database mishap."""
     return user_id in ADMINS.get(platform, set())
 
 _rate_buckets = {}
@@ -27,6 +42,8 @@ def rate_limit_ok(key, limit, window_seconds):
     return True
 
 def extract_username_from_bot_message(text: str):
+    """Recover the sender name from a relay copy's ``[Messenger | Place]
+    Sender:`` header line. Returns None when the text is not a relay copy."""
     if not text:
         return None
 
@@ -46,6 +63,12 @@ def extract_username_from_bot_message(text: str):
         return None
 
 def is_chat_admin(platform, chat_id, user_id):
+    """Whether the user administers this chat, by any of the paths that grant
+    it: an explicit chat_admins row, a server-wide Local Admin or Bridge Admin
+    grant for the community, or a legacy group-wide '<prefix>:0' row.
+
+    This is the check nearly every chat-level command uses; Bot Admins are
+    checked separately with is_admin, since they are not chat-scoped."""
     row = db.cur.execute(
         """
         SELECT 1 FROM chat_admins
@@ -77,7 +100,48 @@ def is_chat_admin(platform, chat_id, user_id):
 
     return False
 
+def bridge_feed_permission(platform, chat_id, user_id):
+    """Whether the user may configure a bridge-wide feed here, and whether
+    'here' is a bridge at all. Returns ``(allowed, in_bridge)``.
+
+    Deliberately stricter than the older feed commands, which accept any chat
+    admin: a wiki subscription pours into every chat of the bridge, so the
+    people who answer for the bridge as a whole are the ones who should be
+    able to open it — Bot Admins, and the Bridge Admins of this chat's bridge
+    (grants made for the bridge itself and grants made server-wide both count,
+    see db.get_bridge_admins).
+
+    A chat that has not joined a bridge yet has no Bridge Admins to ask, and
+    refusing everyone there would make the feature unusable before the bridge
+    exists. So in that case the chat's own admins may set it up, and the
+    caller is expected to say — through ``in_bridge`` — that the setting will
+    become the bridge's business once the chat joins one."""
+    if is_admin(platform, user_id):
+        return True, _chat_bridge_id(chat_id) is not None
+
+    bridge_id = _chat_bridge_id(chat_id)
+    if bridge_id is None:
+        return is_chat_admin(platform, chat_id, user_id), False
+
+    if str(user_id) in db.get_bridge_admins(bridge_id):
+        return True, True
+
+    server_id = db.chat_server_id(platform, chat_id)
+    if server_id and db.is_server_bridge_admin(platform, server_id, user_id):
+        return True, True
+    return False, True
+
+def _chat_bridge_id(chat_id):
+    """The bridge a chat belongs to, or None when it is in none."""
+    row = db.cur.execute(
+        "SELECT bridge_id FROM chats WHERE chat_id=?", (str(chat_id),)
+    ).fetchone()
+    return row["bridge_id"] if row and row["bridge_id"] is not None else None
+
 async def log_error(text):
+    """Report an error into the Discord service chats, localized per chat.
+    Everything is wrapped in try/except: logging a failure must never raise a
+    second one."""
     try:
         from discord_bot import bot
         for chat_key in SERVICE_CHATS.get("discord", set()):
@@ -193,6 +257,8 @@ LANGUAGE_NAMES = {
 LANG_ORDER = ["ru", "uk", "pl", "en", "es", "pt"]
 
 def language_name(code):
+    """The language's name in itself ('Русский'), or the bare code if
+    unknown."""
     return LANGUAGE_NAMES.get(code, code)
 
 def available_locales():
@@ -204,6 +270,7 @@ def reply_keys():
     return sorted(_LOCALE_FLAT.get(DEFAULT_LANG, {}).keys())
 
 def get_reply(lang, key):
+    """One reply string in one language, or None when untranslated."""
     return _LOCALE_FLAT.get(lang, {}).get(key)
 
 def reply_status(lang, key):
@@ -237,6 +304,8 @@ def locale_stats(lang):
             "untranslated": untranslated, "percent": percent}
 
 def locale_bar(lang, width=12):
+    """A 12-square progress bar of a language's translation status: verified,
+    unverified and untranslated shares in that order."""
     s = locale_stats(lang)
     total = s["total"] or 1
     v = round(s["verified"] / total * width)
@@ -292,9 +361,17 @@ _FEED_MEDIA_NAME_RE = re.compile(
 class FeedError(Exception):
     """A followed source could not be read (network, layout change, no such
     account or channel). Carries a short reason for the service-chat report, and
-    ``throttled`` when the source asked us to slow down."""
+    ``throttled`` when the source asked us to slow down.
+
+    ``reason`` names a refusal that retrying cannot fix and that the admin
+    should hear about in its own words — a wiki wanting an account
+    (``'private'``), an address that is not a wiki at all
+    (``'not_mediawiki'``). `attach_feed` turns it into the reply key of the
+    same name, falling back to the generic 'unreachable' for kinds that never
+    set one."""
 
     throttled = False
+    reason = None
 
 def feed_media_name(url, index, kind, prefix="media"):
     """A filename for the GALLERY upload, taken from the media URL when it looks
@@ -331,17 +408,24 @@ def parse_poll_duration(text):
     return min(n * mult[unit], POLL_MAX_SECONDS)
 
 def get_chat_lang(chat_id):
+    """The language to answer this chat in, always a supported one: the
+    stored setting when valid, otherwise the default. Every user-visible
+    string in the bot goes through a lookup that starts here."""
     lang = db.get_chat_lang(chat_id)
     if lang and lang in SUPPORTED_LANGS:
         return lang
     return DEFAULT_LANG
 
 def set_chat_lang(chat_id, lang_code):
+    """Store a chat's language, refusing codes the bot has no strings for
+    (ValueError) — the validation the /lang commands rely on."""
     if lang_code not in SUPPORTED_LANGS:
         raise ValueError("unsupported_lang")
     db.set_chat_lang(chat_id, lang_code)
 
 def plural_ru(n, forms):
+    """Slavic plural selection (Russian and Ukrainian): forms are
+    [one, few, many]."""
     n = abs(int(n))
     if n % 10 == 1 and n % 100 != 11:
         return forms[0]
@@ -350,9 +434,13 @@ def plural_ru(n, forms):
     return forms[2]
 
 def plural_en(n, forms):
+    """Two-form plural selection for English, Spanish and Portuguese:
+    forms are [singular, plural]."""
     return forms[0] if n == 1 else forms[1]
 
 def plural_pl(n, forms):
+    """Polish plural selection: forms are [one, few, many]. Differs from the
+    Russian rule at n == 1 only in that 21, 31, … take the many form."""
     n = abs(int(n))
     if n == 1:
         return forms[0]
@@ -361,6 +449,7 @@ def plural_pl(n, forms):
     return forms[2]
 
 def plural_for(lang, n):
+    """The word for "file" in the right plural form for `n` in `lang`."""
     file_forms = _LOCALE["file_forms"]
     if lang == "ru":
         return plural_ru(n, file_forms["ru"])
@@ -382,50 +471,75 @@ def localized_file_count_text(n, lang, source="telegram"):
     return template.format(count=n, files=word)
 
 def localized_forward_from_chat(name, lang):
+    """The '(forwarded from <channel>)' line above a relayed forward
+    (i18n key `forward_from_chat`)."""
     return _LOCALE["forward_from_chat"].get(lang, _LOCALE["forward_from_chat"][DEFAULT_LANG]).format(name=name)
 
 def localized_forward_from_user(name, lang):
+    """The '(forwarded from <person>)' line above a relayed forward
+    (i18n key `forward_from_user`)."""
     return _LOCALE["forward_from_user"].get(lang, _LOCALE["forward_from_user"][DEFAULT_LANG]).format(name=name)
 
 def localized_forward_unknown(lang):
+    """The forward line used when the original author is hidden — Telegram
+    lets users forbid being named (i18n key `forward_unknown`)."""
     return _LOCALE["forward_unknown"].get(lang, _LOCALE["forward_unknown"][DEFAULT_LANG])
 
 def localized_replying(name, lang):
+    """The '(replying to <name>)' line (i18n key `replying`)."""
     return _LOCALE["replying"].get(lang, _LOCALE["replying"][DEFAULT_LANG]).format(name=name)
 
 def localized_bridge_join(channel, server, lang):
+    """The announcement other chats of the bridge get when a chat joins
+    (i18n key `bridge_join`)."""
     template = _LOCALE["bridge_join"].get(lang, _LOCALE["bridge_join"][DEFAULT_LANG])
     return template.format(channel=channel, server=server)
 
 def localized_bridge_leave(channel, server, lang):
+    """The announcement other chats of the bridge get when a chat leaves
+    (i18n key `bridge_leave`)."""
     template = _LOCALE["bridge_leave"].get(lang, _LOCALE["bridge_leave"][DEFAULT_LANG])
     return template.format(channel=channel, server=server)
 
 def localized_bot_joined(lang):
+    """The greeting posted in a chat the moment it is attached to a bridge
+    (i18n key `bot_joined`)."""
     return _LOCALE["bot_joined"].get(lang, _LOCALE["bot_joined"][DEFAULT_LANG])
 
 def localized_consent_title(lang):
+    """Heading of the forwarding-consent prompt (i18n key `consent_title`)."""
     return _LOCALE["consent_title"].get(lang, _LOCALE["consent_title"][DEFAULT_LANG])
 
 def localized_consent_body(lang):
+    """Body of the forwarding-consent prompt — the text that must state what
+    is relayed and where (i18n key `consent_body`)."""
     return _LOCALE["consent_body"].get(lang, _LOCALE["consent_body"][DEFAULT_LANG])
 
 def localized_consent_button(lang):
+    """Label of the consent button (i18n key `consent_button`)."""
     return _LOCALE["consent_button"].get(lang, _LOCALE["consent_button"][DEFAULT_LANG])
 
 def localized_sticker(lang):
+    """Stand-in text for a sticker, which cannot cross platforms
+    (i18n key `sticker`)."""
     return _LOCALE["sticker"].get(lang, _LOCALE["sticker"][DEFAULT_LANG])
 
 def localized_voice_message(lang):
+    """Stand-in text for a voice message (i18n key `voice_message`)."""
     return _LOCALE["voice_message"].get(lang, _LOCALE["voice_message"][DEFAULT_LANG])
 
 def localized_video_message(lang):
+    """Stand-in text for a Telegram video note (i18n key `video_message`)."""
     return _LOCALE["video_message"].get(lang, _LOCALE["video_message"][DEFAULT_LANG])
 
 def localized_reply_unknown(lang):
+    """The line shown instead of a reply reference when the replied-to
+    message has no copy in this chat (i18n key `reply_unknown`)."""
     return _LOCALE["reply_unknown"].get(lang, _LOCALE["reply_unknown"][DEFAULT_LANG])
 
 def localized_reply_external(lang):
+    """The line marking a reply to a message outside this chat entirely —
+    Telegram's external_reply (i18n key `reply_external`)."""
     return _LOCALE["reply_external"].get(lang, _LOCALE["reply_external"][DEFAULT_LANG])
 
 def _reply_link_label_name(name):
@@ -448,12 +562,17 @@ def localized_reply_webhook(name, url, lang):
         return template
 
 def localized_discord_system_event(name, event_key, lang):
+    """A Discord system event (boost, pin, thread creation, join) as a
+    sentence about its actor. Keys live under `discord_system_event` and
+    `discord_system_event_action.<event>` in the i18n files."""
     action_table = _LOCALE.get("discord_system_event_action", {}).get(event_key, {})
     action = action_table.get(lang, action_table.get(DEFAULT_LANG, event_key))
     template = _LOCALE.get("discord_system_event", {}).get(lang, _LOCALE["discord_system_event"][DEFAULT_LANG])
     return template.format(name=name, action=action)
 
 def localized_service_event(event_key, lang, **kwargs):
+    """A message for the operator's service chats — start-up, shutdown, feed
+    errors, unreachable chats. Keys under `service_event.<event>`."""
     table = _LOCALE.get("service_event", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
@@ -462,6 +581,7 @@ def localized_service_event(event_key, lang, **kwargs):
         return template
 
 def localized_bridge_info(event_key, lang, **kwargs):
+    """A field or label of the /bridge answer. Keys under `bridge_info.*`."""
     table = _LOCALE.get("bridge_info", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
@@ -470,6 +590,7 @@ def localized_bridge_info(event_key, lang, **kwargs):
         return template
 
 def localized_whois(event_key, lang, **kwargs):
+    """A field, label or refusal of the whois answer. Keys under `whois.*`."""
     table = _LOCALE.get("whois", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
@@ -478,6 +599,8 @@ def localized_whois(event_key, lang, **kwargs):
         return template
 
 def localized_help(event_key, lang, **kwargs):
+    """One line of the /help listing. Keys under `help.*` — a new command
+    needs its entry added there in all six languages."""
     table = _LOCALE.get("help", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:
@@ -486,6 +609,8 @@ def localized_help(event_key, lang, **kwargs):
         return template
 
 def localized_deadtopic(event_key, lang, **kwargs):
+    """The /deadtopic replies and the phantom message itself. Keys under
+    `deadtopic.*`."""
     table = _LOCALE.get("deadtopic", {}).get(event_key, {})
     template = table.get(lang, table.get(DEFAULT_LANG, event_key))
     try:

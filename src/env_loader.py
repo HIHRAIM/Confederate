@@ -9,6 +9,8 @@ import os
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 def load_env(path=_ENV_PATH):
+    """Read KEY=VALUE lines into os.environ without overwriting anything
+    already set, so a real environment variable always beats the file."""
     try:
         with open(path, encoding="utf-8-sig") as f:
             lines = f.read().splitlines()
