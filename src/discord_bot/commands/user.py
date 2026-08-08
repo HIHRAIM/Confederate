@@ -99,7 +99,7 @@ async def verify_slash(interaction: discord.Interaction):
             except Exception:
                 pass
             await interaction2.response.send_message(localized("verify_thanks", lang), ephemeral=True)
-            await announce_verified_user(self.user_id)
+            await announce_verified_user(self.user_id, interaction2.guild_id)
             for p in all_pendings:
                 await _relay_pending_discord_first_message(p)
 
@@ -185,7 +185,13 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
     """The whois worker: map a relayed copy back to its origin sender and
     show what the origin platform knows about them. Requesters must be
     verified themselves (symmetry: you may look up only if you may be looked
-    up); senders who set hide_whois get the reduced embed."""
+    up); senders who set hide_whois get the reduced embed.
+
+    Inside an inbox conversation only one person may be looked up: whoever is
+    writing to the receiver bot. Staff answering them are off limits — they
+    may be reading under a 'Staff A' label, and either way the thread is a
+    workplace rather than a bridged community whose members agreed to be
+    identifiable to each other."""
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
 
@@ -229,6 +235,12 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
 
     origin_platform = msg_row["origin_platform"]
     origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
+
+    if db.is_inbox_bridge(msg_row["bridge_id"]) and origin_platform != "inbox":
+        await interaction.response.send_message(
+            localized_whois("inbox_writer_only", lang), ephemeral=True
+        )
+        return
 
     try:
         if origin_platform == "discord":
@@ -316,6 +328,28 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
                 bio = getattr(full_user, "bio", None) or "—"
             except Exception:
                 nick, username, bio = "—", "—", "—"
+
+            if db.get_privacy_flag("telegram", origin_sender_id, "hide_whois"):
+                await interaction.response.send_message(
+                    embed=_private_whois_embed(lang, nick, None), ephemeral=True
+                )
+                return
+
+            embed = discord.Embed(
+                title=localized_whois("title", lang),
+                color=discord.Color.blurple()
+            )
+            embed.add_field(name=localized_whois("field_nickname", lang), value=nick, inline=False)
+            embed.add_field(name=localized_whois("field_username", lang), value=username, inline=False)
+            embed.add_field(name=localized_whois("field_id", lang), value=str(origin_sender_id), inline=False)
+            embed.add_field(name=localized_whois("field_bio", lang), value=bio if len(bio) < 1000 else (bio[:997] + "..."), inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        elif origin_platform == "inbox":
+            from inbox import inbox_whois_profile
+            nick, username, bio = await inbox_whois_profile(
+                msg_row["origin_chat_id"], origin_sender_id
+            )
 
             if db.get_privacy_flag("telegram", origin_sender_id, "hide_whois"):
                 await interaction.response.send_message(
@@ -516,6 +550,8 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_deadtopic", lang),
         localized_help("cmd_deadchat", lang),
         localized_help("cmd_newschat", lang),
+        localized_help("cmd_close", lang),
+        localized_help("cmd_close_header", lang),
     ])
 
     bot_admins_lines = "\n".join([
@@ -541,6 +577,14 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_force_leave", lang),
         localized_help("cmd_backup", lang),
         localized_help("cmd_loc_reply", lang),
+        localized_help("cmd_setinbox", lang),
+        localized_help("cmd_reminbox", lang),
+        localized_help("cmd_setinboxchat", lang),
+        localized_help("cmd_reminboxchat", lang),
+        localized_help("cmd_inboxanon", lang),
+        localized_help("cmd_inboxlist", lang),
+        localized_help("cmd_inboxban", lang),
+        localized_help("cmd_inboxunban", lang),
     ])
 
     embed = discord.Embed(

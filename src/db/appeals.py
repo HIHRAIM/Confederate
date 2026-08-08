@@ -7,6 +7,7 @@ discord_bot/appeals.py; this module only answers what the database knows.
 import time
 
 from db import conn, cur
+from db.inbox import INBOX_BRIDGE_ID_FLOOR
 
 APPEAL_BRIDGE_ID_FLOOR = 100000
 
@@ -16,10 +17,16 @@ def next_appeal_bridge_id():
     Appeal bridges live at and above APPEAL_BRIDGE_ID_FLOOR so they can never
     collide with hand-numbered ordinary bridges, which must stay strictly
     below the floor. Simple max+1 — appeal bridges are short-lived and the
-    range is effectively unbounded, so holes need no reuse here."""
+    range is roomy, so holes need no reuse here.
+
+    The range is bounded on both sides: INBOX_BRIDGE_ID_FLOOR and everything
+    above it belongs to inbox conversations, so the max+1 must be taken among
+    appeal bridges alone. Reading the whole tail instead would hand the next
+    appeal a number one past the newest conversation, and the two allocators
+    would then walk over each other."""
     row = cur.execute(
-        "SELECT MAX(id) AS mx FROM bridges WHERE id >= ?",
-        (APPEAL_BRIDGE_ID_FLOOR,)
+        "SELECT MAX(id) AS mx FROM bridges WHERE id >= ? AND id < ?",
+        (APPEAL_BRIDGE_ID_FLOOR, INBOX_BRIDGE_ID_FLOOR)
     ).fetchone()
     if row and row["mx"] is not None:
         return int(row["mx"]) + 1

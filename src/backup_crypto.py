@@ -11,6 +11,10 @@ Builds an authenticated-encrypted snapshot of the database:
     Whatever stores the file only ever sees ciphertext it cannot read or tamper
     with undetected.
 
+The same key and the same primitives also protect the few secrets the bot is
+handed at runtime rather than through .env — the tokens of the receiver bots
+registered with /setinbox (see encrypt_secret/decrypt_secret at the bottom).
+
 The key is read from the BACKUP_KEY environment variable and is DIFFERENT per
 project. Keep it out of the repo and store a copy somewhere other than the
 server (password manager + offline copy): if the key is lost, every existing
@@ -18,6 +22,7 @@ backup becomes permanently unreadable.
 
 Restore a backup with restore_backup.py.
 """
+import base64
 import hashlib
 import hmac
 import os
@@ -116,3 +121,23 @@ def build_encrypted_backup(db_path):
 def encrypted_filename(db_path):
     """Suggested upload filename, e.g. 'bridge.db' -> 'bridge.db.enc'."""
     return os.path.basename(db_path) + ENC_SUFFIX
+
+def secrets_available():
+    """Whether runtime secrets can be stored at all — that is, whether
+    BACKUP_KEY is set. Commands that would have to write one ask first and
+    refuse with an explanation, rather than falling back to plaintext."""
+    return bool(os.environ.get("BACKUP_KEY"))
+
+def encrypt_secret(text):
+    """Encrypt a short secret for storage in the database, base64 of the same
+    authenticated format the backups use. Raises RuntimeError when BACKUP_KEY
+    is unset — a bot token must never reach the database in clear."""
+    blob = encrypt_bytes(_master_key(), str(text).encode("utf-8"))
+    return base64.b64encode(blob).decode("ascii")
+
+def decrypt_secret(stored):
+    """Recover a secret written by encrypt_secret. Raises on a wrong key or a
+    tampered value, which the caller is expected to treat as 'this token is
+    unusable' rather than to paper over."""
+    blob = base64.b64decode(str(stored).encode("ascii"))
+    return decrypt_bytes(_master_key(), blob).decode("utf-8")

@@ -193,7 +193,11 @@ async def whois_cmd(message: Message):
 
     Requesters must be verified themselves; senders who set hide_whois get
     the reduced answer. Every reply self-deletes after a minute — profile
-    details should not linger in a group's history."""
+    details should not linger in a group's history.
+
+    Inside an inbox conversation only the person writing to the receiver bot
+    may be looked up; staff answering them are off limits (see the Discord
+    twin's docstring for why)."""
     lang = get_chat_lang(f"{message.chat.id}:{message.message_thread_id or 0}")
 
     async def _reply_autodelete(text: str):
@@ -246,6 +250,26 @@ async def whois_cmd(message: Message):
     origin_platform = msg_row["origin_platform"]
     origin_chat_id = msg_row["origin_chat_id"]
     origin_sender_id = msg_row["origin_sender_id"] if "origin_sender_id" in msg_row.keys() else ""
+
+    if db.is_inbox_bridge(msg_row["bridge_id"]) and origin_platform != "inbox":
+        await _reply_autodelete(localized_whois("inbox_writer_only", lang))
+        return
+
+    if origin_platform == "inbox":
+        from inbox import inbox_whois_profile
+        nickname, uname, bio = await inbox_whois_profile(origin_chat_id, origin_sender_id)
+        if db.get_privacy_flag("telegram", origin_sender_id, "hide_whois"):
+            await _reply_autodelete(
+                localized_whois("private_template", lang, nickname=nickname, avatar="—")
+            )
+            return
+        await _reply_autodelete(
+            localized_whois(
+                "tg_template", lang,
+                nickname=nickname, username=uname, id=origin_sender_id, bio=bio,
+            )
+        )
+        return
 
     if origin_platform == "telegram":
         try:
@@ -543,6 +567,8 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_unverify", lang)),
         escape_html(localized_help("cmd_allow_bots_tg", lang)),
         escape_html(localized_help("cmd_allow_files_tg", lang)),
+        escape_html(localized_help("cmd_close", lang)),
+        escape_html(localized_help("cmd_close_header", lang)),
     ])
 
     bot_admins_lines = "\n".join([
@@ -563,6 +589,14 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_localizer_rem_tg", lang)),
         escape_html(localized_help("cmd_backup", lang)),
         escape_html(localized_help("cmd_loc_reply", lang)),
+        escape_html(localized_help("cmd_setinbox", lang)),
+        escape_html(localized_help("cmd_reminbox", lang)),
+        escape_html(localized_help("cmd_setinboxchat", lang)),
+        escape_html(localized_help("cmd_reminboxchat", lang)),
+        escape_html(localized_help("cmd_inboxanon", lang)),
+        escape_html(localized_help("cmd_inboxlist", lang)),
+        escape_html(localized_help("cmd_inboxban", lang)),
+        escape_html(localized_help("cmd_inboxunban", lang)),
     ])
 
     text = (

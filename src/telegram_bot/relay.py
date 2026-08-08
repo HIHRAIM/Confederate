@@ -211,6 +211,15 @@ async def _relay_serialized_telegram_payload(payload_json: str):
                 is_bot_sender=is_bot_sender,
             )
 
+        if chat["platform"] == "inbox":
+            from inbox import deliver_inbox_relay
+            return await deliver_inbox_relay(
+                chat, header=header, body_plain=body_plain,
+                body_telegram_html=body_telegram_html, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
+                sender_name=sender_name,
+            )
+
     base_text = payload.get("base_text", "")
     avatar_url = await _telegram_relay_avatar_url(payload["bridge_id"], payload.get("origin_sender_id"))
 
@@ -321,7 +330,12 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     deleted, unverified users prompted for consent with their message frozen
     for later, then the per-user rate limit. Everything after that is
     rendering: forward and reply context, the GALLERY upload, and one
-    relay_message call per text item."""
+    relay_message call per text item.
+
+    A topic belonging to an inbox conversation is the one exception to the
+    consent rung: answering an inbox is staff work in a staff group, not a
+    bridged community chat. Such a topic is also where the 'Staff A' label
+    replaces the sender's name, while its receiver bot anonymizes."""
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
 
@@ -390,6 +404,8 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     bridge_id = row["bridge_id"]
 
+    is_inbox_conversation = db.is_inbox_bridge(bridge_id)
+
     db.cur.execute(
         "UPDATE bridge_rules SET message_counter = COALESCE(message_counter, 0) + 1 WHERE bridge_id=?",
         (bridge_id,)
@@ -409,7 +425,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             )
         return
 
-    if not is_bot_sender and not db.is_user_verified("telegram", user_id_str, prefix):
+    if not is_bot_sender and not is_inbox_conversation and not db.is_user_verified("telegram", user_id_str, prefix):
         pend = db.get_pending_consent("telegram", prefix, user_id_str)
         if pend:
             try:
@@ -542,6 +558,15 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 is_bot_sender=is_bot_sender,
             )
 
+        if chat["platform"] == "inbox":
+            from inbox import deliver_inbox_relay
+            return await deliver_inbox_relay(
+                chat, header=header, body_plain=body_plain,
+                body_telegram_html=body_telegram_html, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
+                sender_name=sender_name,
+            )
+
     source_text = getattr(message, "text", None)
     source_caption = getattr(message, "caption", None)
     tg_html_source = None
@@ -561,6 +586,16 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         bridge_id, message.from_user.id if message.from_user else None
     )
 
+    sender_name = message.from_user.full_name if message.from_user else "Unknown"
+    if is_inbox_conversation:
+        from inbox import inbox_sender_override, mark_inbox_conversation, touch_inbox_bridge
+        touch_inbox_bridge(bridge_id)
+        await mark_inbox_conversation(bridge_id, "staff")
+        if message.from_user:
+            label, anon_avatar = inbox_sender_override(bridge_id, "telegram", message.from_user.id)
+            if label:
+                sender_name, avatar_url = label, anon_avatar or None
+
     relayed_db_id = None
     for text in texts:
         current_discord_text, current_telegram_html = _relay_variants_for_text(
@@ -574,7 +609,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             origin_sender_id=str(message.from_user.id) if message.from_user else "",
             messenger_name="Telegram",
             place_name=message.chat.title or "Private chat",
-            sender_name=message.from_user.full_name if message.from_user else "Unknown",
+            sender_name=sender_name,
             text=text,
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
@@ -606,12 +641,14 @@ async def edited_message_handler(message: Message):
 
     Only the ``kind='main'`` copies carry the body — the per-file follow-ups
     are rebuilt separately, and only when the GALLERY upload actually
-    changed."""
+    changed. An edit inside an anonymized inbox conversation swaps the author
+    name for the same 'Staff A' label the copies were sent under, so
+    anonymity survives editing."""
     thread = message.message_thread_id or 0
     origin_chat_id = f"{message.chat.id}:{thread}"
     row = db.cur.execute(
         """
-        SELECT id FROM messages
+        SELECT id, bridge_id, origin_sender_id FROM messages
         WHERE origin_platform='telegram' AND origin_chat_id=? AND origin_message_id=?
         ORDER BY id DESC LIMIT 1
         """,
@@ -634,7 +671,14 @@ async def edited_message_handler(message: Message):
         discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
         telegram_html = getattr(message, "html_text", None)
 
-    header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(message.from_user.full_name if message.from_user else 'Unknown')}:"
+    author_name = message.from_user.full_name if message.from_user else "Unknown"
+    if db.is_inbox_bridge(row["bridge_id"]):
+        from inbox import inbox_sender_override
+        label, _ = inbox_sender_override(row["bridge_id"], "telegram", row["origin_sender_id"])
+        if label:
+            author_name = label
+
+    header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(author_name)}:"
 
     copies = db.cur.execute(
         "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
@@ -682,6 +726,20 @@ async def edited_message_handler(message: Message):
                     except Exception:
                         continue
                 await edit_discord_relay_copy(ch, c["message_id_platform"], header, edit_discord, message_db_id=row["id"], chat=c)
+            elif c["platform"] == "inbox":
+                from inbox import edit_inbox_relay_copy
+                target_lang = get_chat_lang(c["chat_id"])
+                edit_plain, edit_html = _relay_variants_for_text(
+                    rendered_text, base_text, discord_text, telegram_html
+                )
+                if relay_file_count is not None:
+                    marker = localized_file_count_text(relay_file_count, target_lang)
+                    edit_plain = edit_plain.replace(f"__TG_FILES_{relay_file_count}__", marker)
+                    if edit_html is not None:
+                        edit_html = edit_html.replace(f"__TG_FILES_{relay_file_count}__", escape_html(marker))
+                await edit_inbox_relay_copy(
+                    c["chat_id"], c["message_id_platform"], author_name, edit_plain, edit_html
+                )
         except Exception:
             pass
 

@@ -255,6 +255,30 @@
     "status": "unverified",
     "text": "This chat is not attached to any bridge."
   },
+  "close_done": {
+    "status": "unverified",
+    "text": "Closing this conversation."
+  },
+  "close_header_hidden": {
+    "status": "unverified",
+    "text": "Messages from the people writing to {bot} will arrive here without the header, from the next one on."
+  },
+  "close_header_not_host": {
+    "status": "unverified",
+    "text": "This community does not host the conversations of {bot}."
+  },
+  "close_header_shown": {
+    "status": "unverified",
+    "text": "Messages from the people writing to {bot} will carry the header again, from the next one on."
+  },
+  "close_header_usage": {
+    "status": "unverified",
+    "text": "Usage: /close-header hide|show [bot]"
+  },
+  "close_not_conversation": {
+    "status": "unverified",
+    "text": "This chat is not an inbox conversation."
+  },
   "consent_body": {
     "status": "unverified",
     "text": "This chat is connected to others. Your messages will be automatically relayed to the linked chats. If you edit or delete your message within 30 days of sending it, it will automatically be updated or disappear in the other chats too. Press \"Accept\" to agree to the relaying and keep chatting. See the chat description or the pinned message for details."
@@ -427,6 +451,14 @@
     "status": "unverified",
     "text": "/bridge — information about the bridge and attached chats"
   },
+  "help.cmd_close": {
+    "status": "unverified",
+    "text": "/close — close the inbox conversation of this thread or topic"
+  },
+  "help.cmd_close_header": {
+    "status": "unverified",
+    "text": "/close-header hide|show [bot] — hide the relay header in this community's inbox conversations"
+  },
   "help.cmd_deadchat": {
     "status": "unverified",
     "text": "/deadchat <role> <hours> | disable — ping a role on inactivity (Discord only)"
@@ -442,6 +474,22 @@
   "help.cmd_help": {
     "status": "unverified",
     "text": "/help — show the command list"
+  },
+  "help.cmd_inboxanon": {
+    "status": "unverified",
+    "text": "/inboxanon enable|disable [bot] — sign staff as “Staff A” to the people writing in"
+  },
+  "help.cmd_inboxban": {
+    "status": "unverified",
+    "text": "/inboxban [user] [bot] — bar a user from a receiver bot (no arguments inside their conversation)"
+  },
+  "help.cmd_inboxlist": {
+    "status": "unverified",
+    "text": "/inboxlist — list the registered receiver bots"
+  },
+  "help.cmd_inboxunban": {
+    "status": "unverified",
+    "text": "/inboxunban [user] [bot] — let a banned user write to a receiver bot again"
   },
   "help.cmd_lang": {
     "status": "unverified",
@@ -511,6 +559,14 @@
     "status": "unverified",
     "text": "/rembskyfeed <account> — stop relaying a Bluesky account into this bridge"
   },
+  "help.cmd_reminbox": {
+    "status": "unverified",
+    "text": "/reminbox [bot] — unregister a receiver bot and close its conversations"
+  },
+  "help.cmd_reminboxchat": {
+    "status": "unverified",
+    "text": "/reminboxchat [bot] — stop opening a receiver bot's conversations here"
+  },
   "help.cmd_remindrules": {
     "status": "unverified",
     "text": "/remindrules <duration> [messages] — periodically publish the rules in all bridge chats (e.g.: 2h, 30m)"
@@ -542,6 +598,14 @@
   "help.cmd_setbskyfeed": {
     "status": "unverified",
     "text": "/setbskyfeed <account> — relay a public Bluesky account into this bridge"
+  },
+  "help.cmd_setinbox": {
+    "status": "unverified",
+    "text": "/setinbox <token> — register a Telegram bot whose private chats become threads and topics here (bot admins)"
+  },
+  "help.cmd_setinboxchat": {
+    "status": "unverified",
+    "text": "/setinboxchat <bot> — open this chat to a receiver bot's conversations"
   },
   "help.cmd_setlocaladmin": {
     "status": "unverified",
@@ -610,6 +674,114 @@
   "help.title": {
     "status": "unverified",
     "text": "Bot commands"
+  },
+  "inbox_banned_user": {
+    "status": "unverified",
+    "text": "You can no longer write to this bot."
+  },
+  "inbox_closed_chat": {
+    "status": "unverified",
+    "text": "This conversation has been closed."
+  },
+  "inbox_closed_user": {
+    "status": "unverified",
+    "text": "This conversation has been closed. Write again whenever you need to — a new one will open."
+  },
+  "inbox_conversation_info": {
+    "status": "unverified",
+    "text": "Conversation with {name} ({username}, ID {id}). Messages in this chat are forwarded to them, and theirs arrive here."
+  },
+  "inbox_dm_place": {
+    "status": "unverified",
+    "text": "DM"
+  },
+  "inbox_greeting": {
+    "status": "unverified",
+    "text": "Write here and your message reaches the team behind {bot}: it is forwarded to their chat together with your name and your Telegram username, and their answers come back to you here. Nothing you send here goes anywhere else."
+  },
+  "inbox_not_configured": {
+    "status": "unverified",
+    "text": "This bot has nowhere to forward messages yet. Please try again later."
+  },
+  "inbox_open_failed": {
+    "status": "unverified",
+    "text": "This bot could not open a conversation right now. Its team has been told; please try again later."
+  },
+  "inbox_staff_name": {
+    "status": "unverified",
+    "text": "Staff {letter}"
+  },
+  "inbox_unknown_bot": {
+    "status": "unverified",
+    "text": "No receiver bot with that ID or username is registered."
+  },
+  "inboxanon_disabled": {
+    "status": "unverified",
+    "text": "People writing to {bot} will see staff by name again, from the next message on."
+  },
+  "inboxanon_enabled": {
+    "status": "unverified",
+    "text": "People writing to {bot} will see staff as “Staff A”, “Staff B”, … from the next message on."
+  },
+  "inboxanon_usage": {
+    "status": "unverified",
+    "text": "Usage: /inboxanon enable|disable [bot]"
+  },
+  "inboxban_already": {
+    "status": "unverified",
+    "text": "That user is already banned from this bot."
+  },
+  "inboxban_done": {
+    "status": "unverified",
+    "text": "User {user} can no longer write to this bot."
+  },
+  "inboxban_usage": {
+    "status": "unverified",
+    "text": "Usage: /inboxban <user> [bot] — or no arguments at all inside that user's conversation."
+  },
+  "inboxlist_anon_off": {
+    "status": "unverified",
+    "text": "staff named"
+  },
+  "inboxlist_anon_on": {
+    "status": "unverified",
+    "text": "staff anonymized"
+  },
+  "inboxlist_empty": {
+    "status": "unverified",
+    "text": "No receiver bots are registered."
+  },
+  "inboxlist_entry": {
+    "status": "unverified",
+    "text": "• {bot} (ID {id}) — {state}, {anon}\n  Chats: {hosts}\n  Open conversations: {conversations}"
+  },
+  "inboxlist_no_hosts": {
+    "status": "unverified",
+    "text": "none yet"
+  },
+  "inboxlist_state_offline": {
+    "status": "unverified",
+    "text": "not polling"
+  },
+  "inboxlist_state_online": {
+    "status": "unverified",
+    "text": "polling"
+  },
+  "inboxlist_title": {
+    "status": "unverified",
+    "text": "Receiver bots"
+  },
+  "inboxunban_done": {
+    "status": "unverified",
+    "text": "User {user} may write to this bot again."
+  },
+  "inboxunban_not_banned": {
+    "status": "unverified",
+    "text": "That user is not banned from this bot."
+  },
+  "inboxunban_usage": {
+    "status": "unverified",
+    "text": "Usage: /inboxunban <user> [bot] — or no arguments at all inside that user's conversation."
   },
   "lang_save_error": {
     "status": "unverified",
@@ -920,6 +1092,18 @@
     "status": "unverified",
     "text": "Usage: /remadmin <user_id_or_name> — for every bridge of this server/group; add `local` for this bridge only."
   },
+  "reminbox_done": {
+    "status": "unverified",
+    "text": "{bot} is no longer a receiver bot. Its open conversations have been closed."
+  },
+  "reminboxchat_done": {
+    "status": "unverified",
+    "text": "Conversations of {bot} will no longer open here. The ones already open keep working until they close."
+  },
+  "reminboxchat_not_host": {
+    "status": "unverified",
+    "text": "This chat does not receive the conversations of {bot}."
+  },
   "remindrules_disabled": {
     "status": "unverified",
     "text": "The rules reminder has been disabled for this bridge."
@@ -1036,6 +1220,14 @@
     "status": "unverified",
     "text": "The attached source @{account} has not moved since {date} — nothing has come from it in a long while."
   },
+  "service_event.joined_chat": {
+    "status": "unverified",
+    "text": "➕ {platform}: the bot was added to “{chat}” ({chat_id})."
+  },
+  "service_event.left_unconfigured": {
+    "status": "unverified",
+    "text": "👋 {platform}: the bot left “{chat}” ({chat_id}) — {days} days have passed since it was added and not one of its chats was attached to a bridge."
+  },
   "setadmin_bridge_dm": {
     "status": "unverified",
     "text": "You have been made an administrator of bridge #{bridge_id}, on {place}."
@@ -1045,16 +1237,64 @@
     "text": "User {user_id} is now a Bridge Admin of bridge #{bridge_id}."
   },
   "setadmin_server_dm": {
-    "text": "You have been made a Bridge Admin on {place}. The rights hold in every bridge that {place} takes part in — the ones it is in now and any it joins later.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "You have been made a Bridge Admin on {place}. The rights hold in every bridge that {place} takes part in — the ones it is in now and any it joins later."
   },
   "setadmin_server_done": {
-    "text": "User {user_id} is now a Bridge Admin on {place} — in every bridge it takes part in, including ones it joins later.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "User {user_id} is now a Bridge Admin on {place} — in every bridge it takes part in, including ones it joins later."
   },
   "setadmin_usage": {
     "status": "unverified",
     "text": "Usage: /setadmin <user_id_or_name> — for every bridge of this server/group; add `local` for this bridge only."
+  },
+  "setinbox_added": {
+    "status": "unverified",
+    "text": "{bot} is now a receiver bot. Run /setinboxchat {bot} in every channel or forum group that should receive its conversations."
+  },
+  "setinbox_invalid_token": {
+    "status": "unverified",
+    "text": "Telegram did not accept that token."
+  },
+  "setinbox_no_key": {
+    "status": "unverified",
+    "text": "This deployment cannot store bot tokens: BACKUP_KEY is not set, and a token must never be written down unencrypted."
+  },
+  "setinbox_private_only": {
+    "status": "unverified",
+    "text": "Send /setinbox to me in a private chat, never in a group: a token posted in a group can be used by everyone who sees it. Your message has been deleted."
+  },
+  "setinbox_start_failed": {
+    "status": "unverified",
+    "text": "{bot} was saved, but it could not start polling. Check the token and run /setinbox again."
+  },
+  "setinbox_updated": {
+    "status": "unverified",
+    "text": "The token of {bot} has been replaced; it is polling again."
+  },
+  "setinbox_usage": {
+    "status": "unverified",
+    "text": "Usage: /setinbox <token> — in a private chat with this bot."
+  },
+  "setinboxchat_already": {
+    "status": "unverified",
+    "text": "This chat already receives the conversations of {bot}."
+  },
+  "setinboxchat_done": {
+    "status": "unverified",
+    "text": "Conversations of {bot} will now open here."
+  },
+  "setinboxchat_no_thread_rights": {
+    "status": "unverified",
+    "text": "I may not open threads in this channel. Give me “Create Public Threads” and “Send Messages in Threads” here and run the command again."
+  },
+  "setinboxchat_no_topic_rights": {
+    "status": "unverified",
+    "text": "I am in this group but may not create topics here. Give me the “Manage topics” right in the group's administrator settings and run the command again."
+  },
+  "setinboxchat_not_forum": {
+    "status": "unverified",
+    "text": "Only a forum group can receive conversations — each one becomes a topic of its own. Turn topics on in the group settings and run the command again."
   },
   "setlocaladmin_already": {
     "status": "unverified",
@@ -1367,6 +1607,10 @@
   "whois.field_username": {
     "status": "unverified",
     "text": "Username"
+  },
+  "whois.inbox_writer_only": {
+    "status": "unverified",
+    "text": "In an inbox conversation, whois only answers about the person writing to the bot."
   },
   "whois.mode_dnd": {
     "status": "unverified",

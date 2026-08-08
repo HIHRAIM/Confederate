@@ -108,6 +108,8 @@ async def is_telegram_native_admin(chat_id: int, user_id: int):
     except Exception:
         return False
 
+TELEGRAM_GROUP_TYPES = ("group", "supergroup")
+
 @router.my_chat_member()
 async def my_chat_member_update(update: ChatMemberUpdated):
     """
@@ -116,15 +118,35 @@ async def my_chat_member_update(update: ChatMemberUpdated):
     Also covers followed channels: losing administrator rights in a channel
     means its posts stop arriving on their own, so its feeds fall back to
     polling the public preview.
+
+    And it is the one moment the bot can learn that it has been *added* to a
+    group, which is what starts the seven-day setup deadline
+    (setup_deadline.py): Telegram has no equivalent of Discord's join
+    timestamp, so a group with no row here is simply never examined. The
+    change must come from outside the chat — old status left or kicked — or a
+    promotion to administrator in a group the bot has been sitting in for
+    years would read as a fresh arrival and put it on the clock.
     """
     try:
         new_status = str(update.new_chat_member.status)
+        old_status = str(update.old_chat_member.status) if update.old_chat_member else ""
         me = await bot.get_me()
         if update.new_chat_member.user.id != me.id:
             return
         if new_status in ("left", "kicked"):
             db.cur.execute("DELETE FROM chat_settings WHERE chat_id LIKE ?", (f"{update.chat.id}:%",))
             db.conn.commit()
+            db.forget_deadline("telegram", update.chat.id)
+        elif (getattr(update.chat, "type", None) in TELEGRAM_GROUP_TYPES
+              and old_status in ("left", "kicked")):
+            db.record_join("telegram", update.chat.id)
+            from utils import send_service_event
+            await send_service_event(
+                "joined_chat",
+                platform="Telegram",
+                chat=update.chat.title or str(update.chat.id),
+                chat_id=update.chat.id,
+            )
         if getattr(update.chat, "type", None) == "channel" and "administrator" not in new_status:
             from telegram_bot.feeds import _demote_live_channel_feeds
             await _demote_live_channel_feeds(update.chat.id)

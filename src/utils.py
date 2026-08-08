@@ -617,3 +617,84 @@ def localized_deadtopic(event_key, lang, **kwargs):
         return template.format(**kwargs)
     except Exception:
         return template
+
+def _normalize_service_chat_key(platform, raw_key):
+    """Parse a config.SERVICE_CHATS entry into ``(prefix, target)``.
+
+    The entries are written by hand and come in two shapes: 'group:topic' /
+    'guild:channel', or a bare id — which means a group with no topic on
+    Telegram and a channel of unknown guild on Discord. Returns (None, None)
+    for anything unparsable rather than raising: a typo in the config must
+    not stop the bot from starting."""
+    key = str(raw_key).strip()
+    if not key:
+        return None, None
+
+    if ":" in key:
+        left, right = key.split(":", 1)
+        try:
+            return int(left), int(right)
+        except Exception:
+            return None, None
+
+    try:
+        single = int(key)
+    except Exception:
+        return None, None
+
+    if platform == "telegram":
+        return single, 0
+    if platform == "discord":
+        return None, single
+    return None, None
+
+async def send_service_event(event_key, **kwargs):
+    """Report an operational event to the service chats of both platforms,
+    each in its own language. Every send is guarded — the service chats are
+    where failures are reported, so a failure there must stay a log line.
+
+    Lives here rather than in main.py so that the two bot halves can report
+    without importing the entry module, which under `python main.py` would
+    load a second copy of it and rerun everything at its top level."""
+    import logging as _logging
+    from telegram_bot import bot as tg
+    from discord_bot import bot as dc
+
+    _logger = _logging.getLogger("bridge.main")
+
+    for chat_key in SERVICE_CHATS.get("telegram", set()):
+        try:
+            chat_id, thread = _normalize_service_chat_key("telegram", chat_key)
+            if chat_id is None:
+                continue
+            lang = get_chat_lang(f"{chat_id}:{thread}")
+            text = localized_service_event(event_key, lang, **kwargs)
+            await tg.send_message(
+                int(chat_id),
+                text,
+                message_thread_id=int(thread) or None
+            )
+        except Exception as e:
+            _logger.warning("send_service_event failed for telegram %s: %s", chat_key, e)
+
+    for chat_key in SERVICE_CHATS.get("discord", set()):
+        try:
+            guild_id, channel_id = _normalize_service_chat_key("discord", chat_key)
+            if channel_id is None:
+                continue
+            ch = dc.get_channel(channel_id)
+            if not ch:
+                try:
+                    ch = await dc.fetch_channel(channel_id)
+                except Exception:
+                    ch = None
+            effective_guild_id = guild_id
+            if effective_guild_id is None and ch and getattr(ch, "guild", None):
+                effective_guild_id = ch.guild.id
+            lang_key = f"{effective_guild_id}:{channel_id}" if effective_guild_id is not None else str(channel_id)
+            lang = get_chat_lang(lang_key)
+            text = localized_service_event(event_key, lang, **kwargs)
+            if ch:
+                await ch.send(text)
+        except Exception as e:
+            _logger.warning("send_service_event failed for discord %s: %s", chat_key, e)

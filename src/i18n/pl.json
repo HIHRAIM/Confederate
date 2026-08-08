@@ -255,6 +255,30 @@
     "status": "unverified",
     "text": "Ten czat nie jest podłączony do żadnego mostu."
   },
+  "close_done": {
+    "status": "unverified",
+    "text": "Zamykam tę rozmowę."
+  },
+  "close_header_hidden": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do bota {bot} będą tu przychodzić bez nagłówka — od następnej."
+  },
+  "close_header_not_host": {
+    "status": "unverified",
+    "text": "Ta społeczność nie odbiera rozmów bota {bot}."
+  },
+  "close_header_shown": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do bota {bot} znów będą miały nagłówek — od następnej."
+  },
+  "close_header_usage": {
+    "status": "unverified",
+    "text": "Użycie: /close-header hide|show [bot]"
+  },
+  "close_not_conversation": {
+    "status": "unverified",
+    "text": "Ten czat nie jest rozmową bota odbiorczego."
+  },
   "consent_body": {
     "status": "unverified",
     "text": "Ten czat jest połączony z innymi. Twoje wiadomości będą automatycznie przekazywane do powiązanych czatów. Jeśli zmienisz lub usuniesz swoją wiadomość w ciągu 30 dni od jej wysłania, zostanie ona automatycznie zaktualizowana lub zniknie także w innych czatach. Naciśnij „Akceptuję”, aby zgodzić się na przekazywanie i kontynuować rozmowę. Więcej — w opisie czatu lub przypiętej wiadomości."
@@ -427,6 +451,14 @@
     "status": "unverified",
     "text": "/bridge — informacje o moście i podłączonych czatach"
   },
+  "help.cmd_close": {
+    "status": "unverified",
+    "text": "/close — zamknij rozmowę bota odbiorczego w tym wątku lub temacie"
+  },
+  "help.cmd_close_header": {
+    "status": "unverified",
+    "text": "/close-header hide|show [bot] — ukryj nagłówek w rozmowach bota odbiorczego w tej społeczności"
+  },
   "help.cmd_deadchat": {
     "status": "unverified",
     "text": "/deadchat <rola> <godziny> | disable — pinguj rolę przy braku aktywności (tylko Discord)"
@@ -442,6 +474,22 @@
   "help.cmd_help": {
     "status": "unverified",
     "text": "/help — pokaż listę poleceń"
+  },
+  "help.cmd_inboxanon": {
+    "status": "unverified",
+    "text": "/inboxanon enable|disable [bot] — podpisuj personel jako „Staff A” dla piszących"
+  },
+  "help.cmd_inboxban": {
+    "status": "unverified",
+    "text": "/inboxban [użytkownik] [bot] — zablokuj użytkownikowi pisanie do bota odbiorczego (bez argumentów wewnątrz jego rozmowy)"
+  },
+  "help.cmd_inboxlist": {
+    "status": "unverified",
+    "text": "/inboxlist — lista zarejestrowanych botów odbiorczych"
+  },
+  "help.cmd_inboxunban": {
+    "status": "unverified",
+    "text": "/inboxunban [użytkownik] [bot] — pozwól zablokowanemu użytkownikowi znów pisać do bota odbiorczego"
   },
   "help.cmd_lang": {
     "status": "unverified",
@@ -511,6 +559,14 @@
     "status": "unverified",
     "text": "/rembskyfeed <konto> — odłącz konto Bluesky od tego mostu"
   },
+  "help.cmd_reminbox": {
+    "status": "unverified",
+    "text": "/reminbox [bot] — wyrejestruj bota odbiorczego i zamknij jego rozmowy"
+  },
+  "help.cmd_reminboxchat": {
+    "status": "unverified",
+    "text": "/reminboxchat [bot] — przestań otwierać tutaj rozmowy bota odbiorczego"
+  },
   "help.cmd_remindrules": {
     "status": "unverified",
     "text": "/remindrules <czas> [wiadomości] — okresowo publikuj regulamin we wszystkich czatach mostu (np.: 2h, 30m)"
@@ -542,6 +598,14 @@
   "help.cmd_setbskyfeed": {
     "status": "unverified",
     "text": "/setbskyfeed <konto> — dołącz publiczne konto Bluesky do tego mostu"
+  },
+  "help.cmd_setinbox": {
+    "status": "unverified",
+    "text": "/setinbox <token> — zarejestruj bota Telegrama, którego czaty prywatne staną się tu wątkami i tematami (administratorzy bota)"
+  },
+  "help.cmd_setinboxchat": {
+    "status": "unverified",
+    "text": "/setinboxchat <bot> — otwórz ten czat na rozmowy bota odbiorczego"
   },
   "help.cmd_setlocaladmin": {
     "status": "unverified",
@@ -610,6 +674,114 @@
   "help.title": {
     "status": "unverified",
     "text": "Polecenia bota"
+  },
+  "inbox_banned_user": {
+    "status": "unverified",
+    "text": "Nie możesz już pisać do tego bota."
+  },
+  "inbox_closed_chat": {
+    "status": "unverified",
+    "text": "Ta rozmowa została zamknięta."
+  },
+  "inbox_closed_user": {
+    "status": "unverified",
+    "text": "Ta rozmowa została zamknięta. Napisz ponownie, kiedy będziesz potrzebować — otworzy się nowa."
+  },
+  "inbox_conversation_info": {
+    "status": "unverified",
+    "text": "Rozmowa z {name} ({username}, ID {id}). Wiadomości z tego czatu są przekazywane tej osobie, a jej wiadomości trafiają tutaj."
+  },
+  "inbox_dm_place": {
+    "status": "unverified",
+    "text": "PW"
+  },
+  "inbox_greeting": {
+    "status": "unverified",
+    "text": "Napisz tutaj, a Twoja wiadomość dotrze do zespołu stojącego za botem {bot}: zostanie przekazana na jego czat wraz z Twoim imieniem i nazwą użytkownika w Telegramie, a odpowiedzi wrócą do Ciebie tutaj. Nic z tego, co tu wyślesz, nie trafia nigdzie indziej."
+  },
+  "inbox_not_configured": {
+    "status": "unverified",
+    "text": "Ten bot nie ma jeszcze dokąd przekazywać wiadomości. Spróbuj później."
+  },
+  "inbox_open_failed": {
+    "status": "unverified",
+    "text": "Bot nie zdołał teraz otworzyć rozmowy. Jego zespół został powiadomiony, spróbuj później."
+  },
+  "inbox_staff_name": {
+    "status": "unverified",
+    "text": "Personel {letter}"
+  },
+  "inbox_unknown_bot": {
+    "status": "unverified",
+    "text": "Nie zarejestrowano bota odbiorczego o takim ID ani nazwie."
+  },
+  "inboxanon_disabled": {
+    "status": "unverified",
+    "text": "Osoby piszące do bota {bot} znów będą widzieć personel po imieniu — od następnej wiadomości."
+  },
+  "inboxanon_enabled": {
+    "status": "unverified",
+    "text": "Osoby piszące do bota {bot} będą widzieć personel jako „Staff A”, „Staff B”, … — od następnej wiadomości."
+  },
+  "inboxanon_usage": {
+    "status": "unverified",
+    "text": "Użycie: /inboxanon enable|disable [bot]"
+  },
+  "inboxban_already": {
+    "status": "unverified",
+    "text": "Ten użytkownik jest już zablokowany u tego bota."
+  },
+  "inboxban_done": {
+    "status": "unverified",
+    "text": "Użytkownik {user} nie może już pisać do tego bota."
+  },
+  "inboxban_usage": {
+    "status": "unverified",
+    "text": "Użycie: /inboxban <użytkownik> [bot] — albo zupełnie bez argumentów wewnątrz jego rozmowy."
+  },
+  "inboxlist_anon_off": {
+    "status": "unverified",
+    "text": "personel po imieniu"
+  },
+  "inboxlist_anon_on": {
+    "status": "unverified",
+    "text": "personel anonimowy"
+  },
+  "inboxlist_empty": {
+    "status": "unverified",
+    "text": "Nie zarejestrowano żadnego bota odbiorczego."
+  },
+  "inboxlist_entry": {
+    "status": "unverified",
+    "text": "• {bot} (ID {id}) — {state}, {anon}\n  Czaty: {hosts}\n  Otwarte rozmowy: {conversations}"
+  },
+  "inboxlist_no_hosts": {
+    "status": "unverified",
+    "text": "jeszcze żadnych"
+  },
+  "inboxlist_state_offline": {
+    "status": "unverified",
+    "text": "nie nasłuchuje"
+  },
+  "inboxlist_state_online": {
+    "status": "unverified",
+    "text": "nasłuchuje"
+  },
+  "inboxlist_title": {
+    "status": "unverified",
+    "text": "Boty odbiorcze"
+  },
+  "inboxunban_done": {
+    "status": "unverified",
+    "text": "Użytkownik {user} może znów pisać do tego bota."
+  },
+  "inboxunban_not_banned": {
+    "status": "unverified",
+    "text": "Ten użytkownik nie jest zablokowany u tego bota."
+  },
+  "inboxunban_usage": {
+    "status": "unverified",
+    "text": "Użycie: /inboxunban <użytkownik> [bot] — albo zupełnie bez argumentów wewnątrz jego rozmowy."
   },
   "lang_save_error": {
     "status": "unverified",
@@ -920,6 +1092,18 @@
     "status": "unverified",
     "text": "Użycie: /remadmin <id_lub_nazwa> — we wszystkich mostach tego serwera/grupy; dodaj `local` tylko dla tego mostu."
   },
+  "reminbox_done": {
+    "status": "unverified",
+    "text": "{bot} nie jest już botem odbiorczym. Jego otwarte rozmowy zostały zamknięte."
+  },
+  "reminboxchat_done": {
+    "status": "unverified",
+    "text": "Rozmowy bota {bot} nie będą się już tutaj otwierać. Te już otwarte działają aż do zamknięcia."
+  },
+  "reminboxchat_not_host": {
+    "status": "unverified",
+    "text": "Ten czat nie odbiera rozmów bota {bot}."
+  },
   "remindrules_disabled": {
     "status": "unverified",
     "text": "Przypomnienie regulaminu zostało wyłączone dla tego mostu."
@@ -1036,6 +1220,14 @@
     "status": "unverified",
     "text": "Podłączone źródło @{account} nie ruszyło się od {date} — od dawna nic stamtąd nie przychodzi."
   },
+  "service_event.joined_chat": {
+    "status": "unverified",
+    "text": "➕ {platform}: bot został dodany do „{chat}” ({chat_id})."
+  },
+  "service_event.left_unconfigured": {
+    "status": "unverified",
+    "text": "👋 {platform}: bot opuścił „{chat}” ({chat_id}) — od dodania minęło {days} dni, a żaden z czatów nie został podłączony do mostu."
+  },
   "setadmin_bridge_dm": {
     "status": "unverified",
     "text": "Zostałeś administratorem mostu #{bridge_id} na {place}."
@@ -1045,16 +1237,64 @@
     "text": "Użytkownik {user_id} został administratorem mostu #{bridge_id}."
   },
   "setadmin_server_dm": {
-    "text": "Zostałeś administratorem mostów na {place}. Uprawnienia obowiązują we wszystkich mostach, w których uczestniczy {place} — obecnych i tych, do których dołączy później.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "Zostałeś administratorem mostów na {place}. Uprawnienia obowiązują we wszystkich mostach, w których uczestniczy {place} — obecnych i tych, do których dołączy później."
   },
   "setadmin_server_done": {
-    "text": "Użytkownik {user_id} został administratorem mostów na {place} — we wszystkich mostach, w których uczestniczy ten serwer/grupa, także w przyszłych.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "Użytkownik {user_id} został administratorem mostów na {place} — we wszystkich mostach, w których uczestniczy ten serwer/grupa, także w przyszłych."
   },
   "setadmin_usage": {
     "status": "unverified",
     "text": "Użycie: /setadmin <id_lub_nazwa> — we wszystkich mostach tego serwera/grupy; dodaj `local` tylko dla tego mostu."
+  },
+  "setinbox_added": {
+    "status": "unverified",
+    "text": "{bot} jest teraz botem odbiorczym. Wykonaj /setinboxchat {bot} na każdym kanale lub w każdej grupie forum, która ma odbierać jego rozmowy."
+  },
+  "setinbox_invalid_token": {
+    "status": "unverified",
+    "text": "Telegram nie przyjął tego tokenu."
+  },
+  "setinbox_no_key": {
+    "status": "unverified",
+    "text": "Ta instalacja nie może przechowywać tokenów botów: nie ustawiono BACKUP_KEY, a tokenu nie wolno zapisywać bez szyfrowania."
+  },
+  "setinbox_private_only": {
+    "status": "unverified",
+    "text": "Wyślij /setinbox do mnie na czacie prywatnym, nigdy w grupie: token opublikowany w grupie może wykorzystać każdy, kto go zobaczy. Twoja wiadomość została usunięta."
+  },
+  "setinbox_start_failed": {
+    "status": "unverified",
+    "text": "{bot} został zapisany, ale nie zdołał zacząć nasłuchiwać. Sprawdź token i wykonaj /setinbox ponownie."
+  },
+  "setinbox_updated": {
+    "status": "unverified",
+    "text": "Token bota {bot} został wymieniony; bot znów nasłuchuje."
+  },
+  "setinbox_usage": {
+    "status": "unverified",
+    "text": "Użycie: /setinbox <token> — na czacie prywatnym z tym botem."
+  },
+  "setinboxchat_already": {
+    "status": "unverified",
+    "text": "Ten czat już odbiera rozmowy bota {bot}."
+  },
+  "setinboxchat_done": {
+    "status": "unverified",
+    "text": "Rozmowy bota {bot} będą się teraz otwierać tutaj."
+  },
+  "setinboxchat_no_thread_rights": {
+    "status": "unverified",
+    "text": "Nie mogę otwierać wątków na tym kanale. Nadaj mi tutaj uprawnienia „Tworzenie wątków publicznych” i „Wysyłanie wiadomości w wątkach” i wykonaj polecenie ponownie."
+  },
+  "setinboxchat_no_topic_rights": {
+    "status": "unverified",
+    "text": "Jestem w tej grupie, ale nie mogę tu tworzyć wątków. Nadaj mi uprawnienie „Zarządzanie wątkami” w ustawieniach administratora grupy i wykonaj polecenie ponownie."
+  },
+  "setinboxchat_not_forum": {
+    "status": "unverified",
+    "text": "Rozmowy może odbierać tylko grupa forum — każda staje się osobnym wątkiem. Włącz wątki w ustawieniach grupy i wykonaj polecenie ponownie."
   },
   "setlocaladmin_already": {
     "status": "unverified",
@@ -1367,6 +1607,10 @@
   "whois.field_username": {
     "status": "unverified",
     "text": "Nazwa użytkownika"
+  },
+  "whois.inbox_writer_only": {
+    "status": "unverified",
+    "text": "W rozmowie bota odbiorczego whois odpowiada wyłącznie o osobie piszącej do bota."
   },
   "whois.mode_dnd": {
     "status": "unverified",

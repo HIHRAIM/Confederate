@@ -4,12 +4,14 @@ neither of them.
 Run it from this directory — the database and .env are opened by relative
 path: ``python main.py``.
 
-What lives here is the cross-platform machinery: the service-chat reporter
-every loop uses to complain, the followed-source poller (scheduling, backoff
-and throttling; the readers themselves are in sources/), the poll closer, the
-consent/verification cleanup and the daily reachability sweep. Loops that only
-concern Discord — status, backups, dead chats and topics, appeal maintenance —
-are started by the client itself in discord_bot/client.py.
+What lives here is the cross-platform machinery: the followed-source poller
+(scheduling, backoff and throttling; the readers themselves are in sources/),
+the poll closer, the consent/verification cleanup, the daily reachability
+sweep, the setup-deadline sweep and the inbox housekeeping. Loops that only
+concern Discord — status, backups, dead chats and topics, appeal maintenance
+— are started by the client itself in discord_bot/client.py. The service-chat
+reporter every loop uses to complain lives in utils.py, where both bot halves
+can reach it without importing this module.
 
 Import order matters at the bottom of the imports: `db.init()` runs before
 either bot package is imported further, so the schema exists before anything
@@ -29,85 +31,11 @@ import db
 from config import DISCORD_TOKEN
 from discord_bot import bot as discord_bot
 from telegram_bot import main as tg_main
-from utils import get_chat_lang, localized_service_event
-from config import SERVICE_CHATS
+from utils import send_service_event
 
 db.init()
 db.cleanup_old_messages(days=30)
-
-def _normalize_service_chat_key(platform, raw_key):
-    """Parse a config.SERVICE_CHATS entry into ``(prefix, target)``.
-
-    The entries are written by hand and come in two shapes: 'group:topic' /
-    'guild:channel', or a bare id — which means a group with no topic on
-    Telegram and a channel of unknown guild on Discord. Returns (None, None)
-    for anything unparsable rather than raising: a typo in the config must
-    not stop the bot from starting."""
-    key = str(raw_key).strip()
-    if not key:
-        return None, None
-
-    if ":" in key:
-        left, right = key.split(":", 1)
-        try:
-            return int(left), int(right)
-        except Exception:
-            return None, None
-
-    try:
-        single = int(key)
-    except Exception:
-        return None, None
-
-    if platform == "telegram":
-        return single, 0
-    if platform == "discord":
-        return None, single
-    return None, None
-
-async def send_service_event(event_key, **kwargs):
-    """Report an operational event to the service chats of both platforms,
-    each in its own language. Every send is guarded — the service chats are
-    where failures are reported, so a failure there must stay a log line."""
-    from telegram_bot import bot as tg
-    from discord_bot import bot as dc
-
-    for chat_key in SERVICE_CHATS.get("telegram", set()):
-        try:
-            chat_id, thread = _normalize_service_chat_key("telegram", chat_key)
-            if chat_id is None:
-                continue
-            lang = get_chat_lang(f"{chat_id}:{thread}")
-            text = localized_service_event(event_key, lang, **kwargs)
-            await tg.send_message(
-                int(chat_id),
-                text,
-                message_thread_id=int(thread) or None
-            )
-        except Exception as e:
-            logger.warning("send_service_event failed for telegram %s: %s", chat_key, e)
-
-    for chat_key in SERVICE_CHATS.get("discord", set()):
-        try:
-            guild_id, channel_id = _normalize_service_chat_key("discord", chat_key)
-            if channel_id is None:
-                continue
-            ch = dc.get_channel(channel_id)
-            if not ch:
-                try:
-                    ch = await dc.fetch_channel(channel_id)
-                except Exception:
-                    ch = None
-            effective_guild_id = guild_id
-            if effective_guild_id is None and ch and getattr(ch, "guild", None):
-                effective_guild_id = ch.guild.id
-            lang_key = f"{effective_guild_id}:{channel_id}" if effective_guild_id is not None else str(channel_id)
-            lang = get_chat_lang(lang_key)
-            text = localized_service_event(event_key, lang, **kwargs)
-            if ch:
-                await ch.send(text)
-        except Exception as e:
-            logger.warning("send_service_event failed for discord %s: %s", chat_key, e)
+db.rule_since()
 
 async def rules_loop():
     """Legacy rules poster, kept alongside DiscordBot.bridge_rules_loop.
@@ -407,6 +335,50 @@ async def poll_loop():
                 pass
         await asyncio.sleep(30)
 
+async def inbox_maintenance_loop():
+    """Daily housekeeping of the inbox system: closes conversations nobody
+    has written in for 30 days (inbox.py: inbox_maintenance_pass).
+
+    Waits for the Discord client first — closing a conversation archives its
+    threads, and doing that before the client is ready would only make the
+    sweep fail its way through every one of them."""
+    from discord_bot import bot as dc
+    from inbox import inbox_maintenance_pass
+
+    await dc.wait_until_ready()
+    while True:
+        try:
+            await inbox_maintenance_pass()
+        except Exception as e:
+            try:
+                await send_service_event("daily_loop_error", error=f"inbox_maintenance_loop error: {e}")
+            except Exception:
+                pass
+        await asyncio.sleep(24 * 3600)
+
+async def setup_deadline_loop():
+    """Daily wrapper around setup_deadline.setup_deadline_pass: leaves the
+    communities whose seven days ran out with nothing attached to a bridge,
+    and reports each departure to the service chats.
+
+    Waits for the Discord client first — the sweep reads `Guild.me.joined_at`
+    off the guild list, and an empty one would simply find nothing to do."""
+    from setup_deadline import setup_deadline_pass
+    from discord_bot import bot as dc
+    from telegram_bot import bot as tg
+
+    await dc.wait_until_ready()
+    while True:
+        try:
+            for event_key, fields in await setup_deadline_pass(dc, tg):
+                await send_service_event(event_key, **fields)
+        except Exception as e:
+            try:
+                await send_service_event("daily_loop_error", error=f"setup_deadline_loop error: {e}")
+            except Exception:
+                pass
+        await asyncio.sleep(24 * 3600)
+
 async def daily_check_loop():
     """
     Сразу при старте проверяет все чаты, затем спит 24 часа.
@@ -422,7 +394,7 @@ async def daily_check_loop():
             for r in rows:
                 platform = r["platform"]
                 chat_key = r["chat_id"]
-                if platform == "discord" and chat_key.startswith("dm:"):
+                if platform == "inbox" or (platform == "discord" and chat_key.startswith("dm:")):
                     db.clear_chat_inaccessible(chat_key)
                     continue
                 inaccessible = False
@@ -505,7 +477,13 @@ async def daily_check_loop():
 async def main():
     """Start both bots and the cross-platform loops as one task group, then
     wait. The service chats are told once the bots have had five seconds to
-    connect, and told again on the way out however the gather ends."""
+    connect, and told again on the way out however the gather ends.
+
+    The registered receiver bots (inbox.py) get their polling tasks in the
+    same breath — each keeps its own, so one of them being taken offline for
+    a new token leaves the others polling."""
+    from inbox import start_all_inbox_bots
+
     tasks = [
         asyncio.create_task(tg_main()),
         asyncio.create_task(discord_bot.start(DISCORD_TOKEN)),
@@ -514,7 +492,11 @@ async def main():
         asyncio.create_task(daily_check_loop()),
         asyncio.create_task(poll_loop()),
         asyncio.create_task(feed_loop()),
+        asyncio.create_task(inbox_maintenance_loop()),
+        asyncio.create_task(setup_deadline_loop()),
     ]
+
+    await start_all_inbox_bots()
 
     await asyncio.sleep(5)
     await send_service_event("bot_started")

@@ -21,10 +21,12 @@ def chat_exists(chat_id):
 
 def chat_server_id(platform, chat_id):
     """The server/group a chat belongs to: guild id for Discord, group id for
-    Telegram. ``None`` for DM chats (appeal bridges), which belong to no server
-    and can therefore never carry a server-wide consent."""
+    Telegram. ``None`` for the one-person chats — a DM (appeal bridges) and a
+    receiver bot's private chat (platform 'inbox', whose key starts with the
+    *bot's* id, not a server's). Neither belongs to a community, so neither
+    can ever carry a server-wide consent or admin grant."""
     chat_id = str(chat_id)
-    if chat_id.startswith("dm:"):
+    if platform == "inbox" or chat_id.startswith("dm:"):
         return None
     return chat_id.split(":", 1)[0] or None
 

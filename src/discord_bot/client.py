@@ -220,10 +220,15 @@ class DiscordBot(discord.Client):
             await asyncio.sleep(60)
 
     async def deadtopic_loop(self):
-        """At every 00:00 UTC, keep /deadtopic chats alive: if 6+ days passed
-        since the last message (or the bot's own last phantom), send a phantom
-        message and delete it right away. Sleeping until the next midnight —
-        rather than a fixed interval — makes the schedule survive restarts."""
+        """At every 00:00 UTC, keep /deadtopic chats alive: once a chat's own
+        window has passed since the last message (or the bot's own last
+        phantom), send a phantom message and delete it right away. Sleeping
+        until the next midnight — rather than a fixed interval — makes the
+        schedule survive restarts.
+
+        The window is per chat: 6 days for the ones `/deadtopic` enables, 3
+        for inbox conversation threads, which register themselves and cannot
+        afford to be archived while somebody waits for an answer."""
         await self.wait_until_ready()
         while not self.is_closed():
             now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -254,7 +259,7 @@ class DiscordBot(discord.Client):
                         last_msg_ts = r["last_message_ts"] or 0
                         ref_ts = max(last_msg_ts, bot_last_ts)
 
-                        if now_ts - ref_ts < 6 * 86400:
+                        if now_ts - ref_ts < (r["days"] or 6) * 86400:
                             continue
 
                         _, channel_id_str = chat_id.split(":")
@@ -361,11 +366,16 @@ async def _post_user_id_to_channels(channel_ids, payload):
         except Exception as e:
             logger.warning("Failed to publish user id %s to channel %s: %s", payload, cid, e)
 
-async def announce_verified_user(user_id):
+async def announce_verified_user(user_id, guild_id=None):
     """Publish a newly verified user's ID to the VERIFIED channel(s).
 
-    The message carries exactly one ID — the user's — so consumers can never
-    mistake it for anything else.
+    The line is the user's ID, followed by the ID of the server where the
+    consent was given when that is known. Confederate Guard needs the second
+    ID to tell the server the user verified on (plain 'verified' notice) from
+    the other servers it hands the role out on ('due to verification on another
+    server'); without it, every server was told the verification had happened
+    somewhere else. Guard reads the first ID and treats a missing second one as
+    an unknown origin, so a bare ID stays a valid message.
 
     Only useful when running alongside Confederate Guard; can be turned off
     with /verify-list disable.
@@ -373,7 +383,8 @@ async def announce_verified_user(user_id):
     if not db.is_verify_list_enabled():
         return
     from config import VERIFIED
-    await _post_user_id_to_channels(VERIFIED, user_id)
+    payload = f"{user_id} {guild_id}" if guild_id is not None else str(user_id)
+    await _post_user_id_to_channels(VERIFIED, payload)
 
 async def announce_unverified_user(user_id):
     """Publish an unverified user's ID to the UNVERIFIED channel(s).

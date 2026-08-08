@@ -5,10 +5,15 @@ Telegram files are not publicly addressable — a file_id means nothing outside
 this bot — so relaying an attachment means downloading it through the Bot API
 and posting it to a Discord channel the bot controls (the GALLERY), whose CDN
 links every chat can then be given. That is why the mechanic needs explicit
-consent from every chat of the bridge (db.bridge_file_relay_enabled).
+consent from every chat of the bridge (db.bridge_file_relay_enabled), or from
+every host chat of an inbox conversation (db.inbox_file_relay_enabled).
 
-Not this module's zone: deciding whether the consent is there (relay.py), or
-the GALLERY channel plumbing itself (discord_bot/feeds.py).
+The two entry points take an optional `source_bot`, because a file_id only
+means something to the bot it was handed to: a file sent into a receiver
+bot's private chat must be downloaded through that bot, not this one.
+
+Not this module's zone: deciding whether the consent is there (relay.py,
+inbox.py), or the GALLERY channel plumbing itself (discord_bot/feeds.py).
 """
 import logging
 
@@ -81,12 +86,18 @@ def _collect_gallery_candidates(message: Message):
 
     return candidates
 
-async def _download_telegram_file(file_id, max_size):
+async def _download_telegram_file(file_id, max_size, source_bot=None):
     """Bytes of a Telegram file, or None when it can't be fetched or is too
     large. Telegram's getFile refuses anything above 20 MB, and Discord's own
-    upload limit cuts in below that on a non-boosted server."""
+    upload limit cuts in below that on a non-boosted server.
+
+    `source_bot` names the bot to ask. A file_id is meaningful only to the bot
+    that was handed it, so a file sent into a receiver bot's private chat has
+    to be fetched through *that* bot (inbox.py) — the main one gets nothing
+    but an error for it."""
+    api = source_bot or bot
     try:
-        f = await bot.get_file(file_id)
+        f = await api.get_file(file_id)
     except Exception as e:
         logger.warning("getFile failed (%s): %s", file_id, e)
         return None
@@ -94,7 +105,7 @@ async def _download_telegram_file(file_id, max_size):
     if size and int(size) > max_size:
         return None
     try:
-        buf = await bot.download_file(f.file_path)
+        buf = await api.download_file(f.file_path)
     except Exception as e:
         logger.warning("Telegram file download failed (%s): %s", file_id, e)
         return None
@@ -103,7 +114,7 @@ async def _download_telegram_file(file_id, max_size):
         return None
     return data
 
-async def _upload_telegram_files_to_gallery(candidates):
+async def _upload_telegram_files_to_gallery(candidates, source_bot=None):
     """Re-upload a Telegram message's files to a GALLERY channel.
 
     Returns ``(upload, uploaded_count)``. Files that exceed Telegram's getFile
@@ -111,7 +122,11 @@ async def _upload_telegram_files_to_gallery(candidates):
     are skipped, and the caller keeps representing them with the usual footer;
     a bigger file never blocks a smaller one that still fits. Any failure at all
     — no reachable gallery, a failed download, a rejected upload — degrades to
-    ``(None, 0)``, i.e. to the pre-GALLERY behaviour."""
+    ``(None, 0)``, i.e. to the pre-GALLERY behaviour.
+
+    `source_bot` is the bot the files are downloaded through; it defaults to
+    the main one and is set only by the inbox system, whose files belong to a
+    receiver bot's token."""
     if not candidates:
         return None, 0
 
@@ -130,7 +145,7 @@ async def _upload_telegram_files_to_gallery(candidates):
         known_size = cand.get("size") or 0
         if known_size and (known_size > max_single or total + known_size > max_total):
             continue
-        data = await _download_telegram_file(cand["file_id"], max_single)
+        data = await _download_telegram_file(cand["file_id"], max_single, source_bot)
         if data is None or total + len(data) > max_total:
             continue
         files.append({"name": cand["name"], "data": data})

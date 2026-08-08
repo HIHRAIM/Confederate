@@ -17,7 +17,7 @@ import db
 from config import GUARD_BOT_ID
 from utils import (
     get_chat_lang, localized, localized_consent_body, localized_consent_button,
-    localized_consent_title, rate_limit_ok,
+    localized_consent_title, rate_limit_ok, send_service_event,
 )
 
 from discord_bot.client import bot, announce_verified_user
@@ -39,10 +39,10 @@ async def on_message(message: discord.Message):
     system; news-chat reactions and dead-chat bookkeeping run for everyone;
     bot senders pass only under their special rules (own messages and own
     webhook copies never, Confederate Guard's appeal-thread posts get pinned,
-    /allow-bots chats relay foreign bots); appeal threads take their detour;
-    shadow-banned users are silently deleted; unverified users get the consent
-    prompt and their message is held; finally the rate limit, and the relay
-    itself."""
+    /allow-bots chats relay foreign bots); appeal threads and inbox
+    conversation threads take their detours; shadow-banned users are silently
+    deleted; unverified users get the consent prompt and their message is
+    held; finally the rate limit, and the relay itself."""
     if message.guild is None:
         try:
             await handle_appeal_dm_message(message)
@@ -115,6 +115,15 @@ async def on_message(message: discord.Message):
                 await handle_appeal_thread_message(message, appeal_row, bridge_id)
             except Exception as e:
                 logger.warning("appeal thread relay failed (thread=%s): %s", message.channel.id, e)
+        return
+
+    if db.is_inbox_bridge(bridge_id):
+        if not _discord_system_event_key(message):
+            try:
+                from inbox import handle_inbox_host_discord_message
+                await handle_inbox_host_discord_message(message, bridge_id)
+            except Exception as e:
+                logger.warning("inbox thread relay failed (thread=%s): %s", message.channel.id, e)
         return
 
     db.cur.execute(
@@ -191,7 +200,7 @@ async def on_message(message: discord.Message):
                     except Exception:
                         pass
                     await interaction.response.send_message(localized("verify_thanks", lang), ephemeral=True)
-                    await announce_verified_user(self.user_id)
+                    await announce_verified_user(self.user_id, interaction.guild_id)
                     for p in all_pendings:
                         await _relay_pending_discord_first_message(p)
 
@@ -325,11 +334,32 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     )
 
 @bot.event
+async def on_guild_join(guild: discord.Guild):
+    """The bot was added to a server: record the join and tell the service
+    chats, since a Bot Admin now has seven days to attach something of it to
+    a bridge (setup_deadline.py).
+
+    The row is a record, not the clock — the sweep reads Discord's own
+    `Guild.me.joined_at`, so a missed event costs nothing but this notice."""
+    db.record_join("discord", guild.id)
+    await send_service_event(
+        "joined_chat",
+        platform="Discord",
+        chat=guild.name or str(guild.id),
+        chat_id=guild.id,
+    )
+
+@bot.event
 async def on_guild_remove(guild: discord.Guild):
     """The bot was kicked from (or left) a server: drop that server's per-chat
     configuration. Deliberately does NOT touch the chats table — the daily
     reachability sweep handles bridge detachment with its grace period, so a
-    kick-and-reinvite within a day costs the server nothing."""
+    kick-and-reinvite within a day costs the server nothing.
+
+    The setup-deadline row does go, so that a later re-invitation is a fresh
+    seven days rather than a settlement inherited from the last time."""
+    db.forget_deadline("discord", guild.id)
+
     db.cur.execute(
         """
         DELETE FROM chat_admins

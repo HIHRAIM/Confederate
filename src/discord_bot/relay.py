@@ -471,6 +471,15 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 reply_to_platform_message_id=reply_to_platform_message_id,
             )
 
+        if chat["platform"] == "inbox":
+            from inbox import deliver_inbox_relay
+            return await deliver_inbox_relay(
+                chat, header=header, body_plain=body_plain,
+                body_telegram_html=body_telegram_html, reply_line=reply_line,
+                reply_to_platform_message_id=reply_to_platform_message_id,
+                sender_name=sender_name,
+            )
+
     if system_event_key:
         origin_lang = get_chat_lang(origin_chat_id)
         event_text = localized_discord_system_event(
@@ -580,8 +589,10 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
 
     Copies on Discord go through edit_discord_relay_copy (which knows webhook
     copies); Telegram copies are re-rendered with the localized header and
-    timestamps. An edit inside an appeal thread swaps the author name for the
-    consul label of the *original* sender, so anonymity survives edits."""
+    timestamps, and a copy in a receiver bot's private chat through the inbox
+    editor. An edit inside an appeal thread — or an anonymized inbox
+    conversation — swaps the author name for the label of the *original*
+    sender, so anonymity survives edits."""
     if origin_chat_id is None:
         if not guild or not channel:
             return
@@ -589,7 +600,7 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
 
     row = db.cur.execute(
         """
-        SELECT id FROM messages
+        SELECT id, bridge_id FROM messages
         WHERE origin_platform='discord' AND origin_chat_id=? AND origin_message_id=?
         ORDER BY id DESC LIMIT 1
         """,
@@ -606,6 +617,14 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
         if appeal_row:
             from discord_bot.appeals import _consul_label
             author_display_name = _consul_label(channel.id, _edit_author_id_for_consul(row["id"]))
+
+    if db.is_inbox_bridge(row["bridge_id"]):
+        from inbox import inbox_sender_override
+        label, _ = inbox_sender_override(
+            row["bridge_id"], "discord", _edit_author_id_for_consul(row["id"])
+        )
+        if label:
+            author_display_name = label
 
     header = f"[Discord | {clean_display_name(place_name)}] {clean_display_name(author_display_name)}:"
     telegram_text = replace_channel_mentions_for_telegram(text, guild)
@@ -632,6 +651,12 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                         convert_discord_timestamps(telegram_text, ts_lang),
                     ),
                     parse_mode="HTML"
+                )
+            elif c["platform"] == "inbox":
+                from inbox import edit_inbox_relay_copy
+                await edit_inbox_relay_copy(
+                    c["chat_id"], c["message_id_platform"], author_display_name,
+                    telegram_text, text_html,
                 )
         except Exception:
             pass
@@ -744,6 +769,10 @@ async def delete_all_copies_and_origin(msg_id):
             except Exception:
                 pass
 
+        elif c["platform"] == "inbox":
+            from inbox import delete_inbox_message
+            await delete_inbox_message(c["chat_id"], c["message_id_platform"])
+
     if msg["origin_platform"] == "discord":
         channel = await resolve_discord_chat_channel(msg["origin_chat_id"])
         if channel:
@@ -752,6 +781,10 @@ async def delete_all_copies_and_origin(msg_id):
                 await m.delete()
             except Exception:
                 pass
+
+    elif msg["origin_platform"] == "inbox":
+        from inbox import delete_inbox_message
+        await delete_inbox_message(msg["origin_chat_id"], msg["origin_message_id"])
 
     from discord_bot.feeds import drop_gallery_upload
     await drop_gallery_upload(msg_id)

@@ -6,6 +6,7 @@ from discord_bot.commands import (
     admins,
     bridges,
     feeds,
+    inbox,
     locale,
     polls,
     settings,

@@ -15,16 +15,20 @@ literal survive.
 SCHEMA_SQL = """
 -- bridges: one row per bridge; nothing but the number. A bridge exists as
 -- long as at least one chat points at it (see remove_chat_from_bridge).
--- Written by attach_chat, read everywhere. Ids >= 100000 are reserved for
--- appeal bridges (db/appeals.py: APPEAL_BRIDGE_ID_FLOOR).
+-- Written by attach_chat, read everywhere. The id space is split in three:
+-- ordinary bridges below 100000, appeal bridges in [100000, 1000000)
+-- (db/appeals.py: APPEAL_BRIDGE_ID_FLOOR) and inbox conversations at and
+-- above 1000000 (db/inbox.py: INBOX_BRIDGE_ID_FLOOR).
 CREATE TABLE IF NOT EXISTS bridges (
     id INTEGER PRIMARY KEY
 );
 
 -- chats: membership of chats in bridges. chat_id is the bot-wide chat key:
 -- 'guild:channel' (Discord), 'group:topic' (Telegram, topic 0 = the plain
--- group) or 'dm:<user_id>' (appeal DM side). Written by /atb and the appeal
--- system, deleted by /rfb and the daily reachability sweep.
+-- group), 'dm:<user_id>' (appeal DM side) or '<bot_id>:<user_id>' with
+-- platform 'inbox' (the private chat of a receiver bot, see inbox_bots).
+-- Written by /atb, the appeal system and the inbox system, deleted by /rfb
+-- and the daily reachability sweep.
 CREATE TABLE IF NOT EXISTS chats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     platform TEXT,
@@ -208,7 +212,10 @@ CREATE TABLE IF NOT EXISTS inaccessible_chats (
 );
 
 -- deadtopic_chats: /deadtopic config — send-and-delete a phantom message
--- after 6 days of silence so Telegram does not archive the topic.
+-- after `days` days of silence so the thread is not archived out from under
+-- the conversation. days defaults to 6 (what /deadtopic sets); inbox
+-- conversation threads are registered with 3, since an unanswered one must
+-- survive a weekend without anybody touching it.
 -- bot_last_sent_ts keeps the loop from firing twice in one UTC day.
 CREATE TABLE IF NOT EXISTS deadtopic_chats (
     chat_id TEXT PRIMARY KEY,
@@ -436,6 +443,126 @@ CREATE TABLE IF NOT EXISTS bridge_webhooks (
     enabled_at INTEGER,
     PRIMARY KEY (server_id, bridge_id)
 );
+
+-- inbox_bots: other Telegram bots whose private chats this bot serves
+-- (/setinbox). bot_id is the receiver bot's numeric Telegram id; token is
+-- the bot token, ENCRYPTED with BACKUP_KEY (backup_crypto.encrypt_secret) —
+-- it is never stored, logged or answered in clear. anonymize=1 signs staff
+-- replies as 'Staff A/B/…' instead of their names. owner_platform/owner_id
+-- record who handed the token in: they may update it and manage the bot
+-- beside the Bot Admins.
+CREATE TABLE IF NOT EXISTS inbox_bots (
+    bot_id TEXT PRIMARY KEY,
+    username TEXT,
+    title TEXT,
+    token TEXT NOT NULL,
+    anonymize INTEGER NOT NULL DEFAULT 0,
+    owner_platform TEXT,
+    owner_id TEXT,
+    added_at INTEGER,
+    updated_at INTEGER
+);
+
+-- inbox_hosts: the chats a receiver bot opens its conversations in
+-- (/setinboxchat). One row per host chat: a Discord channel, where every
+-- conversation becomes a thread, or a Telegram forum group, where it becomes
+-- a topic. Several rows per bot are the point — one incoming private chat
+-- then reaches a thread AND a topic, and the conversation bridge spans them
+-- all.
+-- hide_header is /close-header: with it on, messages out of the private chat
+-- arrive in this host's threads and topics as bare text, without the
+-- '[Telegram | DM] Name:' line. It lives here rather than on the thread
+-- because a thread is made fresh for every conversation and a setting on one
+-- would die with it — and rather than on the bot, because one team may want
+-- the headers and another team hosting the same bot may not.
+CREATE TABLE IF NOT EXISTS inbox_hosts (
+    bot_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    added_by TEXT,
+    added_at INTEGER,
+    PRIMARY KEY (bot_id, chat_id)
+);
+
+-- inbox_conversations: one open conversation per (receiver bot, user), and
+-- one bridge per conversation — the private chat plus the thread/topic
+-- opened in each host. bridge_id comes from the reserved inbox range
+-- (db/inbox.py: INBOX_BRIDGE_ID_FLOOR). lang is the writer's client
+-- language, kept so a closing notice can still be worded for them.
+-- last_message_ts drives the 30-day silence sweep. title is the writer's
+-- display name as the thread and topic are named after it, and status is
+-- 'user' | 'staff' | 'closed' — which side spoke last, i.e. which of the
+-- 🟩/🟨/⬛ marks the title currently carries. Both are stored rather than
+-- derived so a rename is only issued when the mark actually changes:
+-- Discord rate-limits thread renames hard (two per ten minutes).
+CREATE TABLE IF NOT EXISTS inbox_conversations (
+    bot_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    bridge_id INTEGER NOT NULL,
+    lang TEXT,
+    created_at INTEGER,
+    last_message_ts INTEGER,
+    PRIMARY KEY (bot_id, user_id)
+);
+
+-- inbox_topics: the Telegram topic one writer owns in one host group, kept
+-- across closings. A closed conversation leaves its topic behind closed
+-- rather than deleted, and the writer's next message reopens *that* topic
+-- instead of littering the group with a second one; the row is what makes
+-- the reopening possible after the conversation record is gone. Discord is
+-- deliberately not recorded here — an archived thread is cheap to leave
+-- alone and a new one reads better in a channel list.
+CREATE TABLE IF NOT EXISTS inbox_topics (
+    bot_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    host_chat_id TEXT NOT NULL,
+    topic_chat_id TEXT NOT NULL,
+    created_at INTEGER,
+    PRIMARY KEY (bot_id, user_id, host_chat_id)
+);
+
+-- inbox_staff: per-conversation anonymization indexes — ord 0 renders as
+-- 'Staff A', 1 as 'Staff B', … The index is reserved on a staff member's
+-- first message while anonymization is on, and never reused within the
+-- conversation: someone who keeps writing stays the same letter, and turning
+-- anonymization off and on again does not reshuffle who is who.
+CREATE TABLE IF NOT EXISTS inbox_staff (
+    bridge_id INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    ord INTEGER NOT NULL,
+    PRIMARY KEY (bridge_id, platform, user_id)
+);
+
+-- setup_deadlines: the seven-day setup deadline (setup_deadline.py). One row
+-- per community the bot was added to AFTER the rule came into force —
+-- everything it was already sitting in has no row and is never examined.
+-- joined_at is what the deadline counts from; on Discord it is only a
+-- record, since Guild.me.joined_at is authoritative there and survives a
+-- restart, while Telegram offers nothing of the kind and the my_chat_member
+-- update that adds the bot is the only moment the time can be learnt.
+-- settled_at is set the first time the community is found configured and is
+-- what makes the check one-shot: a community that was set up once is never
+-- left afterwards, however its configuration changes later.
+CREATE TABLE IF NOT EXISTS setup_deadlines (
+    platform TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    joined_at INTEGER,
+    settled_at INTEGER,
+    PRIMARY KEY (platform, server_id)
+);
+
+-- inbox_bans: users barred from writing to one receiver bot (/inboxban).
+-- Scoped to the bot, not to the whole bridge network — unlike shadow_bans,
+-- which is bot-wide. A ban closes the open conversation and drops everything
+-- the user sends that bot afterwards.
+CREATE TABLE IF NOT EXISTS inbox_bans (
+    bot_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    banned_by TEXT,
+    banned_at INTEGER,
+    PRIMARY KEY (bot_id, user_id)
+);
 """
 
 _COLUMN_ADDITIONS = [
@@ -450,6 +577,10 @@ _COLUMN_ADDITIONS = [
     ("chat_settings", "allow_bots", "INTEGER DEFAULT 0"),
     ("chat_settings", "webhooks", "INTEGER DEFAULT 0"),
     ("wiki_feed_settings", "webhook", "TEXT NOT NULL DEFAULT 'own'"),
+    ("deadtopic_chats", "days", "INTEGER DEFAULT 6"),
+    ("inbox_conversations", "title", "TEXT"),
+    ("inbox_conversations", "status", "TEXT DEFAULT 'user'"),
+    ("inbox_hosts", "hide_header", "INTEGER DEFAULT 0"),
 ]
 
 def create_all(cur, conn):

@@ -1,6 +1,6 @@
 # Confederate
 
-Confederate is a cross-platform relay bot that bridges Discord channels/threads/forum posts and Telegram chats/topics into shared conversation spaces (“bridges”). It forwards messages in both directions, supports moderation and admin delegation per bridge, relays the posts of followed Bluesky accounts, YouTube channels and Telegram channels into a bridge, runs a shared ban-appeal flow together with [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard), and includes quality-of-life automation (verification prompts, cross-bridge polls and mentions, dead-chat pings, periodic rules reminders, and language settings).
+Confederate is a cross-platform relay bot that bridges Discord channels/threads/forum posts and Telegram chats/topics into shared conversation spaces (“bridges”). It forwards messages in both directions, supports moderation and admin delegation per bridge, relays the posts of followed Bluesky accounts, YouTube channels and Telegram channels into a bridge, turns the private chats of other Telegram bots into threads and topics your team can answer from either platform, runs a shared ban-appeal flow together with [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard), and includes quality-of-life automation (verification prompts, cross-bridge polls and mentions, dead-chat pings, periodic rules reminders, and language settings).
 
 ## Requirements
 
@@ -37,13 +37,14 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
    - Set environment variables (the example config reads tokens from env), or copy `src/.env.example` to `src/.env` and fill it in — the config loads it automatically (already-set environment variables take precedence):
      - `DISCORD_BOT_TOKEN` — your Discord bot token.
      - `TELEGRAM_BOT_TOKEN` — your Telegram bot token.
+     - `BACKUP_KEY` — the key the automatic database backups are encrypted with, and the key the tokens of registered receiver bots are stored under (see [Inbox conversations](#inbox-conversations)). Without it the bot runs, but backups fail and `/setinbox` refuses to store a token. Keep a copy somewhere other than the server: if it is lost, every existing backup is unreadable and every registered receiver bot has to be re-registered.
    - Edit `config.py`:
      - `ADMINS["discord"]` and `ADMINS["telegram"]` — sets of numeric user IDs with global bot-admin rights.
      - `SERVICE_CHATS["discord"]` and `SERVICE_CHATS["telegram"]` — chat IDs where the bot sends startup/shutdown and health events. Telegram format: `"-1000000000000:0"` (chat\_id:thread\_id); Discord format: numeric channel ID.
      - `BACKUP_CHATS["discord"]` and `BACKUP_CHATS["telegram"]` — chat IDs where the bot sends automatic database backups every 12 hours. Same format as `SERVICE_CHATS`.
      - `SUPPORT_CHATS["discord"]` and `SUPPORT_CHATS["telegram"]` — chats that receive localization suggestions submitted via `/loc-suggest` (Discord as an embed, Telegram as a message). Same format as `SERVICE_CHATS`.
      - `GALLERY` — set of Discord channel IDs where the bot re-uploads files it hands out as links: Telegram files once `/allow-files` is enabled (see [Telegram file re-upload](#telegram-file-re-upload)) and the attachments of the posts of followed sources (see [Followed sources](#followed-sources-bluesky-youtube-and-telegram-channels)). The first reachable channel is used, and the bot needs **Attach Files** there. Boosting that channel's server raises the per-message upload limit. Leave the set empty to keep both mechanics off entirely.
-     - `VERIFIED` — set of Discord channel IDs where a **Discord** user's ID is published (one bare ID per message, nothing else) once they accept the forwarding consent. **Confederate Guard** reads the same channel(s) to add them to its cross-server verified database. Only Discord user IDs are published — Telegram verifications stay local to Confederate. Use the same ID in both bots' configs.
+     - `VERIFIED` — set of Discord channel IDs where a **Discord** user's ID is published, followed by the ID of the server they accepted the forwarding consent on (`<user_id> <guild_id>`, nothing else). **Confederate Guard** reads the same channel(s) to add them to its cross-server verified database; the server ID is what lets it tell that server apart from the other servers it grants the verify role on. Only Discord user IDs are published — Telegram verifications stay local to Confederate. Use the same ID in both bots' configs.
      - `UNVERIFIED` — set of Discord channel IDs where a **Discord** user's ID is published when they unverify themselves (`/unverify`). **Confederate Guard** reads the same channel(s) to remove them from its verified database. Use the same ID in both bots' configs.
      - `PURGATORIUM_GUILD_ID` / `PURGATORIUM_INVITE_URL` — the shared appeal server and the invite link `/appeal` hands to users who are not on it yet (see [Purgatorium appeals](#purgatorium-appeals)).
      - `APPEAL_CHANNEL_ID` — the channel on Purgatorium where `/appeal` opens one thread per appellant.
@@ -66,25 +67,29 @@ Confederate is a cross-platform relay bot that bridges Discord channels/threads/
 
 ## Project structure
 
-The code lives in `src/`, split into packages by domain. `ARCHITECTURE.md` describes how the pieces work together and carries a feature → file table; `src/CLAUDE.md` holds the working rules for the codebase.
+The code lives in `src/`, split into packages by domain. `ARCHITECTURE.md` describes how the pieces work together and carries a feature → file table.
 
 ```
 src/
   main.py              entry point: both bots plus the cross-platform loops
-                       (feeds, polls, rules, consent cleanup, daily checks)
+                       (feeds, polls, rules, consent cleanup, daily checks,
+                       the setup deadline)
   config.py            this deployment's ids (untracked; config.example.py is the template)
   env_loader.py        reads src/.env
   utils.py             localization runtime, role checks, rate limiter
   message_relay.py     platform-neutral relay core and markup conversion
   wiki_events.py       what a wiki change means: grouping, filters, wording
-  backup_crypto.py     encrypted database snapshots
+  inbox.py             other Telegram bots whose private chats become threads
+  setup_deadline.py    leaves communities nobody attached to a bridge
+  backup_crypto.py     encrypted database snapshots and stored-token encryption
   restore_backup.py    their restore tool
 
   db/                  SQLite layer: one connection, one module per domain
     __init__.py          connection (conn/cur), init(), the whole public API
     schema.py            every CREATE TABLE + additive migrations
     bridges.py  messages.py  admins.py  users.py
-    feeds.py    appeals.py   settings.py  polls.py
+    feeds.py    appeals.py   settings.py  polls.py  inbox.py
+    onboarding.py        join times and the setup-deadline bookkeeping
 
   discord_bot/         the Discord half
     client.py            the client, its loops, Confederate Guard plumbing
@@ -95,7 +100,7 @@ src/
     feeds.py             feed kinds, avatars, GALLERY upload, attach/relay
     wiki.py              wiki delivery: filtering, embeds, burst merging
     commands/            slash commands: bridges, admins, settings, feeds,
-                         user, polls, locale, wiki
+                         user, polls, locale, wiki, inbox
 
   telegram_bot/        the Telegram half, mirroring the Discord one
     client.py            bot/dispatcher/router, polling, resolvers
@@ -165,6 +170,16 @@ Permission roles used below:
 | `/shadow-ban <user>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify [user]` | Unverify yourself (no argument), or another user (Bot Admins). Discord usage also notifies Confederate Guard via the `UNVERIFIED` channel | ✅ | ✅ | ✅ |
 | `/verify-list <enable\|disable>` | Toggle publishing of (un)verified Discord user IDs to the `VERIFIED`/`UNVERIFIED` sync channels (enabled by default; only needed alongside Confederate Guard) | ❌ | ❌ | ✅ |
+| `/setinbox <token>` | Register a Telegram bot whose private chats become threads and topics here — or pass the token again to rotate it (see “Inbox conversations”) | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/reminbox [bot]` | Unregister a receiver bot: its open conversations are closed and its polling stops | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/setinboxchat <bot>` | Open this channel to a receiver bot's conversations — each person writing to it gets a thread here | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/reminboxchat [bot]` | Stop opening a receiver bot's conversations here; threads already open keep working | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/inboxanon <enable\|disable> [bot]` | Sign staff as “Staff A”, “Staff B”, … to the people writing to a receiver bot | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/inboxlist` | List the registered receiver bots, their state, host chats and open conversations (non-admins see only their own) | ❌ | ❌ | ✅ |
+| `/close` | Close the inbox conversation of this thread — run inside it; the title goes ⬛ | ❌ | ✅ ⁽³⁾ | ✅ |
+| `/close-header <hide\|show> [bot]` | Hide the `[Telegram \| DM] Name:` line from the copies a receiver bot's conversations deliver into this server | ❌ | ✅ | ✅ |
+| `/inboxban [user] [bot]` | Bar a user from one receiver bot and close their conversation; no arguments needed inside their thread | ❌ | ❌ | ✅ ⁽²⁾ |
+| `/inboxunban [user] [bot]` | Let a banned user write to a receiver bot again | ❌ | ❌ | ✅ ⁽²⁾ |
 | `/setname [name] [user]` ⁽¹⁾ | Set the alias appellants see instead of “Consul A”. Without `name` it resets to the anonymous signature | ❌ | ❌ | ✅ |
 | `/loc-reply <code> <text>` | Reply (via DM) to a user's localization suggestion | ❌ | ❌ | ✅ |
 | `/list_chats` | List all Discord guilds and Telegram groups known to the bot | ❌ | ❌ | ✅ |
@@ -174,6 +189,10 @@ Permission roles used below:
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
 ⁽¹⁾ `/setname` is a **Consuls** command — the table has no column for that role. Any consul may set their own alias, on the appeal server where their `CONSULS` role is visible; the `user` parameter, which changes someone else's alias, is Bot Admins only.
+
+⁽²⁾ Also whoever registered that receiver bot: a Bot Admin hands in the first token, and from then on the bot answers to them and to its registrant alike — token rotation, host chats, anonymization, bans and unregistering. Registering a *new* bot stays Bot Admins only.
+
+⁽³⁾ Closing a conversation is routine support work, so the host chat's own admins may do it besides the bot's registrant and the Bot Admins.
 
 ### Telegram commands
 
@@ -207,11 +226,23 @@ Permission roles used below:
 | `/shadow-ban <user_id_or_username>` | Shadow-ban a user (messages silently not relayed) | ❌ | ✅ | ✅ |
 | `/unverify [user_id_or_username]` | Unverify yourself (no argument), or another user (Bot Admins) | ✅ | ✅ | ✅ |
 | `/loc_reply <code> <text>` | Reply (via DM) to a user's localization suggestion | ❌ | ❌ | ✅ |
+| `/setinbox <token>` | Register a Telegram bot whose private chats become threads and topics here — or pass the token again to rotate it. Private chat with this bot only; the message is deleted (see “Inbox conversations”) | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/reminbox [bot]` | Unregister a receiver bot: its open conversations are closed and its polling stops | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/setinboxchat <bot>` | Open this forum group to a receiver bot's conversations — each person writing to it gets a topic here | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/reminboxchat [bot]` | Stop opening a receiver bot's conversations here; topics already open keep working | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/inboxanon <enable\|disable> [bot]` | Sign staff as “Staff A”, “Staff B”, … to the people writing to a receiver bot | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/inboxlist` | List the registered receiver bots, their state, host chats and open conversations (non-admins see only their own) | ❌ | ❌ | ✅ |
+| `/close` | Close the inbox conversation of this topic — run inside it; the title goes ⬛ | ❌ | ✅ ⁽²⁾ | ✅ |
+| `/close-header <hide\|show> [bot]` | Hide the `[Telegram \| ЛС] Name:` line from the copies a receiver bot's conversations deliver into this group | ❌ | ✅ | ✅ |
+| `/inboxban [user] [bot]` | Bar a user from one receiver bot and close their conversation; no arguments needed inside their topic | ❌ | ❌ | ✅ ⁽¹⁾ |
+| `/inboxunban [user] [bot]` | Let a banned user write to a receiver bot again | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/allow_bots <enable\|disable>` | Allow or block relay of bot messages from this chat | ❌ | ✅ | ✅ |
 | `/allow_files <enable\|disable> [local]` | Consent to re-uploading this group's files to Discord and handing out their links. Without `local` it covers every chat of this group, in any bridge; with `local`, every chat of this bridge | ❌ | ✅ | ✅ |
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
-> Telegram command names use underscores where Discord uses hyphens (`/loc_compare` ↔ `/loc-compare`); both spellings are accepted on Telegram.
+⁽¹⁾ Also whoever registered that receiver bot — see the same note under the Discord table. ⁽²⁾ Also the host group's own admins.
+
+> Telegram command names use underscores where Discord uses hyphens (`/loc_compare` ↔ `/loc-compare`); both spellings are accepted on Telegram. The `/inbox*` commands are spelled the same on both platforms.
 
 ---
 
@@ -290,6 +321,8 @@ When the timer expires the bot posts the results to every bridge chat, replying 
 ### Dead topic keep-alive
 
 `/deadtopic enable` keeps a thread/topic from being auto-archived: after every 6 days without activity (checked at midnight UTC) the bot sends a phantom message and deletes it right away. `/deadtopic disable` turns it off.
+
+The window is per chat. Inbox conversation threads register themselves with it at **3 days** and need no command — an unanswered conversation must survive a weekend without anyone touching it (see [Inbox conversations](#inbox-conversations)).
 
 ### News channel auto-reactions
 
@@ -401,7 +434,7 @@ All bot-facing strings live in per-language JSON files under `src/i18n/` (`ru`, 
 
 ### Cross-bot verification sync
 
-When a **Discord** user accepts the forwarding consent, their ID is posted to the `VERIFIED` Discord channel; when they `/unverify` themselves on Discord, their ID is posted to `UNVERIFIED`. **Confederate Guard** watches the same channels to mirror users into / out of its cross-server verified database. Only Discord user IDs are published to these channels — Telegram verifications are tracked only in Confederate's own database, since Confederate Guard's database holds Discord IDs.
+When a **Discord** user accepts the forwarding consent, their ID and the ID of the server they accepted it on are posted to the `VERIFIED` Discord channel; when they `/unverify` themselves on Discord, their ID is posted to `UNVERIFIED`. **Confederate Guard** watches the same channels to mirror users into / out of its cross-server verified database. The server ID keeps Guard's notice on that server plain — without it, Guard announced every verification, even on the server where it had just happened, as "verified on another server". Only Discord user IDs are published to these channels — Telegram verifications are tracked only in Confederate's own database, since Confederate Guard's database holds Discord IDs.
 
 This sync is only useful when the bot runs together with [Confederate Guard](https://github.com/HIHRAIM/Confederate-Guard). Bot Admins can toggle the publishing at runtime with `/verify-list enable|disable` (enabled by default; the setting is stored in the database and survives restarts).
 
@@ -418,9 +451,46 @@ Together with Confederate Guard, the bot runs a shared ban-appeal flow on a dedi
 - **Verdicts.** The pinned buttons — usable by holders of a `CONSULS` role on Purgatorium, or Bot Admins, with an ephemeral confirmation step — either **unban** (the user ID is posted to the `APPEAL_PARDON_CHANNELS` sync channel, where Confederate Guard lifts all of the user's bans, network and local; the user is notified by DM and silently kicked from Purgatorium) or **permanently ban on Purgatorium** (executed directly, deliberately *not* recorded in any database; the user is notified by DM first). Either way the thread is archived and locked.
 - **Housekeeping.** A daily sweep silently kicks Purgatorium members who spent more than 7 days on the server without filing an appeal (bots, Bot Admins and anyone holding a role are exempt). Appeals resolved more than 30 days ago are deleted together with their bridge attachments, and deleting an appeal thread cleans its records immediately.
 
+### Inbox conversations
+
+Confederate can serve the private chats of **other Telegram bots**. Give it the token of one (`/setinbox <token>`) and name the chats that bot should report into (`/setinboxchat <bot>`, run once in each of them) — from then on every person who writes to that bot opens a **conversation**: a thread in each Discord host channel, a topic in each Telegram host group, and their private chat, all in one bridge. Messages travel between them exactly as in any other bridge, replies, edits and deletions included.
+
+Naming more than one host chat is the point of the second command: with a Discord channel and a Telegram forum group both registered, one incoming private chat reaches a thread *and* a topic, and a conversation spans three chats rather than two. A host chat can be added or dropped at any time; conversations already open keep working until they close.
+
+- **Who may do what.** A Bot Admin registers the first token. From then on the bot answers to them and to whoever handed the token in — that person may rotate the token (just run `/setinbox` again with the new one), add and remove host chats, switch anonymization, ban users and unregister the bot. Registering a *new* bot stays Bot Admins only.
+- **Threads and topics are opened by Confederate**, not by the receiver bot — the receiver bot never joins the host chats at all, and needs no rights anywhere. Confederate does: on Telegram a host must be a **forum group** where Confederate holds **Manage topics**, on Discord a channel where it holds **Create Public Threads** and **Send Messages in Threads**. `/setinboxchat` checks all of that on the spot and says exactly what is missing, rather than accepting the chat and failing silently when somebody finally writes.
+- **The title says whose turn it is.** A conversation's thread and topic are named after the writer behind a status mark: **🟩** they wrote last and are waiting, **🟨** staff answered last, **⬛** closed. The mark leads the name so a channel list or topic list reads at a glance. It is rewritten only when it actually changes — Discord allows a thread two renames per ten minutes, and a busy exchange would burn that budget in a minute otherwise; a rename that does get rate-limited is skipped, leaving the previous mark until the next change.
+- **Threads are kept alive.** A Discord conversation thread is registered with the [dead-topic keep-alive](#dead-topic-keep-alive) automatically, at 3 days rather than the 6 `/deadtopic` sets, so a conversation nobody has answered is not archived out from under the person waiting. The registration goes when the conversation closes.
+- **Token handling.** The token is checked against Telegram before anything is stored, encrypted with `BACKUP_KEY` on the way into the database, and never logged, echoed or shown in a reply. A deployment with no `BACKUP_KEY` refuses to register a bot rather than write a token down in clear. On Telegram the command works **only in a private chat with Confederate**, and the message carrying the token is deleted immediately; sent in a group, it is deleted and refused.
+- **Consent.** Writing to a receiver bot is itself the consent: `/start` answers with what forwarding means — that the message goes to the team's chat together with the writer's name and Telegram username, that answers come back, and that it goes nowhere else — and no consent button is shown afterwards. This consent does **not** verify the user anywhere else in the bot: agreeing to talk to one inbox is not agreeing to be relayed in bridged communities.
+- **Anonymous staff (`/inboxanon enable`).** Everyone answering from a host chat reaches the writer as “Staff A”, “Staff B”, … — one stable letter each for as long as the conversation lasts, kept even if anonymization is switched off and on again. As with consul signatures the label is not localized, so one person is the same “Staff B” to everybody. Avatars are dropped along with the name, and edits keep the label. Switching it changes only **new** messages; copies already delivered keep the signature they were sent with.
+- **The two sides read differently, on purpose.** Staff see the full `[Telegram | DM] Name:` header the appeal threads use: the platform and the DM marker are what tell a conversation apart from a bridged chat, and the name is who is on the other end. The writer sees just `Name:` — which platform an answer was typed on and which server it came from say nothing they can use, and naming the server would hand out an internal detail the “Staff A” anonymization exists to withhold. `/close-header hide` drops the staff-side header too, for teams whose threads read better without it: a thread is one person talking to one team, so the line largely repeats what the thread already says. It is scoped to one community and one receiver bot — another team hosting the same bot keeps its own answer — and applies from the next message on.
+- **`/whois` answers about one person only** — whoever is writing to the bot. Staff are off limits: they may be reading under a label, and a conversation is a workplace rather than a bridge whose members agreed to be identifiable to each other. The writer has no commands of their own either: `/start` is the only one a receiver bot knows, and anything else they send is relayed as the text it is.
+- **Bans (`/inboxban`).** Run inside someone's conversation it needs no arguments at all — the thread names both the bot and the person. It closes their conversation, tells them once, and drops everything they send that bot afterwards; `/inboxunban` lifts it, and their next message opens a new conversation. The ban covers **that receiver bot only** — `/shadow-ban` remains the bot-wide instrument.
+- **Closing and reopening.** `/close` inside a conversation closes it; so does unregistering the bot, banning the writer, or **30 days** without a message from either side. Both sides are told, the title goes ⬛, the thread is archived and locked, the topic is closed, and the bridge goes.
+
+  The writer's next message opens a conversation again — asymmetrically, and on purpose. On **Telegram the same topic is reopened**: it was closed rather than deleted, so the group keeps one topic per person with all the history in it instead of collecting a new one per exchange. On **Discord a new thread is created**: the archived one is left alone, and a channel reads better as a list of conversations than as a few threads reopened over months. If a remembered topic has since been deleted, a new one is made.
+- **Attachments** cross where the host communities allow it. Files sent to a receiver bot are re-uploaded to the `GALLERY` channel and handed to the thread as links, exactly like [Telegram file re-upload](#telegram-file-re-upload) elsewhere — downloaded through the receiver bot's own token, since a `file_id` means nothing to any other bot. The consent asked is the **host chats'** `/allow-files`, not the writer's private chat, which belongs to no community and so could never carry one; with it off, files arrive as the usual localized `[N files from Telegram]` marker. Stickers, voice messages and video notes keep their own markers, and an album arrives as one message rather than one per file.
+
+### The seven-day setup deadline
+
+The bot is invited far more often than it is put to use, so a community it has just been added to has **seven days** to be set up: one of its channels, threads or topics attached to a bridge with `/atb`, or some other setting only a Bot Admin can make — a followed source, an inbox host, a Bridge Admin or a Local Admin grant. Nothing of the sort within the week and the bot leaves the server or group on its own, and says so in `SERVICE_CHATS`, where it also announces every community it is added to.
+
+Nothing is said in the community itself, neither on arrival nor on the way out. Every setting the deadline asks for is a Bot Admin one, so the people who could act on a warning are the operators — and `SERVICE_CHATS` is exactly where they read.
+
+The rule is deliberately narrow:
+
+- **It never touches a community the bot was already in.** The deadline counts from the join, and the moment the rule came into force is recorded once, on the first start of the version that introduced it; everything that joined before that instant is out of reach for good.
+- **It fires at most once per community.** The first daily sweep that finds a community set up settles it permanently — detaching every bridge years later does not put the bot out of the door.
+- **It skips the deployment's own chats.** A server or group holding any chat named in `config.py` — `SERVICE_CHATS`, `BACKUP_CHATS`, `SUPPORT_CHATS`, `GALLERY`, `VERIFIED`/`UNVERIFIED`, the appeal channels or Purgatorium — is never left, however it is configured.
+
+On Discord the week is measured from Discord's own record of when the bot joined, so a restart or a missed event cannot shorten it. Telegram publishes no such timestamp, so there the clock starts from the update that adds the bot to the group, and a group whose arrival the bot never saw is never examined.
+
+Leaving is not a deletion: a community that is invited back starts a fresh seven days.
+
 ### Service events and automatic backups
 
-Start/stop notices and daily health-check findings (unreachable chats, missing **Manage Messages** on Discord or delete rights on Telegram) go to the `SERVICE_CHATS` channels; a chat that stays unreachable for 24 hours is detached from its bridge automatically. Encrypted database backups (authenticated BLAKE2 keystream, standard library only) are posted to `BACKUP_CHATS` every 12 hours; `/backup` returns one on demand, and `python src/restore_backup.py <input.db.enc> <output.db>` decrypts it with the `BACKUP_KEY` environment variable.
+Start/stop notices, the communities the bot is added to and the ones it leaves on the setup deadline, and daily health-check findings (unreachable chats, missing **Manage Messages** on Discord or delete rights on Telegram) go to the `SERVICE_CHATS` channels; a chat that stays unreachable for 24 hours is detached from its bridge automatically. Encrypted database backups (authenticated BLAKE2 keystream, standard library only) are posted to `BACKUP_CHATS` every 12 hours; `/backup` returns one on demand, and `python src/restore_backup.py <input.db.enc> <output.db>` decrypts it with the `BACKUP_KEY` environment variable.
 
 ---
 
@@ -465,6 +535,8 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
   - Platform, user ID and the three switches (whois, avatar, mentions), with the time they were last changed. A row exists only for users who opened the command.
 - **Followed sources (`/setbskyfeed`, `/setytfeed`, `/settgfeed`)**
   - Kind (Bluesky, YouTube or Telegram), the handle and display name, the chat it was attached in, the channel's numeric ID where Telegram gives one, whether the posts arrive live, the ID of the last relayed post, who attached it and when.
+- **Setup deadline**
+  - One row per community added after the rule came into force: platform, server or group ID, when the bot joined, and — once the community has been set up — when that was noticed. No user is named.
 
 ### Retention periods
 
@@ -481,6 +553,7 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
 - **Followed sources (`/setbskyfeed`, `/setytfeed`, `/settgfeed`, `/setwikifeed`)**: kept until detached with `/rembskyfeed` / `/remytfeed` / `/remtgfeed` / `/remwikifeed`, or removed when the bot leaves the server/group whose chat they were attached in. A wiki's filter and format settings belong to the subscription and are deleted together with it.
 - **Wiki relay bookkeeping**: each chat keeps the records of only its **100 most recent** relayed wiki changes, and nothing older than **30 days**. Wiki activity cannot be edited after the fact, so the rows exist only briefly to link the copies of one change across a bridge; past that window, deleting one relayed wiki message no longer removes the others.
 - **Webhook-relay scopes (`/webhooks`)**: kept until turned off, or removed when the bot leaves the server.
+- **Setup-deadline rows**: kept while the week runs, and afterwards as the note that the community was set up. Removed when the bot leaves the community, so that a re-invitation starts a fresh seven days.
 - **Settings/admin/bridge mappings**: kept until manually changed/removed, or automatically cleaned when the bot leaves a server/chat.
 
 ### Data usage boundaries

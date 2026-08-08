@@ -255,6 +255,30 @@
     "status": "unverified",
     "text": "Цей чат не підключено до жодного мосту."
   },
+  "close_done": {
+    "status": "unverified",
+    "text": "Закриваю цей діалог."
+  },
+  "close_header_hidden": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, надходитимуть сюди без заголовка — починаючи з наступного."
+  },
+  "close_header_not_host": {
+    "status": "unverified",
+    "text": "Ця спільнота не приймає діалоги {bot}."
+  },
+  "close_header_shown": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, знову надходитимуть із заголовком — починаючи з наступного."
+  },
+  "close_header_usage": {
+    "status": "unverified",
+    "text": "Використання: /close-header hide|show [бот]"
+  },
+  "close_not_conversation": {
+    "status": "unverified",
+    "text": "Цей чат — не діалог бота-приймальні."
+  },
   "consent_body": {
     "status": "unverified",
     "text": "Цей чат з'єднано з іншими. Твої повідомлення автоматично пересилатимуться до пов'язаних чатів. Якщо ти зміниш або видалиш своє повідомлення протягом 30 днів після його надсилання, воно автоматично оновиться або зникне й в інших чатах. Натисни «Приймаю», щоб погодитися з пересиланням і продовжити спілкування. Докладніше — в описі чату або закріпленому повідомленні."
@@ -427,6 +451,14 @@
     "status": "unverified",
     "text": "/bridge — інформація про міст і підключені чати"
   },
+  "help.cmd_close": {
+    "status": "unverified",
+    "text": "/close — закрити діалог бота-приймальні в цій гілці або темі"
+  },
+  "help.cmd_close_header": {
+    "status": "unverified",
+    "text": "/close-header hide|show [бот] — сховати заголовок у діалогах бота-приймальні в цій спільноті"
+  },
   "help.cmd_deadchat": {
     "status": "unverified",
     "text": "/deadchat <роль> <години> | disable — пінгувати роль за неактивності (лише Discord)"
@@ -442,6 +474,22 @@
   "help.cmd_help": {
     "status": "unverified",
     "text": "/help — показати список команд"
+  },
+  "help.cmd_inboxanon": {
+    "status": "unverified",
+    "text": "/inboxanon enable|disable [бот] — підписувати персонал як «Staff A» для тих, хто пише"
+  },
+  "help.cmd_inboxban": {
+    "status": "unverified",
+    "text": "/inboxban [користувач] [бот] — заборонити користувачу писати боту-приймальні (без аргументів усередині його діалогу)"
+  },
+  "help.cmd_inboxlist": {
+    "status": "unverified",
+    "text": "/inboxlist — список зареєстрованих ботів-приймалень"
+  },
+  "help.cmd_inboxunban": {
+    "status": "unverified",
+    "text": "/inboxunban [користувач] [бот] — знову дозволити заблокованому писати боту-приймальні"
   },
   "help.cmd_lang": {
     "status": "unverified",
@@ -511,6 +559,14 @@
     "status": "unverified",
     "text": "/rembskyfeed <акаунт> — від'єднати акаунт Bluesky від цього мосту"
   },
+  "help.cmd_reminbox": {
+    "status": "unverified",
+    "text": "/reminbox [бот] — зняти реєстрацію бота-приймальні й закрити його діалоги"
+  },
+  "help.cmd_reminboxchat": {
+    "status": "unverified",
+    "text": "/reminboxchat [бот] — перестати відкривати діалоги бота-приймальні тут"
+  },
   "help.cmd_remindrules": {
     "status": "unverified",
     "text": "/remindrules <час> [повідомлень] — періодично публікувати правила в усіх чатах мосту (наприклад: 2h, 30m)"
@@ -542,6 +598,14 @@
   "help.cmd_setbskyfeed": {
     "status": "unverified",
     "text": "/setbskyfeed <акаунт> — приєднати публічний акаунт Bluesky до цього мосту"
+  },
+  "help.cmd_setinbox": {
+    "status": "unverified",
+    "text": "/setinbox <токен> — зареєструвати Telegram-бота, чиї приватні чати стануть гілками й темами тут (адміни бота)"
+  },
+  "help.cmd_setinboxchat": {
+    "status": "unverified",
+    "text": "/setinboxchat <бот> — приймати діалоги бота-приймальні в цьому чаті"
   },
   "help.cmd_setlocaladmin": {
     "status": "unverified",
@@ -610,6 +674,114 @@
   "help.title": {
     "status": "unverified",
     "text": "Команди бота"
+  },
+  "inbox_banned_user": {
+    "status": "unverified",
+    "text": "Ви більше не можете писати цьому боту."
+  },
+  "inbox_closed_chat": {
+    "status": "unverified",
+    "text": "Діалог закрито."
+  },
+  "inbox_closed_user": {
+    "status": "unverified",
+    "text": "Цей діалог закрито. Напишіть знову, коли буде потрібно, — відкриється новий."
+  },
+  "inbox_conversation_info": {
+    "status": "unverified",
+    "text": "Діалог із {name} ({username}, ID {id}). Повідомлення з цього чату пересилаються йому, а його повідомлення надходять сюди."
+  },
+  "inbox_dm_place": {
+    "status": "unverified",
+    "text": "ОП"
+  },
+  "inbox_greeting": {
+    "status": "unverified",
+    "text": "Напишіть сюди — і повідомлення дійде до команди, що стоїть за {bot}: воно пересилається в її чат разом із вашим іменем та іменем користувача в Telegram, а відповіді приходять вам назад сюди. Більше нікуди написане тут не пересилається."
+  },
+  "inbox_not_configured": {
+    "status": "unverified",
+    "text": "Цьому боту поки нікуди пересилати повідомлення. Спробуйте пізніше."
+  },
+  "inbox_open_failed": {
+    "status": "unverified",
+    "text": "Зараз бот не зміг відкрити діалог. Його команді повідомлено, спробуйте пізніше."
+  },
+  "inbox_staff_name": {
+    "status": "unverified",
+    "text": "Персонал {letter}"
+  },
+  "inbox_unknown_bot": {
+    "status": "unverified",
+    "text": "Бот-приймальня з таким ID або іменем не зареєстрований."
+  },
+  "inboxanon_disabled": {
+    "status": "unverified",
+    "text": "Ті, хто пише боту {bot}, знову бачитимуть імена персоналу — починаючи з наступного повідомлення."
+  },
+  "inboxanon_enabled": {
+    "status": "unverified",
+    "text": "Ті, хто пише боту {bot}, бачитимуть персонал як «Staff A», «Staff B», … — починаючи з наступного повідомлення."
+  },
+  "inboxanon_usage": {
+    "status": "unverified",
+    "text": "Використання: /inboxanon enable|disable [бот]"
+  },
+  "inboxban_already": {
+    "status": "unverified",
+    "text": "Цей користувач уже заблокований у цього бота."
+  },
+  "inboxban_done": {
+    "status": "unverified",
+    "text": "Користувач {user} більше не може писати цьому боту."
+  },
+  "inboxban_usage": {
+    "status": "unverified",
+    "text": "Використання: /inboxban <користувач> [бот] — або зовсім без аргументів усередині його діалогу."
+  },
+  "inboxlist_anon_off": {
+    "status": "unverified",
+    "text": "персонал за іменами"
+  },
+  "inboxlist_anon_on": {
+    "status": "unverified",
+    "text": "персонал анонімний"
+  },
+  "inboxlist_empty": {
+    "status": "unverified",
+    "text": "Жодного бота-приймальні не зареєстровано."
+  },
+  "inboxlist_entry": {
+    "status": "unverified",
+    "text": "• {bot} (ID {id}) — {state}, {anon}\n  Чати: {hosts}\n  Відкритих діалогів: {conversations}"
+  },
+  "inboxlist_no_hosts": {
+    "status": "unverified",
+    "text": "поки немає"
+  },
+  "inboxlist_state_offline": {
+    "status": "unverified",
+    "text": "не на зв'язку"
+  },
+  "inboxlist_state_online": {
+    "status": "unverified",
+    "text": "на зв'язку"
+  },
+  "inboxlist_title": {
+    "status": "unverified",
+    "text": "Боти-приймальні"
+  },
+  "inboxunban_done": {
+    "status": "unverified",
+    "text": "Користувач {user} знову може писати цьому боту."
+  },
+  "inboxunban_not_banned": {
+    "status": "unverified",
+    "text": "Цей користувач не заблокований у цього бота."
+  },
+  "inboxunban_usage": {
+    "status": "unverified",
+    "text": "Використання: /inboxunban <користувач> [бот] — або зовсім без аргументів усередині його діалогу."
   },
   "lang_save_error": {
     "status": "unverified",
@@ -920,6 +1092,18 @@
     "status": "unverified",
     "text": "Використання: /remadmin <id_або_ім'я_користувача> — в усіх мостах цього сервера/групи; додайте `local` — лише в цьому мосту."
   },
+  "reminbox_done": {
+    "status": "unverified",
+    "text": "{bot} більше не бот-приймальня. Його відкриті діалоги закрито."
+  },
+  "reminboxchat_done": {
+    "status": "unverified",
+    "text": "Діалоги {bot} більше не відкриватимуться тут. Уже відкриті працюватимуть до закриття."
+  },
+  "reminboxchat_not_host": {
+    "status": "unverified",
+    "text": "Цей чат не приймає діалоги {bot}."
+  },
   "remindrules_disabled": {
     "status": "unverified",
     "text": "Нагадування правил вимкнено для цього мосту."
@@ -1036,6 +1220,14 @@
     "status": "unverified",
     "text": "Підключене джерело @{account} не оновлювалося з {date} — звідти давно нічого не надходить."
   },
+  "service_event.joined_chat": {
+    "status": "unverified",
+    "text": "➕ {platform}: бота додали до «{chat}» ({chat_id})."
+  },
+  "service_event.left_unconfigured": {
+    "status": "unverified",
+    "text": "👋 {platform}: бот залишив «{chat}» ({chat_id}) — від дня додавання минуло {days} дн., і жоден із чатів не був під'єднаний до мосту."
+  },
   "setadmin_bridge_dm": {
     "status": "unverified",
     "text": "Вас призначили адміністратором мосту №{bridge_id} на {place}."
@@ -1045,16 +1237,64 @@
     "text": "Користувач {user_id} призначений адміністратором мосту №{bridge_id}."
   },
   "setadmin_server_dm": {
-    "text": "Вас призначили адміністратором мостів на {place}. Права діють в усіх мостах, у яких бере участь {place}, — і в нинішніх, і в тих, до яких сервер/група приєднається пізніше.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "Вас призначили адміністратором мостів на {place}. Права діють в усіх мостах, у яких бере участь {place}, — і в нинішніх, і в тих, до яких сервер/група приєднається пізніше."
   },
   "setadmin_server_done": {
-    "text": "Користувач {user_id} призначений адміністратором мостів на {place} — в усіх мостах, у яких бере участь цей сервер/група, включно з майбутніми.",
-    "status": "unverified"
+    "status": "unverified",
+    "text": "Користувач {user_id} призначений адміністратором мостів на {place} — в усіх мостах, у яких бере участь цей сервер/група, включно з майбутніми."
   },
   "setadmin_usage": {
     "status": "unverified",
     "text": "Використання: /setadmin <id_або_ім'я_користувача> — в усіх мостах цього сервера/групи; додайте `local` — лише в цьому мосту."
+  },
+  "setinbox_added": {
+    "status": "unverified",
+    "text": "{bot} тепер бот-приймальня. Виконайте /setinboxchat {bot} у кожному каналі чи форум-групі, куди мають потрапляти його діалоги."
+  },
+  "setinbox_invalid_token": {
+    "status": "unverified",
+    "text": "Telegram не прийняв цей токен."
+  },
+  "setinbox_no_key": {
+    "status": "unverified",
+    "text": "Тут не можна зберігати токени ботів: не задано BACKUP_KEY, а записувати токен без шифрування неприпустимо."
+  },
+  "setinbox_private_only": {
+    "status": "unverified",
+    "text": "Надсилайте /setinbox мені в приватний чат, а не в групу: токен, опублікований у групі, може використати кожен, хто його побачив. Ваше повідомлення видалено."
+  },
+  "setinbox_start_failed": {
+    "status": "unverified",
+    "text": "{bot} збережено, але він не зміг вийти на зв'язок. Перевірте токен і повторіть /setinbox."
+  },
+  "setinbox_updated": {
+    "status": "unverified",
+    "text": "Токен {bot} замінено, бот знову на зв'язку."
+  },
+  "setinbox_usage": {
+    "status": "unverified",
+    "text": "Використання: /setinbox <токен> — у приватному чаті з цим ботом."
+  },
+  "setinboxchat_already": {
+    "status": "unverified",
+    "text": "Цей чат уже приймає діалоги {bot}."
+  },
+  "setinboxchat_done": {
+    "status": "unverified",
+    "text": "Діалоги {bot} тепер відкриватимуться тут."
+  },
+  "setinboxchat_no_thread_rights": {
+    "status": "unverified",
+    "text": "Я не можу створювати гілки в цьому каналі. Надайте мені права «Створення публічних гілок» і «Надсилання повідомлень у гілках» тут і повторіть команду."
+  },
+  "setinboxchat_no_topic_rights": {
+    "status": "unverified",
+    "text": "Я перебуваю в цій групі, але не можу створювати тут теми. Надайте мені право «Керування темами» в налаштуваннях адміністратора групи й повторіть команду."
+  },
+  "setinboxchat_not_forum": {
+    "status": "unverified",
+    "text": "Приймати діалоги може лише форум-група — кожен діалог стає окремою темою. Увімкніть теми в налаштуваннях групи й повторіть команду."
   },
   "setlocaladmin_already": {
     "status": "unverified",
@@ -1367,6 +1607,10 @@
   "whois.field_username": {
     "status": "unverified",
     "text": "Юзернейм"
+  },
+  "whois.inbox_writer_only": {
+    "status": "unverified",
+    "text": "У діалозі бота-приймальні whois відповідає лише про того, хто пише боту."
   },
   "whois.mode_dnd": {
     "status": "unverified",
