@@ -416,9 +416,13 @@ async def allow_bots_command(interaction: discord.Interaction, action: str):
 @app_commands.describe(action="enable or disable", scope="local — this bridge only (default: this whole server)")
 async def allow_files_command(interaction: discord.Interaction, action: str, scope: str = None):
     """Grant or withdraw the GALLERY file-reupload consent, server-wide or
-    (with scope 'local') for this chat's bridge. The consent semantics —
-    why every chat must be covered — are documented on
-    db.bridge_file_relay_enabled."""
+    (with scope 'local') for this chat's bridge.
+
+    Server-wide is the community's default and needs no repeating: it covers
+    its chats in every bridge, including the ones built afterwards, and every
+    side of a bridge answers for itself. `local` covers all sides of this one
+    bridge at once. The semantics are documented on db.chat_file_consent and
+    db.file_reupload_allowed."""
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id)
     if not (is_admin("discord", interaction.user.id) or is_chat_admin("discord", chat_id, interaction.user.id)):

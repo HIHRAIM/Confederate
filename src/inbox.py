@@ -776,6 +776,31 @@ def _inbox_relay_texts(message: Message, grouped_file_count=None, gallery_upload
     prefix = (base_text + "\n") if base_text else ""
     return [prefix + f"[__TG_FILES_{remaining}__]"], remaining
 
+def _inbox_gallery_fallback(index, fallback_texts, fallback_file_count,
+                            message: Message, discord_text, telegram_html):
+    """The body for a host chat whose community has not given the
+    `/allow-files` consent, in the shape `message_relay.relay_message` wants.
+
+    Hosts of one conversation answer separately — one of them consenting is
+    what makes the upload happen at all (db.inbox_file_relay_enabled), and
+    the others still get the "[N files from Telegram]" marker rather than
+    links to files on a CDN they never agreed to."""
+    if not fallback_texts:
+        return None
+    from telegram_bot.relay import _relay_variants_for_text
+
+    text = fallback_texts[index] if index < len(fallback_texts) else fallback_texts[-1]
+    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    fallback_discord, fallback_html = _relay_variants_for_text(
+        text, base_text, discord_text, telegram_html
+    )
+    return {
+        "text": text,
+        "discord": fallback_discord,
+        "telegram_html": fallback_html,
+        "file_count": fallback_file_count,
+    }
+
 def _inbox_message_variants(message: Message):
     """``(discord_markdown, telegram_html)`` for a message's own text, with
     its formatting carried across. Marker-only messages have neither."""
@@ -859,9 +884,10 @@ async def _upload_inbox_files(bot_row, conv, messages):
     nothing was uploaded. The files are downloaded through the *receiver
     bot* — a file_id belongs to the token it was handed to, and the main
     bot's would get nothing for it — and the consent asked is the host
-    chats' `/allow-files`, since they are the communities whose GALLERY the
-    files land in (db.inbox_file_relay_enabled explains why the ordinary
-    bridge-wide check cannot answer this)."""
+    chats' `/allow-files`: one host that gave it is enough for the upload to
+    be worth doing, and the hosts that did not get the marker instead
+    (db.inbox_file_relay_enabled explains why the ordinary source-side check
+    cannot answer this)."""
     from telegram_bot.files import _collect_gallery_candidates, _upload_telegram_files_to_gallery
 
     candidates = []
@@ -895,11 +921,12 @@ async def relay_inbox_message(bot_row, conv, message: Message,
     )
 
     texts, relay_file_count = _inbox_relay_texts(message, grouped_file_count, uploaded)
+    fallback_texts, fallback_file_count = _inbox_relay_texts(message, grouped_file_count, 0)
     discord_text, telegram_html = _inbox_message_variants(message)
     reply_to = _inbox_reply_target(chat_key, message)
 
     relayed_db_id = None
-    for text in texts:
+    for index, text in enumerate(texts):
         relayed_db_id = await message_relay.relay_message(
             bridge_id=conv["bridge_id"],
             origin_platform="inbox",
@@ -916,6 +943,10 @@ async def relay_inbox_message(bot_row, conv, message: Message,
             send_to_chat_func=functools.partial(_inbox_send_to_chat, bot_id=bot_id),
             telegram_file_count=relay_file_count,
             gallery_urls=gallery_urls,
+            gallery_fallback=_inbox_gallery_fallback(
+                index, fallback_texts, fallback_file_count, message,
+                discord_text, telegram_html
+            ),
         )
 
     if grouped_messages and relayed_db_id is not None:
@@ -1047,8 +1078,11 @@ async def inbox_whois_profile(origin_chat_id, sender_id):
 async def _on_inbox_edited_message(message: Message):
     """Propagate an edit made in a private chat into every copy of it.
 
-    Mirrors telegram_bot/relay.py: edited_message_handler, minus everything
-    about GALLERY — an inbox message never has an upload to re-sync."""
+    Mirrors telegram_bot/relay.py: edited_message_handler, minus the GALLERY
+    re-sync — an inbox message's upload is never replaced by an edit. The
+    album fallback is shared with it: a conversation's albums are recorded in
+    `media_group_members` too, and Telegram delivers the edit under the id of
+    whichever part was edited rather than the one the relay filed it under."""
     if getattr(message.chat, "type", None) != "private":
         return
     user = message.from_user
@@ -1070,7 +1104,12 @@ async def _on_inbox_edited_message(message: Message):
         (chat_key, str(message.message_id))
     ).fetchone()
     if not row:
-        return
+        member_db_id = db.find_message_db_id_by_media_member(chat_key, str(message.message_id))
+        if member_db_id is None:
+            return
+        row = db.cur.execute("SELECT id FROM messages WHERE id=?", (member_db_id,)).fetchone()
+        if not row:
+            return
 
     conv = db.get_inbox_conversation(bot_id, user.id)
     if conv is None:
@@ -1124,14 +1163,19 @@ async def _propagate_inbox_edit(bot_id, message_db_id, header, body_plain, body_
             elif copy["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
                 chat_id_str, _ = copy["chat_id"].split(":")
+                body_html, body_plain = message_relay.prefix_relay_edit_body(
+                    message_db_id, copy, target_lang, html or escape_html(plain), plain)
                 await tg_bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(copy["message_id_platform"]),
-                    text=build_telegram_text(copy_header, html or escape_html(plain), plain),
+                    text=build_telegram_text(copy_header, body_html, body_plain),
                     parse_mode="HTML",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e):
+                continue
+            logger.warning("Inbox edit did not reach a copy (%s %s, message %s): %s",
+                           copy["platform"], copy["chat_id"], copy["message_id_platform"], e)
 
 async def handle_inbox_host_discord_message(message, bridge_id):
     """Relay a staff message written in a Discord conversation thread.

@@ -119,6 +119,11 @@ async def my_chat_member_update(update: ChatMemberUpdated):
     means its posts stop arriving on their own, so its feeds fall back to
     polling the public preview.
 
+    A removal also starts the seven-day countdown on the group's
+    `/allow-files` consent, and an addition calls it off — a group that takes
+    the bot back within the week keeps the setting it gave
+    (db.mark_server_departed).
+
     And it is the one moment the bot can learn that it has been *added* to a
     group, which is what starts the seven-day setup deadline
     (setup_deadline.py): Telegram has no equivalent of Discord's join
@@ -137,9 +142,11 @@ async def my_chat_member_update(update: ChatMemberUpdated):
             db.cur.execute("DELETE FROM chat_settings WHERE chat_id LIKE ?", (f"{update.chat.id}:%",))
             db.conn.commit()
             db.forget_deadline("telegram", update.chat.id)
+            db.mark_server_departed("telegram", update.chat.id)
         elif (getattr(update.chat, "type", None) in TELEGRAM_GROUP_TYPES
               and old_status in ("left", "kicked")):
             db.record_join("telegram", update.chat.id)
+            db.clear_server_departure("telegram", update.chat.id)
             from utils import send_service_event
             await send_service_event(
                 "joined_chat",

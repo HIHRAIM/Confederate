@@ -202,9 +202,12 @@ from db.inbox import (
 )
 from db.settings import (
     add_loc_suggestion,
-    bridge_file_relay_enabled,
+    chat_file_consent,
+    cleanup_departed_file_consents,
     cleanup_old_loc_suggestions,
+    clear_server_departure,
     delete_loc_suggestion,
+    file_reupload_allowed,
     get_allow_bots,
     get_bridge_file_consent,
     get_bridge_webhooks,
@@ -214,6 +217,7 @@ from db.settings import (
     get_server_webhooks,
     get_webhooks_enabled,
     is_verify_list_enabled,
+    mark_server_departed,
     set_allow_bots,
     set_bridge_file_consent,
     set_bridge_webhooks,

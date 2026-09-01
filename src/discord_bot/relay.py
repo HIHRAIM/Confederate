@@ -26,7 +26,7 @@ from utils import get_chat_lang, localized, localized_discord_system_event, loca
 
 from discord_bot.client import bot
 from discord_bot.mentions import (
-    _discord_embed_texts, _discord_system_event_key, _split_attachment_texts,
+    _discord_system_event_key, _split_attachment_texts, discord_structured_texts,
     extract_discord_forward_payload, replace_channel_mentions_for_telegram,
     replace_mentions,
 )
@@ -295,12 +295,17 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body, message
     """Edit a relayed Discord copy, handling both normal bot messages and the
     per-sender webhook messages produced when /webhooks is enabled.
 
-    A webhook message can't carry native reply/forward references, so those are
-    stored inline as prefix lines in its content; ``message_db_id``/``chat`` let
-    the edit rebuild them instead of dropping them."""
+    An edit replaces the whole text of a copy, so the "(replying to …)" and
+    "(forwarded from …)" lines the first delivery put above the body have to be
+    rebuilt here or the edit silently strips them; ``message_db_id``/``chat``
+    are what makes that possible. A webhook copy needs it most — it cannot
+    carry a native reply reference and holds a markdown link instead — but a
+    plain copy carries the forward line inline just the same."""
     try:
         m = await ch.fetch_message(int(message_id_platform))
-    except Exception:
+    except Exception as e:
+        logger.warning("Relay edit target unreachable (channel=%s, message=%s): %s",
+                       getattr(ch, "id", None), message_id_platform, e)
         return
     if getattr(m, "webhook_id", None):
         webhook = await _relay_webhook_owning(ch, m.webhook_id)
@@ -316,16 +321,25 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body, message
                     content=clip_text(content_body, DISCORD_MSG_LIMIT) or "​",
                     allowed_mentions=RELAY_ALLOWED_MENTIONS,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Relay webhook edit failed (channel=%s, message=%s): %s",
+                               getattr(ch, "id", None), message_id_platform, e)
         return
+
+    body_text = body
+    if message_db_id is not None and chat is not None:
+        prefix_lines = message_relay.relay_edit_prefix_lines(
+            message_db_id, chat, get_chat_lang(chat["chat_id"]))
+        if prefix_lines:
+            body_text = "\n".join(prefix_lines + [body])
     try:
         await m.edit(
-            content=clip_text(f"{header}\n{body}".strip(), DISCORD_MSG_LIMIT),
+            content=clip_text(f"{header}\n{body_text}".strip(), DISCORD_MSG_LIMIT),
             allowed_mentions=RELAY_ALLOWED_MENTIONS,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Relay edit failed (channel=%s, message=%s): %s",
+                       getattr(ch, "id", None), message_id_platform, e)
 
 async def send_bridge_mention(bridge_id, origin_platform, origin_chat_id, target_uid,
                               sender_name, place_name, messenger_name, avatar_url=None):
@@ -440,13 +454,13 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
     else:
         texts = _split_attachment_texts(content, [a.url for a in message.attachments])
 
-    embed_texts = _discord_embed_texts(message)
-    if embed_texts:
-        embed_block = "\n\n".join(embed_texts)
+    structured_texts = discord_structured_texts(message)
+    if structured_texts:
+        structured_block = "\n\n".join(structured_texts)
         if any((t or "").strip() for t in texts):
-            texts[0] = (texts[0] or "").rstrip() + "\n\n" + embed_block
+            texts[0] = (texts[0] or "").rstrip() + "\n\n" + structured_block
         else:
-            texts = [embed_block]
+            texts = [structured_block]
 
     if forward_type and not any((t or "").strip() for t in texts):
         texts = _split_attachment_texts(forward_text or "", forward_attachments)
@@ -630,7 +644,10 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
     telegram_text = replace_channel_mentions_for_telegram(text, guild)
     text_html = discord_to_telegram_html(telegram_text)
 
-    copies = db.cur.execute("SELECT * FROM message_copies WHERE message_id=?", (row["id"],)).fetchall()
+    copies = db.cur.execute(
+        "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
+        (row["id"],)
+    ).fetchall()
     for c in copies:
         try:
             if c["platform"] == "discord":
@@ -642,24 +659,31 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                 from telegram_bot import bot as tg_bot
                 chat_id, _ = c["chat_id"].split(":")
                 ts_lang = get_chat_lang(c["chat_id"])
+                body_html, body_plain = message_relay.prefix_relay_edit_body(
+                    row["id"], c, ts_lang,
+                    convert_discord_timestamps(text_html, ts_lang),
+                    convert_discord_timestamps(telegram_text, ts_lang),
+                )
                 await tg_bot.edit_message_text(
                     chat_id=int(chat_id),
                     message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(
-                        header,
-                        convert_discord_timestamps(text_html, ts_lang),
-                        convert_discord_timestamps(telegram_text, ts_lang),
-                    ),
+                    text=build_telegram_text(header, body_html, body_plain),
                     parse_mode="HTML"
                 )
             elif c["platform"] == "inbox":
                 from inbox import edit_inbox_relay_copy
+                target_lang = get_chat_lang(c["chat_id"])
+                body_html, body_plain = message_relay.prefix_relay_edit_body(
+                    row["id"], c, target_lang, text_html, telegram_text)
                 await edit_inbox_relay_copy(
                     c["chat_id"], c["message_id_platform"], author_display_name,
-                    telegram_text, text_html,
+                    body_plain, body_html,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e):
+                continue
+            logger.warning("Discord edit did not reach a copy (%s %s, message %s): %s",
+                           c["platform"], c["chat_id"], c["message_id_platform"], e)
 
 def try_remove_bridge_rule(origin_platform, origin_chat_id, origin_message_id):
     """Deleting the message a /remindrules reminder was set from also disables

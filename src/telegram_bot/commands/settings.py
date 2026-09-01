@@ -122,8 +122,13 @@ async def allow_bots_cmd(message: Message):
 @router.message(Command("allow_files", "allow-files"))
 async def allow_files_cmd(message: Message):
     """Grant or withdraw the GALLERY file-reupload consent, group-wide or
-    (with a trailing `local`) for this chat's bridge. The consent semantics
-    are documented on db.bridge_file_relay_enabled."""
+    (with a trailing `local`) for this chat's bridge.
+
+    Group-wide is the community's default and needs no repeating: it covers
+    its chats in every bridge, including the ones built afterwards, and every
+    side of a bridge answers for itself. `local` covers all sides of this one
+    bridge at once. The semantics are documented on db.chat_file_consent and
+    db.file_reupload_allowed."""
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_id)

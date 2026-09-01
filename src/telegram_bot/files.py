@@ -5,8 +5,11 @@ Telegram files are not publicly addressable — a file_id means nothing outside
 this bot — so relaying an attachment means downloading it through the Bot API
 and posting it to a Discord channel the bot controls (the GALLERY), whose CDN
 links every chat can then be given. That is why the mechanic needs explicit
-consent from every chat of the bridge (db.bridge_file_relay_enabled), or from
-every host chat of an inbox conversation (db.inbox_file_relay_enabled).
+consent, and each side of a bridge gives its own: the chat the files came
+from must have consented before anything is downloaded
+(db.file_reupload_allowed), and the links then reach the targets that
+consented too (db.chat_file_consent) — inside an inbox conversation, the host
+chats that did (db.inbox_file_relay_enabled).
 
 The two entry points take an optional `source_bot`, because a file_id only
 means something to the bot it was handed to: a file sent into a receiver

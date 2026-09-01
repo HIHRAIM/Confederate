@@ -365,34 +365,26 @@ def get_inbox_staff_ord(bridge_id, platform, user_id):
     return nxt
 
 def inbox_file_relay_enabled(bridge_id):
-    """Whether files may be re-uploaded to GALLERY inside a conversation.
+    """Whether a private chat's attachments should be re-uploaded to GALLERY.
 
-    The plain `bridge_file_relay_enabled` cannot answer this: it demands that
-    *every* chat of the bridge be covered by an `/allow-files` consent, and
-    the private chat at the heart of a conversation belongs to no community
-    and so can never be covered. Nothing is lost by leaving it out — the
-    consent exists to protect the communities whose files would end up on a
-    public CDN, and here the only community involved is the one hosting the
-    conversation. So the question asked is the same one, over the host chats
-    alone: the bridge-wide consent, or every host's own server/group consent.
+    The ordinary `file_reupload_allowed` cannot answer this: it starts by
+    asking the chat the files came from, and the private chat at the heart of
+    a conversation belongs to no community, so it could never answer. Nothing
+    is lost by leaving it out — the writer sent the files to a support inbox
+    deliberately, and the consent exists to protect the communities whose
+    GALLERY the files land in. So the question is asked over the host chats
+    alone, and one host that consented is enough to make the upload worth
+    doing: the hosts that did not simply get the "[N files from Telegram]"
+    marker, exactly as anywhere else (message_relay.relay_message).
 
-    A conversation with no host chat left answers no, rather than answering
-    'every chat is covered' about an empty list."""
-    from db.bridges import chat_server_id, get_bridge_chats
-    from db.settings import get_bridge_file_consent, get_server_file_consent
+    A conversation with no host chat left answers no."""
+    from db.settings import chat_file_consent
+    from db.bridges import get_bridge_chats
 
-    if get_bridge_file_consent(bridge_id):
-        return True
-
-    hosts = [c for c in get_bridge_chats(bridge_id) if c["platform"] != "inbox"]
-    if not hosts:
-        return False
-
-    for chat in hosts:
-        server_id = chat_server_id(chat["platform"], chat["chat_id"])
-        if not server_id or not get_server_file_consent(chat["platform"], server_id):
-            return False
-    return True
+    return any(
+        chat_file_consent(c["platform"], c["chat_id"], bridge_id)
+        for c in get_bridge_chats(bridge_id) if c["platform"] != "inbox"
+    )
 
 def add_inbox_ban(bot_id, user_id, banned_by):
     """Bar a user from writing to one receiver bot."""

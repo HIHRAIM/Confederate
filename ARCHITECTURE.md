@@ -23,10 +23,28 @@ Numbers are claimed with a single `INSERT … SELECT` so that two admins running
 Discord → Telegram (the reverse is symmetrical):
 
 1. `discord_bot/events.py: on_message` fires. Filters run in order: news-chat auto-reactions, dead-chat bookkeeping, bot-sender rules (`/allow-bots`, own-webhook detection), appeal-thread detour, shadow-ban delete, verification consent (unverified senders get a consent prompt and their message is held), per-user rate limit.
-2. `discord_bot/relay.py: _relay_verified_discord_message` builds the relay payload: resolves the reply target to a `messages` row, extracts forwarded snapshots, embeds and attachments (`discord_bot/mentions.py`), splits a multi-attachment message into one relayed message per file.
+2. `discord_bot/relay.py: _relay_verified_discord_message` builds the relay payload: resolves the reply target to a `messages` row, extracts forwarded snapshots, attachments and everything the message says outside its `content` (`discord_bot/mentions.py: discord_structured_texts` — the embeds that were *sent* with it, and the components of a components-v2 message, which carries no `content` and no embeds at all), splits a multi-attachment message into one relayed message per file. `_is_authored_embed` draws the line between the two kinds of embed: Discord types its own link previews `video`/`article`/`image`/`gifv`/`link` and leaves `rich` for what a sender supplied, and only the latter is content — a preview is a rendering of a URL the copy already carries, so relaying it would put words in the sender's mouth and repeat the link.
 3. `message_relay.py: relay_message` — the platform-neutral core. Records the message in `messages`, walks the target chats, renders per-target language and per-target form (plain text for Telegram, markdown for Discord), adds the `[Messenger | Community] Sender:` header, forward/reply prefix lines and file-count footers, then hands each target to a `send_to_chat` callback.
 4. The callback delivers: `deliver_telegram_relay` (in `discord_bot/relay.py`) sends via the aiogram bot with an HTML body and a native reply reference when the replied-to copy exists in that chat; `deliver_discord_relay` chooses between a webhook copy and a plain bot message (see Webhooks).
 5. Every delivered copy is recorded in `message_copies`. Later edits and deletes of the origin find the copies through that table and propagate; deleting any *copy* likewise deletes the origin and all other copies.
+
+An edit re-runs step 3's rendering over the changed message and rewrites the `kind='main'` copies. There are **three** edit paths — `discord_bot/relay.py: process_discord_message_edit`, `telegram_bot/relay.py: edited_message_handler` and `inbox.py: _on_inbox_edited_message` — and each one has to solve the same two problems, so both solutions live in one place and all three call them.
+
+* **The prefix lines.** An edit replaces the whole text of a copy, so the forward and reply lines the first delivery put above the body have to be rebuilt or they are stripped. `message_relay.py: relay_edit_prefix_lines` builds them per target and knows not to add a reply *line* to a chat whose copy carries a native reply *reference*; `prefix_relay_edit_body` applies them to the HTML and plain forms together, because `build_telegram_text` falls back between the two at the 4096-char limit and a prefix on only one of them would come and go with the length of the message. `build_discord_webhook_relay_body` is the webhook variant, which needs a markdown link instead of a reference.
+* **The origin lookup.** An album was relayed as one message under the id of the part that carried the caption, while Telegram delivers the edit under the id of whichever part was edited. Both Telegram-side paths therefore fall back to the `media_group_members` rows (`_find_edited_origin_row`) before giving up.
+
+Failures are logged rather than swallowed — a copy that quietly stops matching its original is not something anyone reports. A bot's own edit passes the same rung its message did (`discord_bot/events.py: _edit_from_bot_allowed`): our own messages and webhook copies never, foreign bots wherever `/allow-bots` admitted them. Deletes have no Telegram half at all, because the Bot API delivers no deletion updates.
+
+## The file re-upload consent
+
+`/allow-files` is not a switch on a bridge but a standing answer from a community, and that is why nothing materializes it anywhere: `server_file_consents` holds one row per Discord server or Telegram group, and every read goes back to it. A bridge built a year later reads the same row, which is the whole point — the alternative, copying the answer into the bridges that existed at the time (the way `db/bridges.py: attach_chat` materializes admin grants), would leave every later bridge with the mechanic silently off.
+
+Each side of a bridge answers for itself, and the relay asks twice per message:
+
+* **Before the download** — `db/settings.py: file_reupload_allowed` asks whether the chat the files came from is covered, and whether any *other* chat of the bridge is. Neither being true, nothing is downloaded: the first because the mechanic takes that chat's files out of Telegram, the second because the upload would serve nobody.
+* **Per target** — `message_relay.py: relay_message` asks `chat_file_consent` for each chat it delivers to. The covered ones get the GALLERY links, the rest get the same message rendered with the `[N files from Telegram]` marker. Both renderings are composed by the caller and handed over together (`gallery_fallback`), because the two differ by more than a substitution: the marker is not in the text the links belong to. The three send paths and the Telegram edit path all carry the pair.
+
+`bridge_file_consents` is the override: `/allow-files local` covers every side of one bridge at once, whatever their communities answered. It is deleted with the bridge, because bridge numbers are reused and a leftover row would hand the next bridge to take that number a consent nobody in it gave. A community's own consent survives the bot being removed from it for seven days (`server_file_consents.left_at`, swept by `pending_cleanup_loop`), so a kick and a re-invitation cost nothing while a departure eventually does.
 
 ## Roles
 
@@ -44,7 +62,7 @@ From `main.py` (cross-platform, started in `main()`):
 | Loop                  | Period            | Job |
 |-----------------------|-------------------|-----|
 | `rules_loop`          | checks every 60 s | posts bridge rules on schedule (legacy twin of the client loop below) |
-| `pending_cleanup_loop`| every 60 s        | expires consent prompts older than 24 h, expired verifications, old loc suggestions and polls |
+| `pending_cleanup_loop`| every 60 s        | expires consent prompts older than 24 h, expired verifications, old loc suggestions and polls, and the `/allow-files` consents of communities the bot left more than 7 days ago |
 | `poll_loop`           | every 30 s        | posts results of expired polls, closes them |
 | `feed_loop`           | tick every 30 s   | polls followed sources; per-kind intervals in `FEED_POLL_INTERVALS` (telegram 60 s, wiki 90 s, bluesky 120 s, wiki discussions 180 s, youtube 5 min), one source per kind per tick, exponential backoff per source, flat per-host backoff on throttling |
 | `daily_check_loop`    | every 24 h        | verifies every chat is reachable and the bot has delete rights; auto-detaches chats unreachable for 24 h |
@@ -115,7 +133,7 @@ A conversation closes on `/close`, when its bot is unregistered, when its writer
 
 Reopening is deliberately asymmetric. A Telegram topic is *closed*, not deleted, and `inbox_topics` remembers which topic belongs to which writer in which host group — so their next message reopens that same topic and the group keeps one per person instead of accumulating one per exchange. Discord always gets a new thread: an archived one is cheap to leave alone, and a channel reads better as a list of conversations. A remembered topic that can no longer be reopened is forgotten and replaced.
 
-Attachments cross through GALLERY like any other Telegram file, with two differences. They are downloaded through the *receiver bot* (`telegram_bot/files.py` takes a `source_bot`, because a `file_id` is meaningful only to the token it was issued to), and the consent asked is `db/inbox.py: inbox_file_relay_enabled` rather than the ordinary `bridge_file_relay_enabled`: the latter requires every chat of the bridge to be covered by an `/allow-files` consent, and the private chat at the heart of a conversation belongs to no community and never could be. The question is asked over the host chats alone — they are the communities whose GALLERY the files land in.
+Attachments cross through GALLERY like any other Telegram file, with two differences. They are downloaded through the *receiver bot* (`telegram_bot/files.py` takes a `source_bot`, because a `file_id` is meaningful only to the token it was issued to), and the consent asked is `db/inbox.py: inbox_file_relay_enabled` rather than the ordinary `db/settings.py: file_reupload_allowed`: the latter starts by asking the chat the files came from, and the private chat at the heart of a conversation belongs to no community and could never answer. The question is asked over the host chats alone — they are the communities whose GALLERY the files land in — and one host that consented is enough to make the upload happen, the others receiving the marker as they would anywhere else.
 
 ## The setup deadline
 
@@ -161,8 +179,19 @@ The clock itself is asymmetric. Discord publishes `Guild.me.joined_at`, so the D
 | Dead chat / dead topic / news reactions / rules | `discord_bot/commands/settings.py`, loops in `discord_bot/client.py` |
 | Encrypted backups | `backup_crypto.py`, `restore_backup.py`, loop in `discord_bot/client.py` |
 | Service events (bot started, feed errors, communities joined and left, …) | `utils.py: send_service_event` |
+| Naming a chat behind an id in a service event | `utils.py: describe_chat_key` |
 | Markup conversion (TG entities ↔ Discord markdown, timestamps) | `message_relay.py` |
 | Rate limiting | `utils.py: rate_limit_ok` |
+
+## The service chats
+
+`utils.py: send_service_event` is the operator's log: it renders one `service_event.*` key into every chat of `config.SERVICE_CHATS`, each in that chat's own language, and every send is guarded, because this is where failures are reported and a failure here must stay a log line.
+
+Two rules decide what it looks like and what reaches it at all.
+
+**An id never travels alone.** `describe_chat_key` turns a chat key into `Name (Parent; parentID:ID)` — the channel with its server, the topic with its group — so a line names the place before it names the number. A whole community has nothing above it and keeps the short `Name (ID)`. The event carries the raw key; the caller passes `chat_platform=` and `send_service_event` resolves it once per language, since several service chats often share one. Names are resolved live against the two clients and any failure falls back to the localized "unknown", which keeps the id in the line when the name cannot be had.
+
+**A wait is not a failure.** A followed source that answers "come back later" — MediaWiki's `maxlag`, a rate limit, HTTP 429/503, all of them marked `FeedError.throttled` by the reader in `sources/` — is logged and backed off, never reported (`main.py: feed_loop`). The poller already retries and the subscription remembers its place by post id, so nothing is lost; reporting it would teach the operators to skim past a line that also means a real outage.
 
 ## Neighbours
 

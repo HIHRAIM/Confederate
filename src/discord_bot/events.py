@@ -24,7 +24,9 @@ from discord_bot.client import bot, announce_verified_user
 from discord_bot.appeals import (
     _cleanup_appeal_records, handle_appeal_dm_message, handle_appeal_thread_message,
 )
-from discord_bot.mentions import _discord_system_event_key, replace_mentions
+from discord_bot.mentions import (
+    _discord_system_event_key, discord_structured_texts, replace_mentions,
+)
 from discord_bot.relay import (
     _relay_pending_discord_first_message, _relay_verified_discord_message,
     is_own_relay_webhook_message, process_appeal_dm_edit,
@@ -236,12 +238,37 @@ async def on_message(message: discord.Message):
 
     await _relay_verified_discord_message(message, bridge_id, system_event_key)
 
+def _edit_from_bot_allowed(message: discord.Message):
+    """Whether an edit made by a bot should reach the copies.
+
+    The rungs are `on_message`'s, for the same reasons: the bot's own
+    messages and its own webhook copies are what an edit *produces*, so
+    reacting to them would loop; a foreign bot passes exactly where
+    `/allow-bots` let its message through in the first place. Without this a
+    bot that edits its own announcement — which is how most of them correct a
+    post, and the only way an embed ever changes — leaves every copy of it
+    frozen at the first version."""
+    if not message.author.bot:
+        return True
+    if message.author == bot.user:
+        return False
+    if is_own_relay_webhook_message(message):
+        return False
+    if message.guild is None or message.channel is None:
+        return False
+    chat_id = f"{message.guild.id}:{message.channel.id}"
+    if db.is_relay_copy("discord", chat_id, str(message.id)):
+        return False
+    return bool(db.get_allow_bots(chat_id))
+
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Cached-message edit: guild edits propagate to the copies, DM edits go
-    to the appeal-thread copy. Bot edits are ignored (copies are the bot's
-    own messages — reacting to them would loop)."""
-    if after.author.bot:
+    to the appeal-thread copy. A bot's edit passes only where `/allow-bots`
+    admitted the bot itself — see `_edit_from_bot_allowed`."""
+    if after.guild is not None and not _edit_from_bot_allowed(after):
+        return
+    if after.guild is None and after.author.bot:
         return
     if after.guild is None:
         await process_appeal_dm_edit(after.author.id, after.id,
@@ -263,8 +290,6 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     name and mention-free text; otherwise falls back to the raw payload
     fields. DM payloads route to the appeal edit path."""
     data = payload.data or {}
-    if str(data.get("author", {}).get("bot", "")).lower() == "true":
-        return
 
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
     channel = bot.get_channel(payload.channel_id)
@@ -280,6 +305,8 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     if not guild or not channel:
         author_data = data.get("author") or {}
         author_id = author_data.get("id")
+        if str(author_data.get("bot", "")).lower() == "true":
+            return
         if isinstance(channel, discord.DMChannel) and author_id:
             name = author_data.get("global_name") or author_data.get("username") or "Unknown"
             try:
@@ -292,16 +319,21 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     content = data.get("content")
     try:
         msg = await channel.fetch_message(payload.message_id)
-        if msg.author.bot:
+        if not _edit_from_bot_allowed(msg):
             return
         author_display_name = msg.author.display_name or str(msg.author)
-        content = msg.content
-        content = replace_mentions(msg, content or "")
+        content = replace_mentions(msg, msg.content or "")
+        structured = discord_structured_texts(msg)
+        if structured:
+            block = "\n\n".join(structured)
+            content = f"{content.rstrip()}\n\n{block}" if content.strip() else block
     except Exception:
         pass
 
     if author_display_name is None:
         author_data = data.get("author") or {}
+        if str(author_data.get("bot", "")).lower() == "true":
+            return
         author_display_name = author_data.get("global_name") or author_data.get("username") or "Unknown"
         content = content or ""
 
@@ -340,8 +372,12 @@ async def on_guild_join(guild: discord.Guild):
     a bridge (setup_deadline.py).
 
     The row is a record, not the clock — the sweep reads Discord's own
-    `Guild.me.joined_at`, so a missed event costs nothing but this notice."""
+    `Guild.me.joined_at`, so a missed event costs nothing but this notice.
+
+    A server that gave the `/allow-files` consent and is back within the week
+    keeps it: the countdown `on_guild_remove` started is called off here."""
     db.record_join("discord", guild.id)
+    db.clear_server_departure("discord", guild.id)
     await send_service_event(
         "joined_chat",
         platform="Discord",
@@ -357,8 +393,14 @@ async def on_guild_remove(guild: discord.Guild):
     kick-and-reinvite within a day costs the server nothing.
 
     The setup-deadline row does go, so that a later re-invitation is a fresh
-    seven days rather than a settlement inherited from the last time."""
+    seven days rather than a settlement inherited from the last time.
+
+    The `/allow-files` consent is not dropped either, only put on a seven-day
+    countdown (db.mark_server_departed): a kick-and-reinvite must not cost a
+    community a privacy setting, but a standing permission to put its files
+    on a public CDN should not outlive the bot's presence for long."""
     db.forget_deadline("discord", guild.id)
+    db.mark_server_departed("discord", guild.id)
 
     db.cur.execute(
         """

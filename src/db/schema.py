@@ -327,17 +327,24 @@ CREATE TABLE IF NOT EXISTS consul_names (
 
 -- server_file_consents: /allow-files consent per server/group — permits
 -- re-uploading that community's Telegram files to the GALLERY channel and
--- handing out the CDN links.
+-- handing out the CDN links. It is the community's standing answer: it
+-- covers its chats in every bridge, including bridges built later.
+-- left_at is set when the bot leaves the community and cleared when it is
+-- added back; a row still carrying it seven days later is swept away by
+-- db/settings.py: cleanup_departed_file_consents.
 CREATE TABLE IF NOT EXISTS server_file_consents (
     platform TEXT NOT NULL,
     server_id TEXT NOT NULL,
     enabled_by TEXT,
     enabled_at INTEGER,
+    left_at INTEGER,
     PRIMARY KEY (platform, server_id)
 );
 
 -- bridge_file_consents: /allow-files local — the same consent granted for
--- one bridge as a whole.
+-- one bridge as a whole, covering every side of it whatever their own
+-- communities answered. Deleted with the bridge (remove_chat_from_bridge),
+-- because bridge numbers are reused.
 CREATE TABLE IF NOT EXISTS bridge_file_consents (
     bridge_id INTEGER PRIMARY KEY,
     enabled_by TEXT,
@@ -581,6 +588,7 @@ _COLUMN_ADDITIONS = [
     ("inbox_conversations", "title", "TEXT"),
     ("inbox_conversations", "status", "TEXT DEFAULT 'user'"),
     ("inbox_hosts", "hide_header", "INTEGER DEFAULT 0"),
+    ("server_file_consents", "left_at", "INTEGER"),
 ]
 
 def create_all(cur, conn):

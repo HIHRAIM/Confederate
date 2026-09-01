@@ -44,8 +44,9 @@ BACKUP_CHATS = {
 }
 
 # GALLERY — Discord channels where the bot re-uploads the files it hands out as
-# links: Telegram files, once `/allow-files` is enabled for every chat of a
-# bridge (see README: Telegram file re-upload), and the attachments of the posts
+# links: Telegram files, wherever `/allow-files` is enabled — the chat they come
+# from decides whether they are taken, each target chat decides whether it gets
+# the links (see README: Telegram file re-upload) — and the attachments of the posts
 # of sources attached with `/setbskyfeed` / `/setytfeed` / `/settgfeed` (see README: Followed
 # sources). The first reachable channel is used; the CDN links of the uploaded
 # attachments are handed out in the relayed copies. The bot never deletes these

@@ -31,7 +31,7 @@ import db
 from config import DISCORD_TOKEN
 from discord_bot import bot as discord_bot
 from telegram_bot import main as tg_main
-from utils import send_service_event
+from utils import describe_chat_key, get_chat_lang, send_service_event
 
 db.init()
 db.cleanup_old_messages(days=30)
@@ -98,7 +98,11 @@ async def rules_loop():
                                 message_thread_id=int(thread) or None
                             )
                     except Exception as e:
-                        await send_service_event("daily_loop_error", error=f"RULES SEND ERROR ({r['bridge_id']}->{c['chat_id']}): {e}")
+                        target = await describe_chat_key(
+                            c["platform"], c["chat_id"], get_chat_lang(c["chat_id"]))
+                        await send_service_event(
+                            "daily_loop_error",
+                            error=f"RULES SEND ERROR (bridge {r['bridge_id']} -> {target}): {e}")
             except Exception as e:
                 await send_service_event("daily_loop_error", error=f"RULES LOOP ERROR: {e}")
 
@@ -107,7 +111,8 @@ async def rules_loop():
 async def pending_cleanup_loop():
     """
     Удаляет устаревшие pending_consents (старше 24ч): удаляет бот-сообщение и строку в БД.
-    Также очищает verified_users, у которых истёк срок.
+    Также очищает verified_users, у которых истёк срок, и согласия /allow-files
+    сообществ, которые бот покинул больше семи дней назад.
     """
     from telegram_bot import bot as tg
     from discord_bot import bot as dc
@@ -162,6 +167,7 @@ async def pending_cleanup_loop():
             db.cleanup_old_loc_suggestions()
             db.cleanup_old_polls()
             db.cleanup_wiki_relay_records()
+            db.cleanup_departed_file_consents()
 
         except Exception as e:
             try:
@@ -247,6 +253,13 @@ async def feed_loop():
     service chats at most once an hour: an outage at the far end must turn into
     neither a flood of messages nor a flood of requests.
 
+    A source that answers "come back later" — MediaWiki's `maxlag`, a rate
+    limit, HTTP 429/503 — is *not* reported there at all. Nothing is broken and
+    nobody has anything to do about it: the backoff already waits and the next
+    tick picks the posts up, so the service chats would only be taught to
+    ignore a line that sometimes means a real outage. Those failures stay in
+    the log file, where their frequency can still be read off.
+
     A wiki hands its whole batch to `relay_wiki_posts` instead of being
     walked post by post: it is the one source that merges several changes
     into one message and filters per chat, so the cap on how many messages a
@@ -271,11 +284,13 @@ async def feed_loop():
                             title, posts = await feed_module(kind).fetch_posts(
                                 source, session=session)
                         except FeedError as e:
-                            delay = _feed_note_failure(
-                                key, throttled=getattr(e, "throttled", False))
+                            throttled = getattr(e, "throttled", False)
+                            delay = _feed_note_failure(key, throttled=throttled)
                             logger.warning("feed fetch failed (%s %s): %s — next try in %d min",
                                            kind, source, e, delay // 60)
-                            if rate_limit_ok(("feed-error", kind, source), limit=1, window_seconds=3600):
+                            if (not throttled
+                                    and rate_limit_ok(("feed-error", kind, source),
+                                                      limit=1, window_seconds=3600)):
                                 await send_service_event("feed_error", account=source,
                                                          error=str(e))
                             continue
@@ -404,7 +419,8 @@ async def daily_check_loop():
                         try:
                             ch = await tg.get_chat(int(prefix))
                         except Exception:
-                            await send_service_event("daily_missing_tg_chat", chat_key=chat_key)
+                            await send_service_event("daily_missing_tg_chat",
+                                                     chat_platform="telegram", chat_key=chat_key)
                             inaccessible = True
                             ch = None
                         try:
@@ -413,9 +429,12 @@ async def daily_check_loop():
                                 mem = await tg.get_chat_member(int(prefix), me.id)
                                 can_delete = getattr(mem, "can_delete_messages", False)
                                 if not can_delete:
-                                    await send_service_event("daily_no_tg_delete_perm", chat_key=chat_key)
+                                    await send_service_event("daily_no_tg_delete_perm",
+                                                             chat_platform="telegram", chat_key=chat_key)
                         except Exception:
-                            await send_service_event("daily_tg_perm_check_error", chat_key=chat_key, error="unknown")
+                            await send_service_event("daily_tg_perm_check_error",
+                                                     chat_platform="telegram", chat_key=chat_key,
+                                                     error="unknown")
                     except Exception:
                         continue
 
@@ -429,7 +448,8 @@ async def daily_check_loop():
                             except Exception:
                                 ch = None
                         if not ch:
-                            await send_service_event("daily_missing_dc_channel", chat_key=chat_key)
+                            await send_service_event("daily_missing_dc_channel",
+                                                     chat_platform="discord", chat_key=chat_key)
                             inaccessible = True
                         else:
                             guild = getattr(ch, "guild", None)
@@ -442,7 +462,8 @@ async def daily_check_loop():
                             if me is not None:
                                 perms = ch.permissions_for(me)
                                 if not perms.manage_messages:
-                                    await send_service_event("daily_no_dc_manage_perm", chat_key=chat_key)
+                                    await send_service_event("daily_no_dc_manage_perm",
+                                                             chat_platform="discord", chat_key=chat_key)
                     except Exception:
                         continue
 
@@ -455,6 +476,7 @@ async def daily_check_loop():
                             if result:
                                 await send_service_event(
                                     "daily_auto_removed_chat",
+                                    chat_platform=platform,
                                     chat_key=chat_key,
                                     platform=platform.capitalize()
                                 )

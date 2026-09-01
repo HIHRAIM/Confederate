@@ -21,7 +21,7 @@
   },
   "allow_files_bridge_enabled": {
     "status": "unverified",
-    "text": "Pliki wysyłane na Telegramie będą teraz przesyłane ponownie na Discorda i udostępniane jako linki — dla wszystkich czatów tego mostu, łącznie z tymi, które dołączą później. Działa tylko tam, gdzie zezwala na to każdy czat mostu."
+    "text": "Pliki wysyłane na Telegramie będą teraz przesyłane ponownie na Discorda i udostępniane jako linki — dla wszystkich stron tego mostu, łącznie z czatami, które dołączą później, niezależnie od tego, na co zezwalają ich własne serwery i grupy."
   },
   "allow_files_disabled": {
     "status": "unverified",
@@ -29,7 +29,7 @@
   },
   "allow_files_enabled": {
     "status": "unverified",
-    "text": "Pliki wysyłane na Telegramie będą teraz przesyłane ponownie na Discorda i udostępniane jako linki — dla wszystkich czatów tego serwera, w dowolnych mostach. Działa tylko tam, gdzie zezwala na to każdy czat mostu."
+    "text": "Pliki wysyłane na Telegramie będą teraz przesyłane ponownie na Discorda i udostępniane jako linki — dla wszystkich czatów tego serwera, w dowolnych mostach, także w mostach utworzonych później. Każda z pozostałych stron odpowiada za siebie: tam, gdzie nie ma zgody, kopie dostają znacznik plików zamiast linków."
   },
   "allow_files_no_permission": {
     "status": "unverified",
@@ -1186,7 +1186,7 @@
   },
   "service_event.daily_auto_removed_chat": {
     "status": "unverified",
-    "text": "Automatyczne usunięcie z mostu: czat {chat_key} ({platform}) był niedostępny przez ponad 24 godziny."
+    "text": "Automatyczne usunięcie z mostu: czat {platform} {chat_key} był niedostępny przez ponad 24 godziny."
   },
   "service_event.daily_loop_error": {
     "status": "unverified",

@@ -21,7 +21,7 @@
   },
   "allow_files_bridge_enabled": {
     "status": "unverified",
-    "text": "Files sent in Telegram will now be re-uploaded to Discord and shared as links — for every chat of this bridge, including ones that join later. It works only where every chat of the bridge allows it."
+    "text": "Files sent in Telegram will now be re-uploaded to Discord and shared as links — for every side of this bridge, including chats that join later, whatever their own servers and groups allow."
   },
   "allow_files_disabled": {
     "status": "unverified",
@@ -29,7 +29,7 @@
   },
   "allow_files_enabled": {
     "status": "unverified",
-    "text": "Files sent in Telegram will now be re-uploaded to Discord and shared as links — for every chat of this server, in any bridge. It works only where every chat of the bridge allows it."
+    "text": "Files sent in Telegram will now be re-uploaded to Discord and shared as links — for every chat of this server, in any bridge, including bridges built later. Every other side answers for itself: where it is not allowed, the copies get a file marker instead of the links."
   },
   "allow_files_no_permission": {
     "status": "unverified",
@@ -1186,7 +1186,7 @@
   },
   "service_event.daily_auto_removed_chat": {
     "status": "unverified",
-    "text": "Auto-removal from the bridge: chat {chat_key} ({platform}) was unreachable for more than 24 hours."
+    "text": "Auto-removal from the bridge: the {platform} chat {chat_key} was unreachable for more than 24 hours."
   },
   "service_event.daily_loop_error": {
     "status": "unverified",

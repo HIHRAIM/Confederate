@@ -153,14 +153,17 @@ def get_bridge_webhooks(server_id, bridge_id) -> bool:
 
 def set_server_file_consent(platform, server_id, enabled: bool, enabled_by=None):
     """Server/group-wide consent to the GALLERY file re-upload (`/allow-files`).
-    Covers every chat of that Discord server or Telegram group, including ones
-    attached to a bridge later."""
+
+    The community's standing answer, and the default every one of its chats
+    carries into every bridge — the ones it is in now and the ones it joins
+    afterwards. Nothing materializes it per chat or per bridge, so a bridge
+    built tomorrow reads the same row this writes today."""
     if enabled:
         cur.execute(
-            "INSERT INTO server_file_consents (platform, server_id, enabled_by, enabled_at)"
-            " VALUES (?,?,?,strftime('%s','now'))"
+            "INSERT INTO server_file_consents (platform, server_id, enabled_by, enabled_at, left_at)"
+            " VALUES (?,?,?,strftime('%s','now'),NULL)"
             " ON CONFLICT(platform, server_id) DO UPDATE SET"
-            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at",
+            " enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at, left_at=NULL",
             (platform, str(server_id), str(enabled_by) if enabled_by is not None else None)
         )
     else:
@@ -177,9 +180,52 @@ def get_server_file_consent(platform, server_id) -> bool:
         (platform, str(server_id))
     ).fetchone() is not None
 
+def mark_server_departed(platform, server_id):
+    """Start the seven-day countdown on a community's file consent: the bot
+    has just been removed from it.
+
+    The consent is not dropped on the spot. A kick, a re-invitation and a
+    misclicked "leave" all look the same from here, and making a community
+    re-answer a privacy question because the bot was out for an afternoon is
+    both rude and pointless. The row keeps working while it waits — the bot
+    is not in the community, so nothing of it is being relayed anyway."""
+    cur.execute(
+        "UPDATE server_file_consents SET left_at=strftime('%s','now')"
+        " WHERE platform=? AND server_id=? AND left_at IS NULL",
+        (platform, str(server_id))
+    )
+    conn.commit()
+
+def clear_server_departure(platform, server_id):
+    """The bot is back in the community before the seven days ran out: the
+    consent stops counting down and goes on as if it had never left."""
+    cur.execute(
+        "UPDATE server_file_consents SET left_at=NULL"
+        " WHERE platform=? AND server_id=?",
+        (platform, str(server_id))
+    )
+    conn.commit()
+
+FILE_CONSENT_DEPARTURE_GRACE = 7 * 24 * 3600
+
+def cleanup_departed_file_consents():
+    """Drop the consents of communities the bot left more than seven days ago.
+
+    Called from the cleanup loop in main.py. A community that invites the bot
+    back after that answers `/allow-files` again — a standing permission to
+    put its files on a public CDN should not outlive the bot's presence by
+    more than the grace period."""
+    cur.execute(
+        "DELETE FROM server_file_consents"
+        " WHERE left_at IS NOT NULL AND strftime('%s','now') - left_at >= ?",
+        (FILE_CONSENT_DEPARTURE_GRACE,)
+    )
+    conn.commit()
+
 def set_bridge_file_consent(bridge_id, enabled: bool, enabled_by=None):
     """Bridge-wide consent to the GALLERY file re-upload (`/allow-files local`).
-    Covers every chat of the bridge, including ones attached later."""
+    Covers every side of the bridge — whatever their own communities answered,
+    and including chats attached later."""
     if enabled:
         cur.execute(
             "INSERT INTO bridge_file_consents (bridge_id, enabled_by, enabled_at)"
@@ -199,26 +245,49 @@ def get_bridge_file_consent(bridge_id) -> bool:
         (int(bridge_id),)
     ).fetchone() is not None
 
-def bridge_file_relay_enabled(bridge_id) -> bool:
-    """Whether Telegram files may be re-uploaded to GALLERY for this bridge.
+def chat_file_consent(platform, chat_id, bridge_id=None) -> bool:
+    """Whether this one chat is covered by an `/allow-files` consent.
 
-    Every chat of the bridge must be covered — by the bridge-wide consent or by
-    its own server/group consent — because the mechanic both takes files out of
-    one chat and posts public CDN links into all the others. Never cached: a
-    chat may have joined the bridge a minute ago."""
-    from db.bridges import get_bridge_chats
-    if get_bridge_file_consent(bridge_id):
+    The single primitive the whole mechanic is decided by, and it is a
+    per-side question: the bridge-wide consent of `bridge_id` covers every
+    side at once, otherwise the chat's own community answers for it. Never
+    cached — a chat may have joined its bridge a minute ago, and the answer
+    for a community that never said anything must not be frozen the moment
+    the bridge was built.
+
+    A chat that belongs to no community — an appeal DM, a receiver bot's
+    private chat — has nobody to ask and is covered only by the bridge-wide
+    consent."""
+    if bridge_id is not None and get_bridge_file_consent(bridge_id):
         return True
+    server_id = chat_server_id(platform, chat_id)
+    if not server_id:
+        return False
+    return get_server_file_consent(platform, server_id)
 
-    chats = get_bridge_chats(bridge_id)
-    if not chats:
+def file_reupload_allowed(bridge_id, origin_platform, origin_chat_id) -> bool:
+    """Whether an incoming message's files should be re-uploaded to GALLERY at
+    all — the question asked once, before the download.
+
+    Two conditions, and they are about different people. The chat the files
+    came from must be covered, because the mechanic takes its files out of
+    Telegram and puts them on a public CDN. And at least one *other* chat of
+    the bridge must be covered too, or the upload would serve nobody: every
+    target would get the "[N files from Telegram]" marker anyway.
+
+    Which targets actually receive the links is decided per chat afterwards,
+    by `chat_file_consent` inside message_relay.relay_message. One community
+    that never answered no longer silences the whole bridge."""
+    from db.bridges import get_bridge_chats
+    if not chat_file_consent(origin_platform, origin_chat_id, bridge_id):
         return False
 
-    for c in chats:
-        server_id = chat_server_id(c["platform"], c["chat_id"])
-        if not server_id or not get_server_file_consent(c["platform"], server_id):
-            return False
-    return True
+    for c in get_bridge_chats(bridge_id):
+        if c["platform"] == origin_platform and c["chat_id"] == origin_chat_id:
+            continue
+        if chat_file_consent(c["platform"], c["chat_id"], bridge_id):
+            return True
+    return False
 
 def set_verify_list_enabled(enabled):
     """Toggle publishing of (un)verified user IDs to the VERIFIED/UNVERIFIED

@@ -185,7 +185,7 @@ Permission roles used below:
 | `/list_chats` | List all Discord guilds and Telegram groups known to the bot | ❌ | ❌ | ✅ |
 | `/force_leave <platform> <id>` | Force bot to leave a guild/chat and clean up DB records | ❌ | ❌ | ✅ |
 | `/allow-bots <enable\|disable>` | Allow or block relay of bot/webhook messages from this channel | ❌ | ✅ | ✅ |
-| `/allow-files <enable\|disable> [local]` | Consent to re-uploading Telegram files to Discord and handing out their links. Without `local` it covers every chat of this server, in any bridge; with `local`, every chat of this bridge | ❌ | ✅ | ✅ |
+| `/allow-files <enable\|disable> [local]` | Consent to re-uploading Telegram files to Discord and handing out their links. Without `local` it covers every chat of this server, in any bridge, including bridges built later; with `local`, every side of this bridge | ❌ | ✅ | ✅ |
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
 ⁽¹⁾ `/setname` is a **Consuls** command — the table has no column for that role. Any consul may set their own alias, on the appeal server where their `CONSULS` role is visible; the `user` parameter, which changes someone else's alias, is Bot Admins only.
@@ -237,7 +237,7 @@ Permission roles used below:
 | `/inboxban [user] [bot]` | Bar a user from one receiver bot and close their conversation; no arguments needed inside their topic | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/inboxunban [user] [bot]` | Let a banned user write to a receiver bot again | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/allow_bots <enable\|disable>` | Allow or block relay of bot messages from this chat | ❌ | ✅ | ✅ |
-| `/allow_files <enable\|disable> [local]` | Consent to re-uploading this group's files to Discord and handing out their links. Without `local` it covers every chat of this group, in any bridge; with `local`, every chat of this bridge | ❌ | ✅ | ✅ |
+| `/allow_files <enable\|disable> [local]` | Consent to re-uploading this group's files to Discord and handing out their links. Without `local` it covers every chat of this group, in any bridge, including bridges built later; with `local`, every side of this bridge | ❌ | ✅ | ✅ |
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
 ⁽¹⁾ Also whoever registered that receiver bot — see the same note under the Discord table. ⁽²⁾ Also the host group's own admins.
@@ -254,7 +254,13 @@ Every user-facing mechanic of Confederate, in one place.
 
 Chats attached to the same bridge (`/atb`) exchange messages in both directions. Relayed copies carry a `[{Messenger} | {Community}] {Sender}:` header, native replies are preserved (or represented with a link/note where the platform can't reference the original), edits and deletions of the original propagate to all copies for 30 days, and attachments/stickers/voice/video notes are represented with localized markers or links (Telegram files can be re-uploaded in full instead — see [Telegram file re-upload](#telegram-file-re-upload)). Messages from other bots and webhooks are relayed only where `/allow-bots` enables it, and a copy of one carries a bot marker after the sender's name (a custom emoji on Discord, 🤖 on Telegram).
 
-Formatting is translated between the platforms rather than dropped: Telegram entities become Discord markdown and back, a message carrying several files is relayed as one message per file so every one of them gets a preview, Discord embeds are flattened into the text (author, title, description, fields, image links, footer), and Discord's `<t:…>` timestamp markup — which Telegram cannot render — is written out as a readable date in the target chat's language. Discord's own system notices (a member joining, a boost, a pin, a thread being created) are relayed as localized one-line notes.
+Formatting is translated between the platforms rather than dropped: Telegram entities become Discord markdown and back, a message carrying several files is relayed as one message per file so every one of them gets a preview, and Discord's `<t:…>` timestamp markup — which Telegram cannot render — is written out as a readable date in the target chat's language. Discord's own system notices (a member joining, a boost, a pin, a thread being created) are relayed as localized one-line notes.
+
+A message whose content is not plain text is written out as text rather than rebuilt. An **embed** is flattened into markdown lines — author, title (linked where it has a URL), description, every field with its name in bold, image and thumbnail links, footer in italics — so it reads the same in a Telegram group, which has no embeds at all, and in a Discord channel, where the copy is text and not a second embed. A message built out of **components** instead of text (Discord's newer layout, which carries no `content` and no embeds whatsoever) is read the same way: its text blocks, its media links, and the labels and addresses of its link buttons. Buttons that fire an action back at the bot that posted them are left out, since nobody in another chat could press them. Only embeds somebody actually **sent** are flattened. The previews Discord builds by itself for the links in a message — a YouTube video, a news article, a picture, a GIF — are not relayed at all: the link they were built from is already in the text being copied, the receiving chat unfurls it on its own, and copying the preview would append to the message a channel name, a title, a description, a thumbnail and the link a second time, none of which the sender wrote. A message carrying a link crosses as the message it is. Among the embeds that were sent, one that is only a picture is dropped when the message has text of its own and kept when it is the whole message.
+
+**Editing an original** rewrites every copy of it, on both platforms, for 30 days. The copy is re-rendered the way it would be sent now: the sender's formatting, the attachment links or the `[N files]` marker, and the “(replying to …)” / “(forwarded from …)” lines above the body all come back, each target in its own language. Editing any part of a Telegram album edits the copy of the whole album, and editing an attachment itself re-uploads it (see [Telegram file re-upload](#telegram-file-re-upload)). An edit made by another bot propagates wherever `/allow-bots` admitted that bot in the first place — which is the only way an embed ever changes. A copy the bot can no longer reach — deleted at the far end, or in a chat it has lost access to — is reported in the log file instead of being passed over in silence.
+
+Deletion is not symmetric, because the platforms are not: Discord tells a bot that a message was deleted, Telegram does not. So deleting a Discord original (or any copy of anything, on either platform, through the bot's own moderation) removes the message everywhere, while deleting a message in Telegram by hand leaves its copies standing — there is no event to react to.
 
 ### Telegram file re-upload
 
@@ -262,12 +268,14 @@ By default a file sent on Telegram is only *represented* in the relayed copies �
 
 `/allow-files` turns on re-uploading instead: the bot downloads the files, posts them into the first reachable `GALLERY` channel as **one message per source Telegram message** (an album counts as one), and hands out the resulting Discord CDN links in the copies. On Discord all links go into the message footer, the first one expanding into a preview as usual; on Telegram the first link joins the message body and the remaining files follow as separate messages, one per file.
 
-The consent is deliberately coarse and explicit, because the links are public to anyone who has them (see [PRIVACY.md](PRIVACY.md)). It comes in two forms, and both cover chats that join later:
+The consent is explicit, because the links are public to anyone who has them (see [PRIVACY.md](PRIVACY.md)). It comes in two forms, and both cover chats and bridges that appear later:
 
-- `/allow-files enable` — for the whole Discord server or Telegram group, in every bridge it takes part in;
-- `/allow-files enable local` — for every chat of the current bridge.
+- `/allow-files enable` — for the whole Discord server or Telegram group. It is that community's standing answer and applies in every bridge it takes part in, **including bridges built afterwards** — a new bridge between two communities that have both allowed it works from its first message, with nothing to repeat there;
+- `/allow-files enable local` — for every side of the current bridge at once, whatever their own communities allow.
 
-**A bridge re-uploads only when every one of its chats is covered**, through its own server/group consent or through the bridge-wide one — consent covers both sending a chat's files and receiving such copies. A single uncovered chat puts the whole bridge back on the marker/link behaviour, and this is rechecked on every message rather than cached, since a chat may have joined a minute ago.
+**Every side answers for itself**, and the answer covers both directions — a community allows its own files to be taken out of Telegram and allows copies with such links to arrive in its chats. On each message the bot asks twice: the chat the files came from must be covered, or nothing is downloaded at all; and each target chat must be covered to receive the links, or its copy carries the ordinary `[N files from Telegram]` marker instead. One community that never answered therefore costs that community the links and nobody else. Nothing is cached — a chat may have joined the bridge a minute ago, and a community may have answered a minute ago.
+
+A community's consent lasts while the bot is in it: if the bot is removed and not added back within seven days, the consent is dropped and has to be given again. A bridge's `local` consent is dropped with the bridge itself.
 
 Limits are handled per file: Telegram's `getFile` serves at most 20 MB and Discord accepts 10 MB on a non-boosted server (more if `GALLERY`'s server is boosted). Files that fit are uploaded and linked; the ones that don't keep the old marker/link footer, so one message can carry both. The same fallback applies to any other failure — an unreachable `GALLERY` channel, a missing **Attach Files** permission, a failed download — the message always arrives, if only in the older form. Stickers, voice messages and video notes are never re-uploaded; they keep their own markers.
 
@@ -366,7 +374,7 @@ A **YouTube** upload is the exception: it is relayed as its title and its watch 
 
 No developer account and no third-party service is involved in any of the three: the bot talks to Bluesky, YouTube and Telegram directly, and sends them nothing about your community.
 
-The Telegram web preview is an undocumented page and can change or be withdrawn, and a channel whose owner turned the preview off cannot be read at all — for that one, add the bot to the channel as an administrator and run `/settgfeed` again. When a fetch fails the feed goes quiet and the bot reports it to `SERVICE_CHATS`, at most once an hour per source, instead of failing silently.
+The Telegram web preview is an undocumented page and can change or be withdrawn, and a channel whose owner turned the preview off cannot be read at all — for that one, add the bot to the channel as an administrator and run `/settgfeed` again. When a fetch fails the feed goes quiet and the bot reports it to `SERVICE_CHATS`, at most once an hour per source, instead of failing silently — except where the source asked to be tried later (see [Service events](#service-events-and-automatic-backups)), which is a wait rather than a failure and stays in the log file.
 
 A feed can also go quiet because the source itself stopped: where a source dates its posts, the bot watches the newest one and reports a feed whose newest post has not moved in a fortnight — four months for YouTube, since a channel legitimately goes months between uploads — to `SERVICE_CHATS` once a day. `/setbskyfeed` and `/setytfeed` say the same thing in their reply at attach time, so a source that has plainly gone somewhere else is visible right away rather than through silence.
 
@@ -419,6 +427,8 @@ Wiki activity reaches **threads and forum posts** as well as ordinary channels: 
 
 Requests to a wiki carry a User-Agent naming this bot and a contact address (`WIKI_CONTACT` in the config), which MediaWiki's API etiquette requires — Wikimedia refuses anything else — and `maxlag`, so a wiki catching up with its database can defer the bot instead of being made slower. A wiki that rate-limits us, is unreachable, requires an account, or is not a MediaWiki at all each produce their own clear error rather than silence.
 
+A deferral is not an error. When the wiki answers that it is lagging behind its database — its replicas have fallen more than five seconds behind, which a busy wiki farm does at unpredictable moments — the poll simply backs off and tries again later, and the changes it did not read are picked up whole on the next attempt, because the subscription remembers its place by change id rather than by time. Nothing is lost and nobody has to do anything, so this is written to the log file only and never to `SERVICE_CHATS`. Wikis that do it constantly are asking to be polled less often, not more urgently.
+
 ### Shadow bans
 
 `/shadow-ban <user>` (Bridge Admins) silently drops a user from the relay: their new messages are deleted in the origin chat and never forwarded, with no notification to them.
@@ -470,7 +480,7 @@ Naming more than one host chat is the point of the second command: with a Discor
 - **Closing and reopening.** `/close` inside a conversation closes it; so does unregistering the bot, banning the writer, or **30 days** without a message from either side. Both sides are told, the title goes ⬛, the thread is archived and locked, the topic is closed, and the bridge goes.
 
   The writer's next message opens a conversation again — asymmetrically, and on purpose. On **Telegram the same topic is reopened**: it was closed rather than deleted, so the group keeps one topic per person with all the history in it instead of collecting a new one per exchange. On **Discord a new thread is created**: the archived one is left alone, and a channel reads better as a list of conversations than as a few threads reopened over months. If a remembered topic has since been deleted, a new one is made.
-- **Attachments** cross where the host communities allow it. Files sent to a receiver bot are re-uploaded to the `GALLERY` channel and handed to the thread as links, exactly like [Telegram file re-upload](#telegram-file-re-upload) elsewhere — downloaded through the receiver bot's own token, since a `file_id` means nothing to any other bot. The consent asked is the **host chats'** `/allow-files`, not the writer's private chat, which belongs to no community and so could never carry one; with it off, files arrive as the usual localized `[N files from Telegram]` marker. Stickers, voice messages and video notes keep their own markers, and an album arrives as one message rather than one per file.
+- **Attachments** cross where the host communities allow it. Files sent to a receiver bot are re-uploaded to the `GALLERY` channel and handed to the thread as links, exactly like [Telegram file re-upload](#telegram-file-re-upload) elsewhere — downloaded through the receiver bot's own token, since a `file_id` means nothing to any other bot. The consent asked is the **host chats'** `/allow-files`, not the writer's private chat, which belongs to no community and so could never carry one; each host answers for itself, and the ones that have not allowed it get the usual localized `[N files from Telegram]` marker instead of the links. Stickers, voice messages and video notes keep their own markers, and an album arrives as one message rather than one per file.
 
 ### The seven-day setup deadline
 
@@ -491,6 +501,10 @@ Leaving is not a deletion: a community that is invited back starts a fresh seven
 ### Service events and automatic backups
 
 Start/stop notices, the communities the bot is added to and the ones it leaves on the setup deadline, and daily health-check findings (unreachable chats, missing **Manage Messages** on Discord or delete rights on Telegram) go to the `SERVICE_CHATS` channels; a chat that stays unreachable for 24 hours is detached from its bridge automatically. Encrypted database backups (authenticated BLAKE2 keystream, standard library only) are posted to `BACKUP_CHATS` every 12 hours; `/backup` returns one on demand, and `python src/restore_backup.py <input.db.enc> <output.db>` decrypts it with the `BACKUP_KEY` environment variable.
+
+Every id these notices mention is written with the name it belongs to in front of it and whatever contains it beside it: `general (Example Server; 640638067736313899:640895443806453760)` for a Discord channel, `topic 15 (Example Group; -1002262445485:15)` for a Telegram topic, `Example Group (-1002262445485)` for a whole group. A name the bot can no longer resolve is shown as the localized "unknown", so the id itself never disappears from the line.
+
+Not everything a followed source refuses to answer is reported there. A source that says "come back later" — a wiki lagging behind its own database, a rate limit, HTTP 429 or 503 — is only written to the log file: nothing is broken, the backoff already waits, and the next poll picks up the posts that were missed. `SERVICE_CHATS` is left for the failures somebody has to act on.
 
 ---
 
@@ -542,7 +556,7 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
 
 - **Message relay metadata (`messages` + `message_copies`)**: up to **30 days** (cleaned on startup).
 - **`GALLERY` file re-uploads (`gallery_uploads` + the Discord messages themselves)**: kept **indefinitely** — there is no age-based deletion, so the links handed out in the relayed copies keep working. A re-upload is dropped together with the message's copies when a deletion is proxied, or replaced when an edit changes the attachments.
-- **File re-upload consents (`/allow-files`)**: kept until turned off with `/allow-files disable`.
+- **File re-upload consents (`/allow-files`)**: kept until turned off with `/allow-files disable`. A community's consent is also dropped when the bot has been out of it for seven days, and a bridge's `local` consent is dropped with the bridge.
 - **Pending consent records**: up to **24 hours** if not confirmed (cleaned continuously).
 - **Verified user records**: default validity **365 days**, then auto-removed after expiry.
 - **Localization-suggestion codes**: up to **1 year**, and removed immediately once answered with `/loc-reply`.

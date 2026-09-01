@@ -21,7 +21,7 @@
   },
   "allow_files_bridge_enabled": {
     "status": "unverified",
-    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os chats desta ponte, incluindo os que entrarem depois. Só funciona onde todos os chats da ponte permitem."
+    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os lados desta ponte, incluindo os chats que entrarem depois, independentemente do que permitam os seus próprios servidores e grupos."
   },
   "allow_files_disabled": {
     "status": "unverified",
@@ -29,7 +29,7 @@
   },
   "allow_files_enabled": {
     "status": "unverified",
-    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os chats deste servidor e em qualquer ponte. Só funciona onde todos os chats da ponte permitem."
+    "text": "Os arquivos enviados no Telegram passam a ser reenviados ao Discord e compartilhados como links, para todos os chats deste servidor e em qualquer ponte, incluindo pontes criadas depois. Cada um dos outros lados responde por si: onde não é permitido, as cópias recebem uma marca de arquivos em vez dos links."
   },
   "allow_files_no_permission": {
     "status": "unverified",
@@ -1186,7 +1186,7 @@
   },
   "service_event.daily_auto_removed_chat": {
     "status": "unverified",
-    "text": "Remoção automática da ponte: o chat {chat_key} ({platform}) ficou inacessível por mais de 24 horas."
+    "text": "Remoção automática da ponte: o chat do {platform} {chat_key} ficou inacessível por mais de 24 horas."
   },
   "service_event.daily_loop_error": {
     "status": "unverified",

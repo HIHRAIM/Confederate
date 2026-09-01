@@ -13,7 +13,9 @@ of the code here:
     from JSON then (`_relay_serialized_telegram_payload`);
   * attachments have no public URLs, so they are re-uploaded to GALLERY and
     represented by links, with a "[N files from Telegram]" footer standing in
-    for whatever did not fit.
+    for whatever did not fit — and for the targets whose community never gave
+    the `/allow-files` consent, which is why every send path here carries two
+    renderings of the same message.
 
 Not this module's zone: delivery into Discord (discord_bot/relay.py), the
 neutral fan-out (message_relay.py), or the file upload itself (files.py).
@@ -118,6 +120,29 @@ def _relay_variants_for_text(text, base_text, discord_text, telegram_html):
     if text == base_text:
         return discord_text, telegram_html
     return text, None
+
+def _gallery_fallback(index, fallback_texts, fallback_file_count,
+                      base_text, discord_text, telegram_html):
+    """The body for a target chat whose community has not given the
+    `/allow-files` consent, in the shape `message_relay.relay_message` wants.
+
+    It is the same message rendered as though nothing had been re-uploaded:
+    the "[N files from Telegram]" marker where the others get their links.
+    Built from the texts `_build_telegram_relay_texts` returns for
+    ``gallery_uploaded=0`` and paired with the item being relayed, since the
+    two variants are composed from the same message and run in step."""
+    if not fallback_texts:
+        return None
+    text = fallback_texts[index] if index < len(fallback_texts) else fallback_texts[-1]
+    fallback_discord, fallback_html = _relay_variants_for_text(
+        text, base_text, discord_text, telegram_html
+    )
+    return {
+        "text": text,
+        "discord": fallback_discord,
+        "telegram_html": fallback_html,
+        "file_count": fallback_file_count,
+    }
 
 def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_id: int, reply_to_msg_db_id, forward_type, forward_name, external_reply=False):
     """Freeze everything needed to relay this message later, as JSON.
@@ -225,10 +250,13 @@ async def _relay_serialized_telegram_payload(payload_json: str):
 
     texts = payload.get("texts", [])
     relay_file_count = payload.get("relay_file_count")
+    fallback_texts = list(texts)
+    fallback_file_count = relay_file_count
     gallery_urls = None
     upload = None
     candidates = payload.get("gallery_candidates") or []
-    if candidates and db.bridge_file_relay_enabled(payload["bridge_id"]):
+    if candidates and db.file_reupload_allowed(
+            payload["bridge_id"], "telegram", payload["origin_chat_id"]):
         upload, uploaded = await _upload_telegram_files_to_gallery(candidates)
         if upload:
             gallery_urls = upload["urls"]
@@ -239,7 +267,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             )
 
     relayed_db_id = None
-    for text in texts:
+    for index, text in enumerate(texts):
         current_discord_text, current_telegram_html = _relay_variants_for_text(
             text, base_text, payload.get("discord_text", ""), payload.get("telegram_html")
         )
@@ -263,6 +291,10 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             external_reply=payload.get("external_reply", False),
             avatar_url=avatar_url,
             gallery_urls=gallery_urls,
+            gallery_fallback=_gallery_fallback(
+                index, fallback_texts, fallback_file_count, base_text,
+                payload.get("discord_text", ""), payload.get("telegram_html"),
+            ),
         )
 
     if upload and relayed_db_id is not None:
@@ -508,13 +540,16 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     gallery_urls = None
     upload = None
     uploaded = 0
-    if candidates and db.bridge_file_relay_enabled(bridge_id):
+    if candidates and db.file_reupload_allowed(bridge_id, "telegram", origin_chat_id):
         upload, uploaded = await _upload_telegram_files_to_gallery(candidates)
         if upload:
             gallery_urls = upload["urls"]
 
     texts, relay_file_count = _build_telegram_relay_texts(
         message, grouped_file_count=grouped_file_count, gallery_uploaded=uploaded
+    )
+    fallback_texts, fallback_file_count = _build_telegram_relay_texts(
+        message, grouped_file_count=grouped_file_count, gallery_uploaded=0
     )
 
     async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
@@ -597,7 +632,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 sender_name, avatar_url = label, anon_avatar or None
 
     relayed_db_id = None
-    for text in texts:
+    for index, text in enumerate(texts):
         current_discord_text, current_telegram_html = _relay_variants_for_text(
             text, base_text, discord_text, telegram_html
         )
@@ -622,6 +657,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             is_bot_sender=is_bot_sender,
             avatar_url=avatar_url,
             gallery_urls=gallery_urls,
+            gallery_fallback=_gallery_fallback(
+                index, fallback_texts, fallback_file_count,
+                base_text, discord_text, telegram_html,
+            ),
         )
 
     if grouped_message_ids and relayed_db_id is not None:
@@ -635,71 +674,136 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             json.dumps([c["file_id"] for c in candidates], ensure_ascii=False),
         )
 
-@router.edited_message()
-async def edited_message_handler(message: Message):
-    """Propagate an edit of a Telegram origin message into every copy.
+def _find_edited_origin_row(origin_chat_id, message_id):
+    """The `messages` row an edited Telegram message belongs to, or ``None``.
 
-    Only the ``kind='main'`` copies carry the body — the per-file follow-ups
-    are rebuilt separately, and only when the GALLERY upload actually
-    changed. An edit inside an anonymized inbox conversation swaps the author
-    name for the same 'Staff A' label the copies were sent under, so
-    anonymity survives editing."""
-    thread = message.message_thread_id or 0
-    origin_chat_id = f"{message.chat.id}:{thread}"
+    A message relayed on its own is found by its own id. An album is not: it
+    was relayed as a single message under the id of the part that carried the
+    caption, and Telegram delivers the edit under the id of whichever part was
+    edited — so the album members recorded at relay time are the second place
+    to look, and without them an edited album never finds its copies."""
     row = db.cur.execute(
         """
         SELECT id, bridge_id, origin_sender_id FROM messages
         WHERE origin_platform='telegram' AND origin_chat_id=? AND origin_message_id=?
         ORDER BY id DESC LIMIT 1
         """,
-        (origin_chat_id, str(message.message_id))
+        (origin_chat_id, str(message_id))
     ).fetchone()
-    if not row:
+    if row:
+        return row
+
+    member_db_id = db.find_message_db_id_by_media_member(origin_chat_id, str(message_id))
+    if member_db_id is None:
+        return None
+    return db.cur.execute(
+        "SELECT id, bridge_id, origin_sender_id FROM messages WHERE id=?",
+        (member_db_id,)
+    ).fetchone()
+
+@router.edited_message()
+async def edited_message_handler(message: Message):
+    """Propagate an edit of a Telegram origin message into every copy.
+
+    The rendering is the send path's, run again over the edited message, so a
+    copy after an edit says what a copy sent now would: the file footer and
+    the GALLERY links of the attachments are rebuilt rather than dropped, the
+    "(replying to …)" and "(forwarded from …)" lines are put back above the
+    body, and each target is rendered in its own language.
+
+    Only the ``kind='main'`` copies carry the body — the per-file follow-ups
+    are rebuilt separately, and only when the GALLERY upload actually
+    changed. An edit inside an anonymized inbox conversation swaps the author
+    name for the same 'Staff A' label the copies were sent under, so
+    anonymity survives editing.
+
+    Every failure is logged rather than swallowed: an edit that does not
+    arrive leaves a copy quietly disagreeing with its original, which is the
+    kind of thing nobody reports and nobody can find afterwards."""
+    thread = message.message_thread_id or 0
+    origin_chat_id = f"{message.chat.id}:{thread}"
+    try:
+        row = _find_edited_origin_row(origin_chat_id, message.message_id)
+        if not row:
+            return
+
+        gallery_urls, gallery_changed = await _refresh_gallery_for_edit(message, row["id"])
+
+        texts, relay_file_count = _build_telegram_relay_texts(
+            message, gallery_uploaded=len(gallery_urls or [])
+        )
+        rendered_text = texts[0] if texts else ""
+        fallback_texts, fallback_file_count = _build_telegram_relay_texts(
+            message, gallery_uploaded=0
+        )
+        fallback_text = fallback_texts[0] if fallback_texts else rendered_text
+        source_text = getattr(message, "text", None)
+        source_caption = getattr(message, "caption", None)
+        base_text = source_text or source_caption or ""
+        if source_text is not None:
+            discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
+            telegram_html = getattr(message, "html_text", None)
+        elif source_caption is not None:
+            discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
+            telegram_html = getattr(message, "html_text", None)
+        else:
+            discord_text = rendered_text
+            telegram_html = None
+
+        author_name = message.from_user.full_name if message.from_user else "Unknown"
+        if db.is_inbox_bridge(row["bridge_id"]):
+            from inbox import inbox_sender_override
+            label, _ = inbox_sender_override(row["bridge_id"], "telegram", row["origin_sender_id"])
+            if label:
+                author_name = label
+
+        header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(author_name)}:"
+
+        copies = db.cur.execute(
+            "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
+            (row["id"],)
+        ).fetchall()
+    except Exception as e:
+        logger.warning("Telegram edit could not be rendered (chat=%s, message=%s): %s",
+                       origin_chat_id, message.message_id, e)
         return
 
-    gallery_urls, gallery_changed = await _refresh_gallery_for_edit(message, row["id"])
+    def _rendered_for(chat_row, platform):
+        """The edited body for one target: markers localized, GALLERY links
+        attached, reply/forward lines back on top. Returns (plain, html).
 
-    texts, relay_file_count = _build_telegram_relay_texts(
-        message, gallery_uploaded=len(gallery_urls or [])
-    )
-    rendered_text = texts[0] if texts else ""
-    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
-    if getattr(message, "text", None) is not None:
-        discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
-        telegram_html = getattr(message, "html_text", None)
-    else:
-        discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
-        telegram_html = getattr(message, "html_text", None)
+        The links are for the targets whose community consented to them and
+        for nobody else, exactly as on the send path — a chat that got the
+        "[N files from Telegram]" marker then must not gain the links now
+        because it happens to sit in the same bridge as a chat that did
+        consent."""
+        target_lang = get_chat_lang(chat_row["chat_id"])
+        linked = bool(gallery_urls) and db.chat_file_consent(
+            platform, chat_row["chat_id"], row["bridge_id"])
+        item_text = rendered_text if linked else fallback_text
+        item_count = relay_file_count if linked else fallback_file_count
+        edit_plain, edit_html = _relay_variants_for_text(
+            item_text, base_text, discord_text, telegram_html
+        )
+        if item_count is not None:
+            marker = localized_file_count_text(item_count, target_lang)
+            edit_plain = edit_plain.replace(f"__TG_FILES_{item_count}__", marker)
+            if edit_html is not None:
+                edit_html = edit_html.replace(f"__TG_FILES_{item_count}__", escape_html(marker))
+        edit_plain, _, edit_html = message_relay.apply_gallery_links(
+            platform, edit_plain, edit_plain, edit_html, gallery_urls if linked else None
+        )
+        if platform == "discord":
+            return edit_plain, edit_html
+        edit_html, edit_plain = message_relay.prefix_relay_edit_body(
+            row["id"], chat_row, target_lang, edit_html, edit_plain)
+        return edit_plain, edit_html
 
-    author_name = message.from_user.full_name if message.from_user else "Unknown"
-    if db.is_inbox_bridge(row["bridge_id"]):
-        from inbox import inbox_sender_override
-        label, _ = inbox_sender_override(row["bridge_id"], "telegram", row["origin_sender_id"])
-        if label:
-            author_name = label
-
-    header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(author_name)}:"
-
-    copies = db.cur.execute(
-        "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
-        (row["id"],)
-    ).fetchall()
     for c in copies:
         try:
             if c["platform"] == "telegram":
-                chat_id_str, th = c["chat_id"].split(":")
-                target_lang = get_chat_lang(c["chat_id"])
-                edit_plain, edit_html = _relay_variants_for_text(
-                    rendered_text, base_text, discord_text, telegram_html
-                )
-                if relay_file_count is not None:
-                    marker = localized_file_count_text(relay_file_count, target_lang)
-                    edit_plain = edit_plain.replace(f"__TG_FILES_{relay_file_count}__", marker)
-                    if edit_html is not None:
-                        edit_html = edit_html.replace(f"__TG_FILES_{relay_file_count}__", escape_html(marker))
-                edit_plain, _, edit_html = message_relay.apply_gallery_links(
-                    "telegram", edit_plain, edit_plain, edit_html, gallery_urls
-                )
+                chat_id_str = c["chat_id"].split(":")[0]
+                edit_plain, edit_html = _rendered_for(c, "telegram")
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
@@ -708,43 +812,27 @@ async def edited_message_handler(message: Message):
                 )
             elif c["platform"] == "discord":
                 from discord_bot import bot as dc_bot, edit_discord_relay_copy
-                target_lang = get_chat_lang(c["chat_id"])
-                edit_discord, _ = _relay_variants_for_text(
-                    rendered_text, base_text, discord_text, telegram_html
-                )
-                if relay_file_count is not None:
-                    marker = localized_file_count_text(relay_file_count, target_lang)
-                    edit_discord = edit_discord.replace(f"__TG_FILES_{relay_file_count}__", marker)
-                _, edit_discord, _ = message_relay.apply_gallery_links(
-                    "discord", edit_discord, edit_discord, None, gallery_urls
-                )
+                edit_discord, _ = _rendered_for(c, "discord")
                 channel_id = int(c["chat_id"].split(":")[1])
                 ch = dc_bot.get_channel(channel_id)
                 if not ch:
-                    try:
-                        ch = await dc_bot.fetch_channel(channel_id)
-                    except Exception:
-                        continue
-                await edit_discord_relay_copy(ch, c["message_id_platform"], header, edit_discord, message_db_id=row["id"], chat=c)
+                    ch = await dc_bot.fetch_channel(channel_id)
+                await edit_discord_relay_copy(ch, c["message_id_platform"], header, edit_discord,
+                                              message_db_id=row["id"], chat=c)
             elif c["platform"] == "inbox":
                 from inbox import edit_inbox_relay_copy
-                target_lang = get_chat_lang(c["chat_id"])
-                edit_plain, edit_html = _relay_variants_for_text(
-                    rendered_text, base_text, discord_text, telegram_html
-                )
-                if relay_file_count is not None:
-                    marker = localized_file_count_text(relay_file_count, target_lang)
-                    edit_plain = edit_plain.replace(f"__TG_FILES_{relay_file_count}__", marker)
-                    if edit_html is not None:
-                        edit_html = edit_html.replace(f"__TG_FILES_{relay_file_count}__", escape_html(marker))
+                edit_plain, edit_html = _rendered_for(c, "inbox")
                 await edit_inbox_relay_copy(
                     c["chat_id"], c["message_id_platform"], author_name, edit_plain, edit_html
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e):
+                continue
+            logger.warning("Telegram edit did not reach a copy (%s %s, message %s): %s",
+                           c["platform"], c["chat_id"], c["message_id_platform"], e)
 
     if gallery_changed:
-        await _resync_gallery_followups(row["id"], gallery_urls)
+        await _resync_gallery_followups(row["id"], gallery_urls, row["bridge_id"])
 
 async def _refresh_gallery_for_edit(message: Message, message_db_id):
     """Bring a relayed message's GALLERY upload in line with an edit.
@@ -789,10 +877,15 @@ async def _refresh_gallery_for_edit(message: Message, message_db_id):
     )
     return upload["urls"], upload["urls"] != stored_urls
 
-async def _resync_gallery_followups(message_db_id, gallery_urls):
+async def _resync_gallery_followups(message_db_id, gallery_urls, bridge_id):
     """Rebuild the per-file follow-up messages of a Telegram copy after a
     re-upload handed out new links: the old ones point at a deleted GALLERY
-    message, and their number may have changed."""
+    message, and their number may have changed.
+
+    The old ones are deleted in every chat that has them, the new ones go
+    only to the chats still covered by an `/allow-files` consent — a
+    community that withdrew it since the message was sent gets its follow-ups
+    taken down and nothing put back."""
     rows = db.cur.execute(
         "SELECT * FROM message_copies WHERE message_id=? AND kind='file'",
         (message_db_id,)
@@ -818,6 +911,8 @@ async def _resync_gallery_followups(message_db_id, gallery_urls):
     db.conn.commit()
 
     for chat_id in chat_ids:
+        if not db.chat_file_consent("telegram", chat_id, bridge_id):
+            continue
         chat_id_str, thread = chat_id.split(":")
         for url in (gallery_urls or [])[1:]:
             try:

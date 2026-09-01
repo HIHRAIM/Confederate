@@ -410,29 +410,59 @@ def apply_gallery_links(platform, text, discord_text, telegram_html, gallery_url
         telegram_html = f"{telegram_html}\n{escape_html(footer)}".strip()
     return text, discord_text, telegram_html
 
+def relay_edit_prefix_lines(message_db_id, chat, lang, *, webhook_link=False):
+    """The lines a relayed copy carries above its body — "(replying to …)" and
+    "(forwarded from …)" — rebuilt for an edit, outermost first.
+
+    An edit rewrites the whole text of a copy, so anything the first delivery
+    put above the body has to be put there again or the edit quietly strips
+    it. What belongs there depends on the target: a chat that got a *native*
+    reply reference keeps it through the edit and must not gain a line saying
+    the same thing, which is why the reply line comes from
+    `_resolve_reply_for_chat` rather than from the stored row alone.
+
+    `webhook_link` is for a Discord webhook copy, which cannot hold a native
+    reference at all and therefore carries a markdown link instead."""
+    row = db.cur.execute(
+        "SELECT reply_to_message_id, forward_type, forward_name FROM messages WHERE id=?",
+        (message_db_id,)
+    ).fetchone()
+    if not row:
+        return []
+    reply_to_msg_db_id = row["reply_to_message_id"]
+
+    reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(
+        chat, lang, reply_to_msg_db_id)
+    if webhook_link:
+        reply_line = _webhook_reply_link_line(
+            chat, lang, reply_to_msg_db_id, reply_to_platform_message_id) or reply_line
+
+    fwd_line = _forward_line(row["forward_type"], row["forward_name"], lang)
+    return [line for line in (reply_line, fwd_line) if line]
+
+def prefix_relay_edit_body(message_db_id, chat, lang, body_html, body_plain):
+    """Put the reply/forward lines back above an edited body, in both the
+    HTML and the plain form a Telegram-shaped copy needs. Returns
+    ``(body_html, body_plain)`` unchanged when the message has no such lines.
+
+    The two forms have to be prefixed together — `build_telegram_text` falls
+    back from one to the other when the formatted text overruns the 4096-char
+    limit, and a fallback that silently drops the prefix would make the line
+    appear and disappear with the length of the message."""
+    lines = relay_edit_prefix_lines(message_db_id, chat, lang)
+    if not lines:
+        return body_html, body_plain
+    prefix = "\n".join(lines)
+    prefixed_html = f"{escape_html(prefix)}\n{body_html}".strip() if body_html is not None else None
+    return prefixed_html, f"{prefix}\n{body_plain}".strip()
+
 def build_discord_webhook_relay_body(message_db_id, chat, lang, body_discord):
     """Reconstruct a webhook copy's full content (reply + forward prefix lines,
     then body) so that editing the original keeps the prefixes the initial relay
     added — a webhook message stores them inline in its content rather than as a
     native reply reference."""
-    row = db.cur.execute(
-        "SELECT reply_to_message_id, forward_type, forward_name FROM messages WHERE id=?",
-        (message_db_id,)
-    ).fetchone()
-    reply_to_msg_db_id = row["reply_to_message_id"] if row else None
-    forward_type = row["forward_type"] if row else None
-    forward_name = row["forward_name"] if row else None
-
-    body = body_discord
-    fwd_line = _forward_line(forward_type, forward_name, lang)
-    if fwd_line:
-        body = f"{fwd_line}\n{body}".strip()
-
-    reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(chat, lang, reply_to_msg_db_id)
-    prefix = _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_message_id) or reply_line
-    if prefix:
-        body = f"{prefix}\n{body}"
-    return body
+    lines = relay_edit_prefix_lines(message_db_id, chat, lang, webhook_link=True)
+    return "\n".join(lines + [body_discord]).strip()
 
 async def relay_message(
     *,
@@ -456,6 +486,7 @@ async def relay_message(
     is_bot_sender=False,
     avatar_url=None,
     gallery_urls=None,
+    gallery_fallback=None,
     targets=None,
     file_count=None,
     file_count_source="telegram",
@@ -482,6 +513,16 @@ async def relay_message(
     chat from failing the whole relay. `targets` overrides the bridge's chat
     list, which is how feed posts reach the chats `feed_targets` resolves.
     Returns the new `messages.id`.
+
+    `gallery_fallback` makes the GALLERY links a per-target matter: the
+    `/allow-files` consent is each community's own, so a chat whose community
+    never gave it must not be handed the links even when the chat next to it
+    in the bridge asked for them. It is the body such a chat gets instead —
+    ``{"text", "discord", "telegram_html", "file_count"}``, the same message
+    rendered with the "[N files from Telegram]" marker standing in for the
+    files — and its presence is what turns the per-target check on. Left
+    ``None`` (feed posts, whose attachments need no consent at all) the links
+    go to every target, as they always did.
 
     `body_renderer` is for senders whose text is not one fixed string but
     something written per reader — wiki activity, which is composed in each
@@ -565,6 +606,16 @@ async def relay_message(
             current_telegram_html = rendered.get("telegram_html", None)
             current_embed = rendered.get("embed")
 
+        current_gallery_urls = gallery_urls
+        eff_file_count = telegram_file_count
+        if (gallery_urls and gallery_fallback is not None
+                and not db.chat_file_consent(chat["platform"], chat["chat_id"], bridge_id)):
+            current_gallery_urls = None
+            current_text = gallery_fallback.get("text", current_text)
+            current_discord_text = gallery_fallback.get("discord") or current_text
+            current_telegram_html = gallery_fallback.get("telegram_html")
+            eff_file_count = gallery_fallback.get("file_count")
+
         eff_forward_type = None if is_bot_sender else forward_type
         eff_forward_name = None if is_bot_sender else forward_name
 
@@ -581,19 +632,19 @@ async def relay_message(
             current_discord_text = f"{ext_line}\n{current_discord_text}".strip()
             if current_telegram_html is not None:
                 current_telegram_html = f"{escape_html(ext_line)}\n{current_telegram_html}".strip()
-        if telegram_file_count is not None:
-            marker = localized_file_count_text(telegram_file_count, lang)
+        if eff_file_count is not None:
+            marker = localized_file_count_text(eff_file_count, lang)
             current_text = current_text.replace(
-                f"__TG_FILES_{telegram_file_count}__",
+                f"__TG_FILES_{eff_file_count}__",
                 marker
             )
             current_discord_text = current_discord_text.replace(
-                f"__TG_FILES_{telegram_file_count}__",
+                f"__TG_FILES_{eff_file_count}__",
                 marker
             )
             if current_telegram_html is not None:
                 current_telegram_html = current_telegram_html.replace(
-                    f"__TG_FILES_{telegram_file_count}__",
+                    f"__TG_FILES_{eff_file_count}__",
                     escape_html(marker)
                 )
 
@@ -619,7 +670,8 @@ async def relay_message(
                 current_telegram_html = current_telegram_html.replace("__TG_VIDEO_NOTE__", escape_html(video_marker))
 
         current_text, current_discord_text, current_telegram_html = apply_gallery_links(
-            chat["platform"], current_text, current_discord_text, current_telegram_html, gallery_urls
+            chat["platform"], current_text, current_discord_text, current_telegram_html,
+            current_gallery_urls
         )
 
         if file_count:
@@ -660,9 +712,9 @@ async def relay_message(
             (msg_id, chat["platform"], chat["chat_id"], sent_id)
         )
 
-        if chat["platform"] == "telegram" and gallery_urls and len(gallery_urls) > 1:
+        if chat["platform"] == "telegram" and current_gallery_urls and len(current_gallery_urls) > 1:
             await _send_telegram_gallery_followups(
-                chat, msg_id, gallery_urls[1:], send_to_chat_func,
+                chat, msg_id, current_gallery_urls[1:], send_to_chat_func,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
                 is_bot_sender=is_bot_sender,

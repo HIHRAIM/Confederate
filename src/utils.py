@@ -485,10 +485,6 @@ def localized_forward_unknown(lang):
     lets users forbid being named (i18n key `forward_unknown`)."""
     return _LOCALE["forward_unknown"].get(lang, _LOCALE["forward_unknown"][DEFAULT_LANG])
 
-def localized_replying(name, lang):
-    """The '(replying to <name>)' line (i18n key `replying`)."""
-    return _LOCALE["replying"].get(lang, _LOCALE["replying"][DEFAULT_LANG]).format(name=name)
-
 def localized_bridge_join(channel, server, lang):
     """The announcement other chats of the bridge get when a chat joins
     (i18n key `bridge_join`)."""
@@ -648,10 +644,82 @@ def _normalize_service_chat_key(platform, raw_key):
         return None, single
     return None, None
 
-async def send_service_event(event_key, **kwargs):
+async def describe_chat_key(platform, chat_key, lang):
+    """A chat key written the way the service chats show it:
+    ``Name (Parent; parentID:ID)``.
+
+    An id on its own says nothing to the person reading the service chat, so
+    every id published there is preceded by the name it belongs to and
+    wrapped in brackets together with the name of whatever contains it — a
+    channel carries its server, a Telegram topic carries its group. A chat
+    with nothing above it (a whole group, a DM) keeps the short
+    ``Name (ID)`` form, since there is no second name to give.
+
+    Names are resolved live and every failure falls back to the localized
+    "unknown" rather than raising: this runs on the path that *reports*
+    failures, and must not become one. The bot halves are imported at the
+    call site, like everywhere else in this module."""
+    key = str(chat_key or "").strip()
+    if not key:
+        return key
+    unknown = localized_bridge_info("unknown", lang)
+
+    if platform == "discord":
+        from discord_bot import bot as dc
+        if key.startswith("dm:"):
+            user_id = key.split(":", 1)[1]
+            name = unknown
+            try:
+                user = dc.get_user(int(user_id))
+                if user is not None:
+                    name = user.display_name or str(user)
+            except Exception:
+                pass
+            return f"{name} ({key})"
+        try:
+            guild_id, channel_id = key.split(":", 1)
+            guild = dc.get_guild(int(guild_id))
+            channel = None
+            if guild is not None:
+                channel = guild.get_channel_or_thread(int(channel_id))
+            if channel is None:
+                channel = dc.get_channel(int(channel_id))
+            server_name = (guild.name if guild else None) or unknown
+            channel_name = getattr(channel, "name", None) or unknown
+            return f"{channel_name} ({server_name}; {key})"
+        except Exception:
+            return f"{unknown} ({key})"
+
+    if platform == "telegram":
+        from telegram_bot import bot as tg
+        try:
+            chat_id_str, thread_str = key.split(":", 1)
+            thread_id = int(thread_str)
+        except Exception:
+            return f"{unknown} ({key})"
+        group_name = unknown
+        try:
+            tg_chat = await tg.get_chat(int(chat_id_str))
+            group_name = tg_chat.title or getattr(tg_chat, "full_name", None) or unknown
+        except Exception:
+            pass
+        if thread_id == 0:
+            return f"{group_name} ({chat_id_str})"
+        topic_name = localized_bridge_info("topic", lang, thread_id=thread_id)
+        return f"{topic_name} ({group_name}; {key})"
+
+    return f"{unknown} ({key})"
+
+async def send_service_event(event_key, chat_platform=None, **kwargs):
     """Report an operational event to the service chats of both platforms,
     each in its own language. Every send is guarded — the service chats are
     where failures are reported, so a failure there must stay a log line.
+
+    `chat_platform` names the platform of the event's `chat_key` field, which
+    is what lets `describe_chat_key` turn it into the ``Name (Parent;
+    parentID:ID)`` form the service chats are read in. It is resolved once per
+    language rather than once per chat, so several service chats sharing a
+    language cost one lookup.
 
     Lives here rather than in main.py so that the two bot halves can report
     without importing the entry module, which under `python main.py` would
@@ -662,13 +730,29 @@ async def send_service_event(event_key, **kwargs):
 
     _logger = _logging.getLogger("bridge.main")
 
+    described = {}
+
+    async def _fields(lang):
+        """The event's fields with `chat_key` written out for this language."""
+        if not chat_platform or "chat_key" not in kwargs:
+            return kwargs
+        if lang not in described:
+            fields = dict(kwargs)
+            try:
+                fields["chat_key"] = await describe_chat_key(
+                    chat_platform, kwargs["chat_key"], lang)
+            except Exception:
+                pass
+            described[lang] = fields
+        return described[lang]
+
     for chat_key in SERVICE_CHATS.get("telegram", set()):
         try:
             chat_id, thread = _normalize_service_chat_key("telegram", chat_key)
             if chat_id is None:
                 continue
             lang = get_chat_lang(f"{chat_id}:{thread}")
-            text = localized_service_event(event_key, lang, **kwargs)
+            text = localized_service_event(event_key, lang, **await _fields(lang))
             await tg.send_message(
                 int(chat_id),
                 text,
@@ -693,7 +777,7 @@ async def send_service_event(event_key, **kwargs):
                 effective_guild_id = ch.guild.id
             lang_key = f"{effective_guild_id}:{channel_id}" if effective_guild_id is not None else str(channel_id)
             lang = get_chat_lang(lang_key)
-            text = localized_service_event(event_key, lang, **kwargs)
+            text = localized_service_event(event_key, lang, **await _fields(lang))
             if ch:
                 await ch.send(text)
         except Exception as e:

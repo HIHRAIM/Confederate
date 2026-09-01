@@ -175,7 +175,13 @@ def server_bridge_ids(platform, server_id):
 def remove_chat_from_bridge(chat_id):
     """Detach a chat and clean up everything keyed on it (settings, admins,
     reachability, pending consents). When the last chat leaves, the bridge
-    itself and its per-bridge state (admins, rules, webhooks) are deleted too.
+    itself and its per-bridge state (admins, rules, webhooks, the
+    `/allow-files local` consent) are deleted too.
+
+    The file consent has to go with the bridge for the same reason the
+    webhook scope does: bridge numbers are reused (`next_free_bridge_id`
+    fills holes), and a leftover row would hand the next bridge to take that
+    number a consent nobody in it ever gave.
 
     Returns None when the chat was not in a bridge, otherwise
     ``{"bridge_id", "bridge_deleted"}`` so the caller can announce the removal.
@@ -198,6 +204,7 @@ def remove_chat_from_bridge(chat_id):
         cur.execute("DELETE FROM bridge_admins WHERE bridge_id=?", (bridge_id,))
         cur.execute("DELETE FROM bridge_rules WHERE bridge_id=?", (bridge_id,))
         cur.execute("DELETE FROM bridge_webhooks WHERE bridge_id=?", (bridge_id,))
+        cur.execute("DELETE FROM bridge_file_consents WHERE bridge_id=?", (bridge_id,))
         bridge_deleted = True
 
     conn.commit()
