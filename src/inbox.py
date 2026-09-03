@@ -442,6 +442,16 @@ async def start_all_inbox_bots():
         except Exception as e:
             logger.warning("inbox bot %s failed to start: %s", row["bot_id"], e)
 
+async def stop_all_inbox_bots():
+    """Take every running receiver bot offline — called from main() on the
+    way out, so that a stop closes their sessions instead of leaving them to
+    the process being killed."""
+    for bot_id in list(_runtimes):
+        try:
+            await stop_inbox_bot(bot_id)
+        except Exception as e:
+            logger.warning("inbox bot %s failed to stop: %s", bot_id, e)
+
 async def _on_inbox_message(message: Message):
     """Front door of a receiver bot's private chat.
 

@@ -570,6 +570,23 @@ CREATE TABLE IF NOT EXISTS inbox_bans (
     banned_at INTEGER,
     PRIMARY KEY (bot_id, user_id)
 );
+
+-- avatar_assets: where each bundled avatar picture (src/assets/) currently
+-- lives on Discord. name is the file name, sha256 the content that was
+-- uploaded -- replacing the file in the repository makes the next use upload
+-- it again -- and channel_id/message_id the upload itself. url/url_ts are the
+-- last CDN link read off that message, kept only to spare a fetch after a
+-- restart: Discord signs attachment links and they expire within a day, so
+-- the message is the durable part and the link never is. Written and read by
+-- discord_bot/feeds.py: avatar_asset_url.
+CREATE TABLE IF NOT EXISTS avatar_assets (
+    name TEXT PRIMARY KEY,
+    sha256 TEXT,
+    channel_id TEXT,
+    message_id TEXT,
+    url TEXT,
+    url_ts INTEGER
+);
 """
 
 _COLUMN_ADDITIONS = [

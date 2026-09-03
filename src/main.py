@@ -7,9 +7,11 @@ path: ``python main.py``.
 What lives here is the cross-platform machinery: the followed-source poller
 (scheduling, backoff and throttling; the readers themselves are in sources/),
 the poll closer, the consent/verification cleanup, the daily reachability
-sweep, the setup-deadline sweep and the inbox housekeeping. Loops that only
-concern Discord — status, backups, dead chats and topics, appeal maintenance
-— are started by the client itself in discord_bot/client.py. The service-chat
+sweep, the setup-deadline sweep and the inbox housekeeping. The loops the
+Discord client starts for itself in discord_bot/client.py are not repeated
+here — status, backups, dead chats and topics, appeal maintenance, and the
+rules poster (bridge_rules_loop), which posts into both platforms but needs
+the Discord client ready before it can post into either. The service-chat
 reporter every loop uses to complain lives in utils.py, where both bot halves
 can reach it without importing this module.
 
@@ -31,82 +33,11 @@ import db
 from config import DISCORD_TOKEN
 from discord_bot import bot as discord_bot
 from telegram_bot import main as tg_main
-from utils import describe_chat_key, get_chat_lang, send_service_event
+from utils import send_service_event
 
 db.init()
 db.cleanup_old_messages(days=30)
 db.rule_since()
-
-async def rules_loop():
-    """Legacy rules poster, kept alongside DiscordBot.bridge_rules_loop.
-
-    It reads bridge_rules.hours as HOURS while the command that writes the
-    column stores MINUTES, so with the intervals the commands produce its
-    time check effectively never passes and the client-side loop is what
-    actually posts. Left running because it costs one query a minute and
-    removing it is a behaviour change, not a refactor — see the findings list
-    in the stage-1 report."""
-    import time
-    from discord_bot import bot as dc
-    from telegram_bot import bot as tg
-
-    while True:
-        now = int(time.time())
-        rows = db.cur.execute("SELECT * FROM bridge_rules").fetchall()
-
-        for r in rows:
-            try:
-                if now - r["last_post_ts"] < r["hours"] * 3600:
-                    continue
-
-                if r["messages"] is not None and r["message_counter"] < r["messages"]:
-                    continue
-
-                db.cur.execute(
-                    """
-                    UPDATE bridge_rules
-                    SET last_post_ts=?, message_counter=0
-                    WHERE bridge_id=?
-                    """,
-                    (now, r["bridge_id"])
-                )
-                db.conn.commit()
-
-                chats = db.cur.execute(
-                    "SELECT * FROM chats WHERE bridge_id=?",
-                    (r["bridge_id"],)
-                ).fetchall()
-
-                for c in chats:
-                    try:
-                        if c["platform"] == "discord":
-                            channel_id = int(c["chat_id"].split(":")[1])
-                            channel = dc.get_channel(channel_id)
-                            if not channel:
-                                try:
-                                    channel = await dc.fetch_channel(channel_id)
-                                except Exception:
-                                    channel = None
-                            if channel:
-                                await channel.send(r["content"])
-
-                        elif c["platform"] == "telegram":
-                            chat_id, thread = c["chat_id"].split(":")
-                            await tg.send_message(
-                                int(chat_id),
-                                r["content"],
-                                message_thread_id=int(thread) or None
-                            )
-                    except Exception as e:
-                        target = await describe_chat_key(
-                            c["platform"], c["chat_id"], get_chat_lang(c["chat_id"]))
-                        await send_service_event(
-                            "daily_loop_error",
-                            error=f"RULES SEND ERROR (bridge {r['bridge_id']} -> {target}): {e}")
-            except Exception as e:
-                await send_service_event("daily_loop_error", error=f"RULES LOOP ERROR: {e}")
-
-        await asyncio.sleep(60)
 
 async def pending_cleanup_loop():
     """
@@ -266,12 +197,15 @@ async def feed_loop():
     poll may produce lives there rather than in the slice taken here."""
     import aiohttp
     from discord_bot import (
-        bot as dc, feed_module, feed_stale_since, relay_feed_post, warm_feed_avatars,
+        bot as dc, feed_module, feed_stale_since, relay_feed_post, warm_avatar_assets,
     )
     from utils import rate_limit_ok, FeedError
 
     await dc.wait_until_ready()
-    await warm_feed_avatars()
+    try:
+        await warm_avatar_assets()
+    except Exception as e:
+        logger.warning("warming the avatar assets failed: %s", e)
     while True:
         try:
             due = _feeds_due(time.time())
@@ -497,25 +431,46 @@ async def daily_check_loop():
         await asyncio.sleep(24 * 3600)
 
 async def main():
-    """Start both bots and the cross-platform loops as one task group, then
-    wait. The service chats are told once the bots have had five seconds to
-    connect, and told again on the way out however the gather ends.
+    """Start both bots and the cross-platform loops, then wait for whichever
+    of them ends first and take the others down with it.
+
+    Waiting for *all* of them is what a `gather` would do, and it is wrong
+    here. aiogram installs its own SIGINT/SIGTERM handler and answers the
+    signal by stopping its polling neatly — at which point the seven other
+    tasks, several of them asleep for a day at a time, hold the process open
+    for as long as the service manager is willing to wait, and it ends the
+    stop with SIGKILL. That is a killing in the middle of whatever SQLite was
+    writing, and no "bot_stopped" in the service chats, on every single
+    restart. Ending on the first task to finish and cancelling the rest is
+    what makes the bot close when it is asked to.
+
+    It also means a task that dies of its own accord stops the bot rather
+    than leaving it running with a piece missing, which is the same trade the
+    fandom bot makes: half a bridge that nobody is told about is worse than a
+    restart. The unit file has to carry `Restart=` for that to be true — the
+    loops themselves swallow their own errors, so this is the path of last
+    resort, and the reason it is a task's *name* that goes into the log line.
+
+    The shutdown is reported before anything is cancelled and the sessions
+    are closed last: the report goes out through the very halves being taken
+    down, so it has to be sent while they are still there.
 
     The registered receiver bots (inbox.py) get their polling tasks in the
     same breath — each keeps its own, so one of them being taken offline for
-    a new token leaves the others polling."""
-    from inbox import start_all_inbox_bots
+    a new token leaves the others polling — and are stopped together at the
+    end."""
+    from inbox import start_all_inbox_bots, stop_all_inbox_bots
+    from telegram_bot import bot as tg
 
     tasks = [
-        asyncio.create_task(tg_main()),
-        asyncio.create_task(discord_bot.start(DISCORD_TOKEN)),
-        asyncio.create_task(rules_loop()),
-        asyncio.create_task(pending_cleanup_loop()),
-        asyncio.create_task(daily_check_loop()),
-        asyncio.create_task(poll_loop()),
-        asyncio.create_task(feed_loop()),
-        asyncio.create_task(inbox_maintenance_loop()),
-        asyncio.create_task(setup_deadline_loop()),
+        asyncio.create_task(tg_main(), name="telegram"),
+        asyncio.create_task(discord_bot.start(DISCORD_TOKEN), name="discord"),
+        asyncio.create_task(pending_cleanup_loop(), name="pending-cleanup"),
+        asyncio.create_task(daily_check_loop(), name="daily-check"),
+        asyncio.create_task(poll_loop(), name="polls"),
+        asyncio.create_task(feed_loop(), name="feeds"),
+        asyncio.create_task(inbox_maintenance_loop(), name="inbox-maintenance"),
+        asyncio.create_task(setup_deadline_loop(), name="setup-deadline"),
     ]
 
     await start_all_inbox_bots()
@@ -524,9 +479,30 @@ async def main():
     await send_service_event("bot_started")
 
     try:
-        await asyncio.gather(*tasks)
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            if task.cancelled():
+                continue
+            error = task.exception()
+            if error:
+                logger.error("the %s task stopped: %s", task.get_name(), error)
+            else:
+                logger.info("the %s task finished, taking the rest down with it",
+                            task.get_name())
     finally:
-        await send_service_event("bot_stopped")
+        try:
+            await send_service_event("bot_stopped")
+        except Exception:
+            logger.warning("the shutdown could not be reported to the service chats")
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await stop_all_inbox_bots()
+        for close in (tg.session.close(), discord_bot.close()):
+            try:
+                await close
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     asyncio.run(main())

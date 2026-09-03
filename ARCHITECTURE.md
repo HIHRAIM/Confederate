@@ -162,6 +162,7 @@ The clock itself is asymmetric. Discord publishes `Guild.me.joined_at`, so the D
 | Wiki: event meaning, filters, wording | `wiki_events.py` |
 | Wiki: delivery, embeds, burst merging | `discord_bot/wiki.py` |
 | Feeds: attach/relay/avatars, `FEED_KINDS` | `discord_bot/feeds.py`, live channel posts in `telegram_bot/feeds.py` |
+| Bundled avatars: the files, where they are hosted | `src/assets/`, `discord_bot/feeds.py: avatar_asset_url`, `db/assets.py` |
 | Feeds: polling scheduler | `main.py: feed_loop` |
 | Appeals | `discord_bot/appeals.py`, storage in `db/appeals.py` |
 | Inbox conversations: receiver bots, threads/topics, anonymization, bans | `inbox.py`, storage in `db/inbox.py`, commands in the two `commands/inbox.py` |

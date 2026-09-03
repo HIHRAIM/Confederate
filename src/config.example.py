@@ -51,6 +51,9 @@ BACKUP_CHATS = {
 # sources). The first reachable channel is used; the CDN links of the uploaded
 # attachments are handed out in the relayed copies. The bot never deletes these
 # uploads on its own — a link that has been handed out keeps working.
+# The bundled avatar pictures (src/assets/) are hosted here too, uploaded once
+# and re-uploaded by themselves if the message is ever deleted, so this channel
+# has to stay reachable for webhook copies and feed posts to keep their faces.
 GALLERY = {
     CHAT_ID,
     CHAT_ID,

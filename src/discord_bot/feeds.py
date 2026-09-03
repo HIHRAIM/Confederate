@@ -7,12 +7,23 @@ own because feeds are their main consumer; the Telegram file re-upload and
 the relay's delete path borrow them (via call-site imports on their side or
 deferred imports here, keeping the import graph acyclic).
 
+The avatars themselves are files in `src/assets/`, and that directory is the
+registry: nothing lists them by hand, so a picture put there is hosted with
+no code change and one the code names but nobody shipped is named in the log
+at start-up. Where each of them currently lives on Discord is a row in
+`avatar_assets` (db/assets.py), never a constant here — the id of a message
+somebody can delete is not something to write down in source, which is how
+every avatar of this bot went missing at once.
+
 Not this module's zone: fetching and parsing posts (sources/*), the polling
 schedule (main.py: feed_loop), or the /set*feed commands (commands/feeds.py).
 """
+import asyncio
 import datetime
+import hashlib
 import io
 import logging
+import os
 import time
 
 import aiohttp
@@ -32,32 +43,39 @@ from discord_bot.relay import deliver_discord_relay, deliver_telegram_relay
 
 logger = logging.getLogger("bridge.discord")
 
-_AVATAR_HOST_CHANNEL = 1476645334904995860
-_AVATAR_ASSET_MESSAGES = {
-    "user-green.png": 1521522655931404431,
-    "user-yellow.png": 1521522710826582086,
-    "user-red.png": 1521522731022287030,
-    "user-grey.png": 1521522764953944224,
-    "user-blue.png": 1521522780766736404,
+AVATAR_ASSET_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+
+TG_AVATAR_ASSETS = {
+    1: "user-green.png", 2: "user-green.png",
+    3: "user-yellow.png", 4: "user-yellow.png",
+    5: "user-red.png", 6: "user-red.png",
+    7: "user-grey.png", 8: "user-grey.png",
+    9: "user-blue.png", 0: "user-blue.png",
 }
-_AVATAR_ASSET_URLS = {
-    "user-green.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522655931404431/user-green.png?ex=6a4523e5&is=6a43d265&hm=08b6f6e47d4195d298a50441ff8620a514b8d7306c9f971f57b14befd655b1bc&",
-    "user-yellow.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522710826582086/user-yellow.png?ex=6a4523f2&is=6a43d272&hm=04e6b3767e8934487c9c75703e2636c7a4994bb0e2f9109c9b9b9bc4947c14b5&",
-    "user-red.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522731022287030/user-red.png?ex=6a4523f7&is=6a43d277&hm=11189f7cff40f0e44576b110520b326eed1763bdd482c8da70a6c32fd990b107&",
-    "user-grey.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522764953944224/user-grey.png?ex=6a4523ff&is=6a43d27f&hm=0f816c050fcc289a66b86a201d2aaf7e381301b4b3d011e20699b9d570be7a05&",
-    "user-blue.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1521522780766736404/user-blue.png?ex=6a452403&is=6a43d283&hm=bc9ab7af78b08bc6917f416a9dfccbdaccfd9318838d37d3e1046fb35f68ee03&",
-    "dc-user-green.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027687759912/dc-user-green.png?ex=6a679b97&is=6a664a17&hm=fb8ab5f0cb4c06ae28e587cd705411c83caac3de52950be7a1a870065769f65b&",
-    "dc-user-yellow.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027113013268/dc-user-yellow.png?ex=6a679b97&is=6a664a17&hm=9cbf2a1d717b86b830213261df4730b64177a6f3986861af3067dad79348d52a&",
-    "dc-user-red.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997028212183050/dc-user-red.png?ex=6a679b98&is=6a664a18&hm=a89e920798df74f9e2245d97decc32552cf7b9a54cd0e0483b784aed5e5b0962&",
-    "dc-user-grey.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027939291298/dc-user-grey.png?ex=6a679b98&is=6a664a18&hm=0c5c29fdd253ef70a372ad0f27b9d3431a30b132daff98e2c3035e8e72e7428d&",
-    "dc-user-blue.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1530997027390099496/dc-user-blue.png?ex=6a679b97&is=6a664a17&hm=aef87205bef54db718c5e47ce0ab86e1b8a9e0828a1e2a39eed775be1e50a764&",
-    "user-bsky.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1532701711175647242/user-bsky.png?ex=6a6dcf34&is=6a6c7db4&hm=6b66f092fd80685e7f9fda2c4037b91b338edf14ad41e0060ef825bd5d2d21d7&",
-    "user-yt.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1532701711481962647/user-yt.png?ex=6a6dcf34&is=6a6c7db4&hm=8484ab463794c673a832946a227ad284fa3742a1f1169f30080f16d9bc220cbe&",
-    "channel.png": "https://cdn.discordapp.com/attachments/1476645334904995860/1531203664310698024/channel.png?ex=6a685c09&is=6a670a89&hm=7773ca12eb69c1ece71a53683ef04b2e38accfa1b825dc0989aadd8456919a4b&",
-    "wiki-fandom.png": "https://media.discordapp.net/attachments/1476645334904995860/1533896061016608882/wiki-fandom.png?ex=6a722787&is=6a70d607&hm=5b25d503878006244fa4a31b15c5b39676c1beb019891ad3c480dd08745305f3&=&format=webp&quality=lossless",
-    "wiki-miraheze.png": "https://media.discordapp.net/attachments/1476645334904995860/1533896061503013005/wiki-miraheze.png?ex=6a722787&is=6a70d607&hm=76fcd9fff4a00f36d0ac0a6776cee5ff832baff01bd9df6ed6f12920d92a7817&=&format=webp&quality=lossless",
-    "Confederate.png": "https://media.discordapp.net/attachments/1476645334904995860/1533896606670131311/Confederate.png?ex=6a722809&is=6a70d689&hm=6c9722bec1c60cc3d5841a159368e23f5e58ac210c46c9fb47c1af7ff63d77c1&=&format=webp&quality=lossless&width=1024&height=1024",
-}
+
+def bundled_avatar_assets():
+    """Every avatar picture the repository ships: the contents of `assets/`.
+
+    The directory is the registry, which is why no list of names appears
+    anywhere in this module. A picture put there is warmed and hosted without
+    a code change, and one the code names but nobody shipped is reported by
+    `warm_avatar_assets` instead of turning up as a relayed copy with no
+    face."""
+    try:
+        return sorted(f for f in os.listdir(AVATAR_ASSET_DIR)
+                      if f.lower().endswith(".png"))
+    except OSError:
+        return []
+
+def required_avatar_assets():
+    """The assets the code itself asks for by name: the two placeholder sets,
+    the followed-source kinds and the wiki hosts. Anything here that `assets/`
+    does not hold is a picture some relayed copy is going to go without."""
+    names = set(TG_AVATAR_ASSETS.values()) | set(_DC_AVATAR_ASSETS.values())
+    names |= {spec["avatar_asset"] for spec in FEED_KINDS.values()}
+    names |= set(WIKI_AVATAR_ASSETS.values()) | {WIKI_DEFAULT_AVATAR}
+    return names
 
 WIKI_AVATAR_ASSETS = {
     "fandom": "wiki-fandom.png",
@@ -78,75 +96,143 @@ def wiki_avatar_asset(source):
 
 _avatar_url_cache = {}
 _AVATAR_URL_TTL = 12 * 3600
+_avatar_failed = {}
+_AVATAR_RETRY_AFTER = 3600
+_avatar_lock = asyncio.Lock()
 
-async def _find_avatar_asset_message(asset):
-    """Locate an asset's host message by attachment filename and remember its id.
-
-    Assets uploaded in one go share a single message, so their ids can't all be
-    listed by hand; the host channel is scanned once and the answer cached in
-    ``_AVATAR_ASSET_MESSAGES`` alongside the hand-written ones."""
+def _avatar_asset_file(asset):
+    """The bundled file's bytes and their sha256, or ``(None, None)`` when the
+    repository holds no such asset."""
     try:
-        ch = bot.get_channel(_AVATAR_HOST_CHANNEL) or await bot.fetch_channel(_AVATAR_HOST_CHANNEL)
-        async for msg in ch.history(limit=300):
-            if any(a.filename == asset for a in msg.attachments):
-                _AVATAR_ASSET_MESSAGES[asset] = msg.id
-                return msg
+        with open(os.path.join(AVATAR_ASSET_DIR, asset), "rb") as f:
+            data = f.read()
+    except OSError:
+        return None, None
+    return data, hashlib.sha256(data).hexdigest()
+
+async def _read_avatar_asset_url(row):
+    """The signed link of the attachment in an asset's host message, read
+    afresh, or None when that message is no longer reachable."""
+    try:
+        channel_id = int(row["channel_id"])
+        ch = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+        msg = await ch.fetch_message(int(row["message_id"]))
     except Exception as e:
-        logger.warning("avatar asset lookup failed (%s): %s", asset, e)
-    return None
+        logger.info("avatar asset %s: its host message is unreachable (%s)",
+                    row["name"], e)
+        return None
+    match = discord.utils.find(lambda a: a.filename == row["name"], msg.attachments)
+    attachment = match or (msg.attachments[0] if msg.attachments else None)
+    return attachment.url if attachment is not None else None
 
-async def warm_feed_avatars():
-    """Resolve the avatars of the followed sources once, before the first post
-    needs them.
+async def _upload_avatar_asset(asset, data, digest):
+    """Put a bundled avatar into the GALLERY channel and remember the message.
 
-    Their literal fallback URLs carry a signature that expires within days, so
-    the host-message lookup is what keeps them working — this makes a failure of
-    that lookup visible in the log instead of showing up as posts silently
-    losing their avatar."""
-    assets = [spec["avatar_asset"] for spec in FEED_KINDS.values()]
-    assets += list(WIKI_AVATAR_ASSETS.values()) + [WIKI_DEFAULT_AVATAR]
-    for asset in dict.fromkeys(assets):
-        url = await avatar_asset_url(asset)
-        if asset in _AVATAR_ASSET_MESSAGES:
-            logger.info("Feed avatar %s resolved from its host message", asset)
-        else:
-            logger.warning(
-                "Feed avatar %s could not be found in channel %s — falling back to a "
-                "stored link, which stops working once its signature expires",
-                asset, _AVATAR_HOST_CHANNEL,
-            )
-        if not url:
-            logger.warning("Feed avatar %s has no usable URL at all", asset)
+    GALLERY is where the bot already keeps the files it hands out as links:
+    it is picked for reachability and for exactly the permissions this needs,
+    and the bot never deletes anything there. A deletion by somebody else
+    costs one re-upload instead of a broken picture in every relayed copy."""
+    channel = await resolve_gallery_channel()
+    if channel is None:
+        logger.warning("avatar asset %s: no reachable gallery channel to upload it to",
+                       asset)
+        return None
+    try:
+        sent = await channel.send(file=discord.File(io.BytesIO(data), filename=asset))
+    except Exception as e:
+        logger.warning("avatar asset %s upload failed (channel=%s): %s",
+                       asset, channel.id, e)
+        return None
+    url = sent.attachments[0].url if sent.attachments else None
+    if not url:
+        return None
+    db.save_avatar_asset(asset, digest, channel.id, sent.id, url)
+    logger.info("avatar asset %s uploaded to channel %s", asset, channel.id)
+    return url
 
 async def avatar_asset_url(asset):
-    """Fresh Discord CDN URL for a bundled avatar asset, fetched from its host
-    message (signature refreshed on each fetch) and cached. Falls back to the
-    literal signed URL if the live fetch fails."""
+    """A Discord-usable link to one bundled avatar.
+
+    Discord signs attachment links and they stop working within a day, so
+    what is kept is not the link but the *message* the file was uploaded in:
+    the link is read off it again whenever the cached one ages out. When
+    there is no such message any more — deleted, never made, or the file in
+    `assets/` replaced since — the file is uploaded again and the new message
+    recorded. That is the whole point of the indirection: it needs nobody to
+    leave a message alone, which the list of hand-written ids it replaces did
+    need, and did not get.
+
+    Returns None when the asset is neither bundled nor stored; the caller
+    then posts without an avatar rather than with a broken one. A failure is
+    remembered for an hour, so a gallery channel that is briefly unreachable
+    costs one attempt rather than one per relayed message — and is tried
+    again afterwards, since the bot is not restarted for such things."""
     now = time.time()
     cached = _avatar_url_cache.get(asset)
     if cached and now - cached[1] < _AVATAR_URL_TTL:
         return cached[0]
+    failed_at = _avatar_failed.get(asset)
+    if failed_at and now - failed_at < _AVATAR_RETRY_AFTER:
+        return None
 
-    url = None
-    msg = None
-    msg_id = _AVATAR_ASSET_MESSAGES.get(asset)
-    if msg_id:
-        try:
-            ch = bot.get_channel(_AVATAR_HOST_CHANNEL) or await bot.fetch_channel(_AVATAR_HOST_CHANNEL)
-            msg = await ch.fetch_message(msg_id)
-        except Exception as e:
-            logger.warning("avatar asset fetch failed (%s): %s", asset, e)
-            msg = None
-    if msg is None:
-        msg = await _find_avatar_asset_message(asset)
-    if msg is not None and msg.attachments:
-        match = discord.utils.find(lambda a: a.filename == asset, msg.attachments)
-        url = (match or msg.attachments[0]).url
-    if url is None:
-        url = _AVATAR_ASSET_URLS.get(asset)
-    if url:
-        _avatar_url_cache[asset] = (url, now)
-    return url
+    async with _avatar_lock:
+        now = time.time()
+        cached = _avatar_url_cache.get(asset)
+        if cached and now - cached[1] < _AVATAR_URL_TTL:
+            return cached[0]
+
+        data, digest = _avatar_asset_file(asset)
+        row = db.get_avatar_asset(asset)
+        url = None
+
+        if row and row["message_id"] and (digest is None or row["sha256"] == digest):
+            if row["url"] and now - (row["url_ts"] or 0) < _AVATAR_URL_TTL:
+                url = row["url"]
+            else:
+                url = await _read_avatar_asset_url(row)
+                if url:
+                    db.set_avatar_asset_url(asset, url)
+
+        if url is None and data is not None:
+            url = await _upload_avatar_asset(asset, data, digest)
+
+        if url is None and row and row["url"]:
+            url = row["url"]
+            logger.warning("avatar asset %s: falling back to a stored link that may "
+                           "have expired", asset)
+
+        if url:
+            _avatar_failed.pop(asset, None)
+            _avatar_url_cache[asset] = (url, time.time())
+            return url
+
+        _avatar_failed[asset] = time.time()
+        if data is None:
+            logger.warning("avatar asset %s is not in %s", asset, AVATAR_ASSET_DIR)
+        else:
+            logger.warning("avatar asset %s could not be published", asset)
+        return None
+
+async def warm_avatar_assets():
+    """Resolve every bundled avatar once, before the first message needs one.
+
+    One pass over `assets/`, one lookup each and no scanning of any channel:
+    on an ordinary restart the stored links are still young and this costs no
+    Discord call at all, and on the first start after a file changed it costs
+    one upload for that file. Doing it here rather than purely on demand is
+    what turns a missing asset into two lines in the log at start-up instead
+    of a silently faceless copy hours later."""
+    bundled = bundled_avatar_assets()
+    missing = sorted(required_avatar_assets() - set(bundled))
+    if missing:
+        logger.warning("avatar assets the code asks for but %s does not hold: %s",
+                       AVATAR_ASSET_DIR, ", ".join(missing))
+    unavailable = [asset for asset in bundled if not await avatar_asset_url(asset)]
+    if unavailable:
+        logger.warning("avatar assets that could not be published: %s",
+                       ", ".join(unavailable))
+    else:
+        logger.info("%d avatar assets ready", len(bundled))
 
 _DC_AVATAR_ASSETS = {
     1: "dc-user-green.png", 2: "dc-user-green.png",

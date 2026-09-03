@@ -35,8 +35,9 @@ from discord_bot.feeds import (
     gallery_upload,
     gallery_upload_budget,
     relay_feed_post,
-    warm_feed_avatars,
+    warm_avatar_assets,
     FEED_KINDS,
+    TG_AVATAR_ASSETS,
 )
 from discord_bot import appeals
 from discord_bot import events

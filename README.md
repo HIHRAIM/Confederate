@@ -112,6 +112,7 @@ src/
   sources/             feed readers, one per kind, behind one interface
     bluesky.py  youtube.py  telegram.py  wiki.py  fandom.py
 
+  assets/              the bundled avatar pictures, hosted on demand
   i18n/                the six localization files
 ```
 
@@ -303,6 +304,8 @@ Like `/allow-files`, the setting comes in two scopes, and both cover channels th
 Webhook messages can't carry a native Discord reply reference, so when the relayed message is a reply, the bot prepends a localized first line — e.g. `(replying to [{sender}'s message](link))` — whose bracketed text links to the replied-to message in the same channel. If the replied-to message can't be resolved, the usual "reply to an unknown message" line is shown instead.
 
 Telegram avatars can't be a webhook avatar directly (the Telegram file URL embeds the bot token and isn't reliably fetched by Discord), so Telegram senders get one of the bundled neutral pictures, picked by the last digit of their user ID. Discord senders who hid their avatar in [`/privacy`](#privacy) get the same treatment.
+
+Those pictures, and the ones the followed sources and the wikis wear, are files in `src/assets/` — that directory is the list, no name is written down in the code. Each is uploaded once into `GALLERY` and the message it landed in is remembered in the database, because Discord signs attachment links and they stop working within a day: the link is read off the message again whenever it ages, and the file is uploaded afresh whenever that message turns out to be gone or the file in `assets/` has been replaced. Nothing has to be left alone by hand for the avatars to keep working, and a picture the code asks for but `assets/` does not hold is named in the log at start-up.
 
 ### Forwarded messages
 

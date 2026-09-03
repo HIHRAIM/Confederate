@@ -22,25 +22,22 @@ dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
-_TG_AVATAR_ASSETS = {
-    1: "user-green.png", 2: "user-green.png",
-    3: "user-yellow.png", 4: "user-yellow.png",
-    5: "user-red.png", 6: "user-red.png",
-    7: "user-grey.png", 8: "user-grey.png",
-    9: "user-blue.png", 0: "user-blue.png",
-}
-
 async def get_telegram_avatar_url(user_id, host_chat_id=None):
     """Discord-usable webhook avatar URL for a Telegram sender, picked by the last
-    digit of the user's ID."""
+    digit of the user's ID.
+
+    Which picture goes with which digit is TG_AVATAR_ASSETS, and it lives with
+    the avatars in discord_bot/feeds.py rather than here: the module that
+    hosts the pictures is also the one that knows at start-up which of them
+    the bot is going to ask for."""
     try:
         last_digit = int(user_id) % 10
     except Exception:
         return None
-    asset = _TG_AVATAR_ASSETS.get(last_digit)
+    from discord_bot import TG_AVATAR_ASSETS, avatar_asset_url
+    asset = TG_AVATAR_ASSETS.get(last_digit)
     if not asset:
         return None
-    from discord_bot import avatar_asset_url
     return await avatar_asset_url(asset)
 
 async def _telegram_relay_avatar_url(bridge_id, user_id):

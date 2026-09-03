@@ -250,3 +250,8 @@ from db.polls import (
     get_poll_results,
     record_poll_vote,
 )
+from db.assets import (
+    get_avatar_asset,
+    save_avatar_asset,
+    set_avatar_asset_url,
+)
