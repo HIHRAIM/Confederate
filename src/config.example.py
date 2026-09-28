@@ -104,5 +104,34 @@ CONSULS = {
     ROLE_ID,
 }
 
+# PATREON — the sponsor tiers (see README: Sponsors). The bot never talks to
+# Patreon: patrons connect Patreon to Discord themselves, Patreon's own bot
+# hands them a role on the creator's server, and the only thing read here is
+# whether a Discord account holds one of these roles. There is therefore no
+# Patreon token, no webhook and no secret of any kind for this feature.
+# PATREON_GUILD_ID is the creator's server; PATREON_TIER_ROLES maps a tier
+# number onto the role Patreon grants for it, and the tiers must be numbered
+# from 1 upwards — somebody holding two of these roles counts as the higher
+# tier. Leaving the mapping empty, or naming a role that does not exist,
+# simply means nobody is found to be a sponsor of that tier; it is not an
+# error and the bot says so once rather than on every check.
+PATREON_GUILD_ID = GUILD_ID
+PATREON_TIER_ROLES = {
+    1: ROLE_ID,
+    2: ROLE_ID,
+}
+# SPONSOR_NOTICE_CHANNEL — where a sponsor is nudged when their DMs are shut.
+# What goes there is deliberately ONLY a mention and "check /sponsor": the tier,
+# the reason and the deadline stay in the direct message, because this channel
+# is read by other people and none of that is theirs to read. Set it to None to
+# turn the fallback off, in which case a sponsor with closed DMs is simply
+# never reached and reads the same facts with /sponsor whenever they like.
+SPONSOR_NOTICE_CHANNEL = CHAT_ID
+# SPONSOR_URL — the campaign page /sponsor-subscribe points people at. It
+# belongs here rather than in sponsors.py because it names one particular
+# creator's page, and src/config.py is the file that is deliberately kept out
+# of git for exactly that reason.
+SPONSOR_URL = "https://www.patreon.com/YOUR_CAMPAIGN"
+
 WIKI_CONTACT = "https://github.com/HIHRAIM/Confederate"
 

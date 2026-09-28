@@ -104,16 +104,27 @@ _CONFIGURED_QUERIES = (
 )
 
 def community_is_configured(platform, server_id):
-    """Whether a Bot Admin has ever done anything with this server or group.
+    """Whether this server or group has ever been taken in hand — the test
+    that ends the seven-day deadline.
 
-    The six tables asked are exactly the ones no one but a Bot Admin can put
-    a first row into: a bridge attachment (`/atb`), a followed source
-    (`/set*feed`), an inbox host (`/setinboxchat`), a Bridge Admin grant
-    (`/setadmin`, in either scope) and a Local Admin grant
+    The six tables asked are the ones whose first row means somebody with
+    standing did something here: a bridge attachment (`/atb`), a followed
+    source (`/set*feed`), an inbox host (`/setinboxchat`), a Bridge Admin
+    grant (`/setadmin`, in either scope) and a Local Admin grant
     (`/setlocaladmin`). Everything else a community can configure — language,
     dead-chat pings, webhooks, file consent — is open to Chat and Bridge
     Admins, and those exist only because one of the grants above created
     them, so a row in any of those tables implies a row in one of these.
+
+    Until sponsors existed, "somebody with standing" meant a Bot Admin and
+    this docstring said so. It no longer does: a sponsor can run `/atb` in a
+    community they have claimed, and that writes the `chats` row this
+    function reads. The deadline treats that as settled DELIBERATELY — a
+    sponsor putting a subscription behind a community and attaching its first
+    chat is precisely the event the seven days were waiting for, and the
+    alternative would be walking out of a community somebody is paying for.
+    What the rule still catches is what it was written for: a bot invited
+    somewhere and then forgotten by everyone.
 
     `server_id` is the bare community id: a Discord guild id or a Telegram
     group id. Chat keys are '<community>:<channel|topic>', so the LIKE is

@@ -7,26 +7,25 @@ discord_bot/appeals.py; this module only answers what the database knows.
 import time
 
 from db import conn, cur
-from db.inbox import INBOX_BRIDGE_ID_FLOOR
-
-APPEAL_BRIDGE_ID_FLOOR = 100000
+from db.ranges import APPEAL_BRIDGE_ID_FLOOR, bridge_range
 
 def next_appeal_bridge_id():
     """Allocate the next bridge id in the reserved appeal range.
 
-    Appeal bridges live at and above APPEAL_BRIDGE_ID_FLOOR so they can never
-    collide with hand-numbered ordinary bridges, which must stay strictly
-    below the floor. Simple max+1 — appeal bridges are short-lived and the
-    range is roomy, so holes need no reuse here.
+    Appeal bridges live in the third of the four regions db/ranges.py cuts
+    the id space into: ordinary and sponsor bridges stay below this floor,
+    inbox conversations above the next one. Simple max+1 — appeal bridges are
+    short-lived and the range is roomy, so holes need no reuse here.
 
-    The range is bounded on both sides: INBOX_BRIDGE_ID_FLOOR and everything
-    above it belongs to inbox conversations, so the max+1 must be taken among
-    appeal bridges alone. Reading the whole tail instead would hand the next
-    appeal a number one past the newest conversation, and the two allocators
-    would then walk over each other."""
+    The range is bounded on BOTH sides, and that is the part worth keeping.
+    Everything above the inbox floor belongs to conversations, so the max+1
+    must be taken among appeal bridges alone; reading the whole tail instead
+    would hand the next appeal a number one past the newest conversation, and
+    the two allocators would then walk over each other."""
+    floor, ceiling = bridge_range("appeal")
     row = cur.execute(
         "SELECT MAX(id) AS mx FROM bridges WHERE id >= ? AND id < ?",
-        (APPEAL_BRIDGE_ID_FLOOR, INBOX_BRIDGE_ID_FLOOR)
+        (floor, ceiling)
     ).fetchone()
     if row and row["mx"] is not None:
         return int(row["mx"]) + 1

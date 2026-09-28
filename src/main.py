@@ -7,7 +7,8 @@ path: ``python main.py``.
 What lives here is the cross-platform machinery: the followed-source poller
 (scheduling, backoff and throttling; the readers themselves are in sources/),
 the poll closer, the consent/verification cleanup, the daily reachability
-sweep, the setup-deadline sweep and the inbox housekeeping. The loops the
+sweep, the setup-deadline sweep, the hourly sponsor reconciliation and the
+inbox housekeeping. The loops the
 Discord client starts for itself in discord_bot/client.py are not repeated
 here — status, backups, dead chats and topics, appeal maintenance, and the
 rules poster (bridge_rules_loop), which posts into both platforms but needs
@@ -42,8 +43,14 @@ db.rule_since()
 async def pending_cleanup_loop():
     """
     Удаляет устаревшие pending_consents (старше 24ч): удаляет бот-сообщение и строку в БД.
-    Также очищает verified_users, у которых истёк срок, и согласия /allow-files
-    сообществ, которые бот покинул больше семи дней назад.
+    Также очищает verified_users, у которых истёк срок, согласия /allow-files
+    сообществ, которые бот покинул больше семи дней назад, и половинки
+    рукопожатия /add-telegram + /add-discord старше тридцати минут.
+
+    The account-linking sweep lives here rather than in a loop of its own on
+    purpose: the thirty minutes are enforced by the read in
+    db/sponsors.py: get_pending_links, so this only keeps the table small and
+    has no deadline of its own to keep.
     """
     from telegram_bot import bot as tg
     from discord_bot import bot as dc
@@ -99,6 +106,7 @@ async def pending_cleanup_loop():
             db.cleanup_old_polls()
             db.cleanup_wiki_relay_records()
             db.cleanup_departed_file_consents()
+            db.cleanup_old_pending_links()
 
         except Exception as e:
             try:
@@ -194,7 +202,15 @@ async def feed_loop():
     A wiki hands its whole batch to `relay_wiki_posts` instead of being
     walked post by post: it is the one source that merges several changes
     into one message and filters per chat, so the cap on how many messages a
-    poll may produce lives there rather than in the slice taken here."""
+    poll may produce lives there rather than in the slice taken here.
+
+    The chats of a sponsor bridge whose owner has stopped paying are skipped
+    (db/sponsors.py: frozen_sponsor_chat_ids). Skipped, not unsubscribed: the
+    rows, the settings and the `last_post_id` all stay, so a subscription
+    that comes back finds its sources where it left them and simply starts
+    delivering again. The source is still FETCHED — another bridge may follow
+    the same account — which is why the test is per target chat and sits
+    here."""
     import aiohttp
     from discord_bot import (
         bot as dc, feed_module, feed_stale_since, relay_feed_post, warm_avatar_assets,
@@ -209,6 +225,7 @@ async def feed_loop():
     while True:
         try:
             due = _feeds_due(time.time())
+            frozen_chats = db.frozen_sponsor_chat_ids()
             if due:
                 async with aiohttp.ClientSession() as session:
                     for key, rows in due:
@@ -240,6 +257,8 @@ async def feed_loop():
 
                         for feed in rows:
                             try:
+                                if feed["chat_id"] in frozen_chats:
+                                    continue
                                 last_id = feed["last_post_id"]
                                 fresh = [p for p in posts
                                          if last_id is None or int(p["id"]) > int(last_id)]
@@ -266,6 +285,35 @@ async def feed_loop():
                 pass
 
         await asyncio.sleep(FEED_TICK_SECONDS)
+
+async def sponsor_loop():
+    """Keep the stored sponsor tiers in step with the roles on the Patreon
+    server, once an hour, and hand out whatever notices that produces.
+
+    The `on_member_update` event beats this to most changes; this is what
+    makes the state true anyway after a restart, a dropped gateway
+    connection or a week of downtime, and it is also what carries a finished
+    grace period over the line — nobody emits an event for a date passing.
+
+    Every decision it makes is a comparison of stored timestamps against the
+    clock, so the length of the outage before it does not matter, and each
+    notice is marked as sent in the database, so a bot returning from one
+    does not deliver a month of them at once."""
+    from discord_bot import bot as dc
+    import sponsors
+
+    await dc.wait_until_ready()
+    while True:
+        try:
+            for discord_id, notice in await sponsors.reconcile_pass():
+                logger.info("sponsor %s: %s", discord_id, notice)
+                await sponsors.deliver_notice(discord_id, notice)
+        except Exception as e:
+            try:
+                await send_service_event("daily_loop_error", error=f"sponsor_loop error: {e}")
+            except Exception:
+                pass
+        await asyncio.sleep(sponsors.SPONSOR_RECONCILE_SECONDS)
 
 async def poll_loop():
     """Posts results for expired polls to every bridge chat, then closes them."""
@@ -436,7 +484,7 @@ async def main():
 
     Waiting for *all* of them is what a `gather` would do, and it is wrong
     here. aiogram installs its own SIGINT/SIGTERM handler and answers the
-    signal by stopping its polling neatly — at which point the seven other
+    signal by stopping its polling neatly — at which point the eight other
     tasks, several of them asleep for a day at a time, hold the process open
     for as long as the service manager is willing to wait, and it ends the
     stop with SIGKILL. That is a killing in the middle of whatever SQLite was
@@ -469,6 +517,7 @@ async def main():
         asyncio.create_task(daily_check_loop(), name="daily-check"),
         asyncio.create_task(poll_loop(), name="polls"),
         asyncio.create_task(feed_loop(), name="feeds"),
+        asyncio.create_task(sponsor_loop(), name="sponsors"),
         asyncio.create_task(inbox_maintenance_loop(), name="inbox-maintenance"),
         asyncio.create_task(setup_deadline_loop(), name="setup-deadline"),
     ]

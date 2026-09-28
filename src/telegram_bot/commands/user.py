@@ -554,6 +554,12 @@ async def help_cmd(message: Message):
         escape_html(localized_help("cmd_locale", lang)),
         escape_html(localized_help("cmd_loc_compare", lang)),
         escape_html(localized_help("cmd_loc_suggest", lang)),
+        escape_html(localized_help("cmd_add_discord_tg", lang)),
+        escape_html(localized_help("cmd_unlink_accounts_tg", lang)),
+        escape_html(localized_help("cmd_sponsor", lang)),
+        escape_html(localized_help("cmd_sponsor_claim_tg", lang)),
+        escape_html(localized_help("cmd_sponsor_release_tg", lang)),
+        escape_html(localized_help("cmd_sponsor_subscribe_tg", lang)),
         escape_html(localized_help("cmd_help", lang)),
     ])
 

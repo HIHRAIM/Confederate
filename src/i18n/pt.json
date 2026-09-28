@@ -139,6 +139,10 @@
     "status": "unverified",
     "text": "A ponte {bridge_id} foi criada e este chat foi conectado a ela. Informe o número aos outros chats — eles entram com /atb {bridge_id}."
   },
+  "atb_attached_sponsor": {
+    "status": "unverified",
+    "text": "Conversa ligada à sua nova ponte de patrocinador #{bridge_id}. Só você pode ligar-lhe outras conversas, e o número continua a ser seu mesmo que a ponte venha a ficar vazia."
+  },
   "atb_invalid_id": {
     "status": "unverified",
     "text": "ID de ponte inválido. Informe um número ou `new` para criar uma ponte com o menor número livre."
@@ -146,6 +150,22 @@
   "atb_no_free_id": {
     "status": "unverified",
     "text": "Não há mais números de ponte livres abaixo de {limit}. Libere um desconectando os chats de uma ponte que não é mais usada e tente novamente."
+  },
+  "atb_no_free_sponsor_id": {
+    "status": "unverified",
+    "text": "Não resta qualquer número livre de ponte de patrocinador. Avise os administradores do bot."
+  },
+  "atb_reserved_range": {
+    "status": "unverified",
+    "text": "Os números de ponte a partir de {ceiling} estão reservados para recursos e conversas de apoio, e os números a partir de {floor} pertencem a patrocinadores — nenhum deles pode ser indicado à mão. Use `/atb new` ou um número abaixo de {floor}."
+  },
+  "atb_sponsor_claim_first": {
+    "status": "unverified",
+    "text": "Reivindique primeiro esta comunidade com /sponsor-claim (/sponsor_claim no Telegram); um patrocinador só pode abrir pontes nas comunidades que reivindicou."
+  },
+  "atb_sponsor_not_owner": {
+    "status": "unverified",
+    "text": "Esta ponte pertence a um patrocinador. Só o seu proprietário lhe pode ligar conversas — é precisamente isso que o patrocínio paga."
   },
   "atb_usage": {
     "status": "unverified",
@@ -187,9 +207,17 @@
     "status": "unverified",
     "text": "Número"
   },
+  "bridge_info.field_sponsor": {
+    "status": "unverified",
+    "text": "Ponte de patrocinador"
+  },
   "bridge_info.not_in_bridge": {
     "status": "unverified",
     "text": "Este chat não está conectado a uma ponte."
+  },
+  "bridge_info.sponsor_owner": {
+    "status": "unverified",
+    "text": "Proprietário: {owner}"
   },
   "bridge_info.tg_template": {
     "status": "unverified",
@@ -259,21 +287,41 @@
     "status": "unverified",
     "text": "Encerrando esta conversa."
   },
-  "close_header_hidden": {
+  "close_header_hidden_admin": {
     "status": "unverified",
-    "text": "As mensagens de quem escreve para {bot} chegarão aqui sem cabeçalho a partir da próxima."
+    "text": "As respostas da sua equipa nas conversas de {bot} chegarão ao outro lado sem nome à frente, a partir da próxima. As mensagens que chegam aqui mantêm o cabeçalho."
+  },
+  "close_header_hidden_both": {
+    "status": "unverified",
+    "text": "As mensagens de quem escreve a {bot} chegarão aqui sem o cabeçalho, e as respostas da sua equipa chegar-lhes-ão sem nome à frente — a partir da próxima mensagem."
+  },
+  "close_header_hidden_user": {
+    "status": "unverified",
+    "text": "As mensagens de quem escreve a {bot} chegarão aqui sem o cabeçalho, a partir da próxima. As respostas da sua equipa mantêm os nomes."
   },
   "close_header_not_host": {
     "status": "unverified",
     "text": "Esta comunidade não hospeda as conversas de {bot}."
   },
-  "close_header_shown": {
+  "close_header_shown_admin": {
     "status": "unverified",
-    "text": "As mensagens de quem escreve para {bot} voltarão a trazer o cabeçalho a partir da próxima."
+    "text": "As respostas da sua equipa nas conversas de {bot} voltarão a ser assinadas com os nomes, a partir da próxima."
+  },
+  "close_header_shown_both": {
+    "status": "unverified",
+    "text": "As mensagens de quem escreve a {bot} voltarão a ter o cabeçalho, e as respostas da sua equipa voltarão a ser assinadas com os nomes — a partir da próxima mensagem."
+  },
+  "close_header_shown_user": {
+    "status": "unverified",
+    "text": "As mensagens de quem escreve a {bot} voltarão a ter o cabeçalho, a partir da próxima."
+  },
+  "close_header_unchanged": {
+    "status": "unverified",
+    "text": "Nada foi alterado: não foi possível atualizar nenhuma conversa anfitriã de {bot} nesta comunidade. Verifique com /inboxlist se ainda aloja conversas aqui."
   },
   "close_header_usage": {
     "status": "unverified",
-    "text": "Uso: /close-header hide|show [bot]"
+    "text": "Uso: /close-header hide|show [user|admin|both] [bot] — `user` oculta os nomes de quem escreve ao bot, `admin` os nomes com que as respostas da sua equipa são assinadas, e omitir faz ambos."
   },
   "close_not_conversation": {
     "status": "unverified",
@@ -419,6 +467,14 @@
     "status": "unverified",
     "text": "Este comando está disponível apenas em um grupo."
   },
+  "help.cmd_add_discord_tg": {
+    "status": "unverified",
+    "text": "/add_discord <utilizador> — ligue a sua conta do Discord a esta"
+  },
+  "help.cmd_add_telegram": {
+    "status": "unverified",
+    "text": "/add-telegram <@utilizador> — ligue a sua conta do Telegram a esta"
+  },
   "help.cmd_allow_bots": {
     "status": "unverified",
     "text": "/allow-bots enable|disable — permitir ou proibir a retransmissão de mensagens de bots"
@@ -457,7 +513,7 @@
   },
   "help.cmd_close_header": {
     "status": "unverified",
-    "text": "/close-header hide|show [bot] — oculta o cabeçalho nas conversas do bot receptor desta comunidade"
+    "text": "/close-header hide|show [user|admin|both] [bot] — oculte os cabeçalhos com nomes nas conversas de inbox desta comunidade"
   },
   "help.cmd_deadchat": {
     "status": "unverified",
@@ -631,6 +687,42 @@
     "status": "unverified",
     "text": "/shadow-ban <user> — ocultar as mensagens de um usuário da retransmissão"
   },
+  "help.cmd_sponsor": {
+    "status": "unverified",
+    "text": "/sponsor — o seu estatuto de patrocinador, vagas e limites"
+  },
+  "help.cmd_sponsor_claim": {
+    "status": "unverified",
+    "text": "/sponsor-claim — reivindique esta comunidade como patrocinador"
+  },
+  "help.cmd_sponsor_claim_tg": {
+    "status": "unverified",
+    "text": "/sponsor_claim — reivindique esta comunidade como patrocinador"
+  },
+  "help.cmd_sponsor_release": {
+    "status": "unverified",
+    "text": "/sponsor-release [id] — liberte uma vaga de comunidade"
+  },
+  "help.cmd_sponsor_release_tg": {
+    "status": "unverified",
+    "text": "/sponsor_release [id] — liberte uma vaga de comunidade"
+  },
+  "help.cmd_sponsor_subscribe": {
+    "status": "unverified",
+    "text": "/sponsor-subscribe — como tornar-se patrocinador"
+  },
+  "help.cmd_sponsor_subscribe_tg": {
+    "status": "unverified",
+    "text": "/sponsor_subscribe — como tornar-se patrocinador"
+  },
+  "help.cmd_unlink_accounts": {
+    "status": "unverified",
+    "text": "/unlink-accounts — quebre a ligação entre as suas contas"
+  },
+  "help.cmd_unlink_accounts_tg": {
+    "status": "unverified",
+    "text": "/unlink_accounts — quebre a ligação entre as suas contas"
+  },
   "help.cmd_unverify": {
     "status": "unverified",
     "text": "/unverify <user> — revogar a verificação de um usuário"
@@ -798,6 +890,30 @@
   "lang_usage": {
     "status": "unverified",
     "text": "Uso: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "link_need_username": {
+    "status": "unverified",
+    "text": "A sua conta do Telegram não tem @nome de utilizador, por isso o lado do Discord não tem como o nomear. Defina um nas definições do Telegram e tente novamente."
+  },
+  "link_pending_discord": {
+    "status": "unverified",
+    "text": "Registado: diz que no Telegram é @{nick}. Agora execute aí /add_discord dentro de 30 minutos e indique o seu nome do Discord. Enquanto ambos os lados não se nomearem, não há ligação."
+  },
+  "link_pending_telegram": {
+    "status": "unverified",
+    "text": "Registado: diz que no Discord é {nick}. Agora execute aí /add-telegram dentro de 30 minutos e indique o seu @nome de utilizador do Telegram. Enquanto ambos os lados não se nomearem, não há ligação."
+  },
+  "link_success": {
+    "status": "unverified",
+    "text": "As suas contas do Discord e do Telegram estão ligadas. Partilham um único estatuto de patrocinador, as mesmas vagas de comunidade e os mesmos limites de fontes — um só conjunto para ambas."
+  },
+  "link_usage_discord": {
+    "status": "unverified",
+    "text": "Uso: /add-telegram <o seu @nome de utilizador do Telegram>. Depois execute /add_discord no Telegram dentro de 30 minutos e indique aí o seu nome do Discord — a ligação só é criada quando ambos os lados se nomeiam mutuamente."
+  },
+  "link_usage_telegram": {
+    "status": "unverified",
+    "text": "Uso: /add_discord <o seu nome do Discord>. Depois execute /add-telegram no Discord dentro de 30 minutos e indique aí o seu @nome de utilizador do Telegram — a ligação só é criada quando ambos os lados se nomeiam mutuamente."
   },
   "list_chats_discord_header": {
     "status": "unverified",
@@ -1356,6 +1472,126 @@
     "status": "unverified",
     "text": "Uso: /shadow-ban <id_ou_nome_do_usuário>"
   },
+  "sponsor_claim_no_slots": {
+    "status": "unverified",
+    "text": "Todas as suas vagas de comunidade estão ocupadas ({used} de {limit}). Liberte uma com /sponsor-release ou suba de nível."
+  },
+  "sponsor_claim_not_a_community": {
+    "status": "unverified",
+    "text": "Execute isto no servidor ou grupo que pretende reivindicar."
+  },
+  "sponsor_claim_not_a_sponsor": {
+    "status": "unverified",
+    "text": "Só os patrocinadores podem reivindicar uma comunidade. Execute /sponsor-subscribe (/sponsor_subscribe no Telegram) para ver como."
+  },
+  "sponsor_claim_not_admin": {
+    "status": "unverified",
+    "text": "Só um administrador desta comunidade a pode reivindicar."
+  },
+  "sponsor_claim_ok": {
+    "status": "unverified",
+    "text": "Esta comunidade é agora sua: {used} de {limit} vagas ocupadas."
+  },
+  "sponsor_claim_taken": {
+    "status": "unverified",
+    "text": "Outro patrocinador já reivindicou esta comunidade."
+  },
+  "sponsor_claim_too_soon": {
+    "status": "unverified",
+    "text": "Libertou uma vaga de comunidade recentemente. Poderá reivindicar uma nova daqui a {days} dia(s) — a espera existe para que uma subscrição não sirva uma fila de comunidades à vez."
+  },
+  "sponsor_claim_yours": {
+    "status": "unverified",
+    "text": "Já reivindicou esta comunidade."
+  },
+  "sponsor_feed_frozen": {
+    "status": "unverified",
+    "text": "Esta ponte pertence a um patrocinador cuja subscrição não está ativa, por isso não é possível adicionar novas fontes e as já ligadas estão em pausa. Nada foi apagado: voltam a reencaminhar sozinhas quando a subscrição regressar."
+  },
+  "sponsor_none": {
+    "status": "unverified",
+    "text": "Não é patrocinador. Execute /sponsor-subscribe (/sponsor_subscribe no Telegram) para ver o que dá uma subscrição. Se já subscreveu, verifique se a sua conta Patreon está ligada ao Discord — essa ligação é a única coisa que o bot consegue ver."
+  },
+  "sponsor_notice_downgraded": {
+    "status": "unverified",
+    "text": "O seu nível de patrocinador é agora {tier}.\n\nNada foi apagado e nenhum reencaminhamento foi parado. As fontes novas ficam limitadas ao novo nível ({wikis} wikis e {socials} fontes sociais por ponte); as já ligadas continuam a funcionar mesmo quando são mais do que isso.\n\nPode agora ter {communities} comunidades. Se tiver mais, liberte as que já não precisa dentro de {days} dias com /sponsor-release. Se não escolher, ficam as comunidades reivindicadas PRIMEIRO e são libertadas as mais recentes."
+  },
+  "sponsor_notice_expired": {
+    "status": "unverified",
+    "text": "O período de tolerância da sua subscrição terminou.\n\nAs vagas de comunidade além do que o nível atual permite foram libertadas e, com elas, terminou o direito exclusivo de ligar conversas às suas pontes. As suas pontes mantêm os seus números — continuam reservados para si e não são dados a mais ninguém — e todas as pontes, conversas, fontes e definições continuam lá, intactas.\n\nSubscrever de novo devolve o estatuto de imediato; só teria de reivindicar as suas comunidades outra vez."
+  },
+  "sponsor_notice_fallback": {
+    "status": "unverified",
+    "text": "{mention} — o bot não conseguiu escrever-lhe por mensagem direta. Há algo à sua espera sobre o seu patrocínio: execute /sponsor para o ler, ou abra as suas mensagens diretas e será enviado para lá."
+  },
+  "sponsor_notice_frozen": {
+    "status": "unverified",
+    "text": "A sua subscrição de patrocinador já não está ativa.\n\nO reencaminhamento a partir das fontes seguidas nas suas pontes foi colocado em pausa. Os seus direitos — vagas de comunidade e pontes — mantêm-se por mais {days} dias; depois disso as vagas são libertadas. Nada é apagado em momento algum: pontes, conversas, fontes e definições ficam exatamente como estão, e tudo volta a funcionar sozinho se voltar a subscrever.\n\nSe isto for um engano, verifique no Patreon se a subscrição está ativa e se a sua conta Patreon continua ligada ao Discord."
+  },
+  "sponsor_notice_restored": {
+    "status": "unverified",
+    "text": "O seu patrocínio está novamente ativo. Tudo o que estava em pausa está a funcionar e nada se perdeu entretanto."
+  },
+  "sponsor_quota_socials": {
+    "status": "unverified",
+    "text": "Esta ponte de patrocinador já segue {used} de {limit} fontes sociais — contas Bluesky, canais do YouTube e canais do Telegram partilham um único limite. Remova uma ou suba de nível."
+  },
+  "sponsor_quota_wikis": {
+    "status": "unverified",
+    "text": "Esta ponte de patrocinador já segue {used} de {limit} wikis. Remova uma com /remwikifeed ou suba de nível."
+  },
+  "sponsor_release_none": {
+    "status": "unverified",
+    "text": "Não reivindicou essa comunidade."
+  },
+  "sponsor_release_ok": {
+    "status": "unverified",
+    "text": "Comunidade {server_id} libertada; tem agora {used} vaga(s). As suas pontes, conversas e fontes ficam intactas. Poderá reivindicar uma nova comunidade daqui a {days} dia(s)."
+  },
+  "sponsor_status_bridge": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — wikis {wikis}/{wiki_limit}, fontes sociais {socials}/{social_limit}"
+  },
+  "sponsor_status_bridge_empty": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — sem conversas de momento; o número continua a ser seu"
+  },
+  "sponsor_status_bridges": {
+    "status": "unverified",
+    "text": "Pontes:"
+  },
+  "sponsor_status_communities": {
+    "status": "unverified",
+    "text": "Comunidades:"
+  },
+  "sponsor_status_community": {
+    "status": "unverified",
+    "text": "* {platform}: {server_id}"
+  },
+  "sponsor_status_downgraded": {
+    "status": "unverified",
+    "text": "Está agora a pagar o nível {tier}. Os seus direitos anteriores mantêm-se por mais {days} dia(s); depois disso ficam as {communities} vaga(s) de comunidade reivindicadas primeiro e as restantes são libertadas. As fontes novas já estão limitadas ao novo nível; as que já funcionam não são tocadas."
+  },
+  "sponsor_status_frozen": {
+    "status": "unverified",
+    "text": "A sua subscrição já não está ativa. O reencaminhamento a partir das fontes seguidas nas suas pontes está em pausa. Os seus direitos mantêm-se por mais {days} dia(s); depois disso as vagas de comunidade são libertadas. Nada é apagado e tudo volta a funcionar sozinho se a subscrição regressar."
+  },
+  "sponsor_status_link": {
+    "status": "unverified",
+    "text": "Conta do Telegram ligada: {telegram_id}"
+  },
+  "sponsor_status_no_link": {
+    "status": "unverified",
+    "text": "Nenhuma conta do Telegram está ligada. Ligue-a com /add-telegram aqui e /add_discord aí — sem a ligação, uma conta do Telegram não pode usar o seu patrocínio."
+  },
+  "sponsor_status_tier": {
+    "status": "unverified",
+    "text": "Patrocinador, nível {tier}. Comunidades reivindicadas: {communities} de {community_limit}."
+  },
+  "sponsor_subscribe": {
+    "status": "unverified",
+    "text": "O patrocínio apoia o bot e dá-lhe o seu próprio espaço dentro dele.\n\nNível 1: {communities1} comunidades, {wikis1} wikis e {socials1} fontes sociais (Bluesky, YouTube e canais do Telegram no conjunto) em cada uma das suas pontes.\nNível 2: {communities2} comunidades, {wikis2} wikis e {socials2} fontes sociais.\n\nUm patrocinador pode abrir pontes nas comunidades que reivindicou, e só ele pode ligar conversas às suas próprias pontes.\n\nSubscreva em {url} — e não se esqueça de ligar a sua conta Patreon ao Discord no próprio site do Patreon. O Patreon concede-lhe então o cargo que este bot lê; sem essa ligação não há cargo e o bot não consegue saber que é patrocinador."
+  },
   "status_members_forms": {
     "status": "unverified",
     "text": [
@@ -1479,6 +1715,14 @@
       "anos",
       "anos"
     ]
+  },
+  "unlink_done": {
+    "status": "unverified",
+    "text": "As suas contas do Discord e do Telegram já não estão ligadas. Os direitos de patrocinador do lado do Telegram terminam de imediato; as comunidades e as pontes pertencem à conta do Discord e ficam intactas."
+  },
+  "unlink_none": {
+    "status": "unverified",
+    "text": "Esta conta não tem qualquer ligação para quebrar."
   },
   "unverify_done": {
     "status": "unverified",

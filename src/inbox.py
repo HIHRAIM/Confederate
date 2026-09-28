@@ -996,11 +996,19 @@ async def deliver_inbox_relay(chat, *, header, body_plain, body_telegram_html, r
     rewrites the header down to the sender's name (inbox_writer_header), and
     a send that fails returns None instead of raising — a writer who blocked
     the bot or deleted their account must cost the conversation one copy, not
-    the whole fan-out to the other host chats."""
+    the whole fan-out to the other host chats.
+
+    `/close-header hide admin` takes even that name away: the answers arrive
+    as bare text, which is what a team that signs its replies collectively
+    asks for. It is asked of the receiver bot rather than of a community
+    (db/inbox.py: inbox_staff_header_hidden), because this chat belongs to the
+    bot and not to any of the communities answering through it."""
     bot_id, user_id = chat["chat_id"].split(":")
     bot = inbox_bot_instance(bot_id)
     if bot is None:
         return None
+    if db.inbox_staff_header_hidden(bot_id):
+        sender_name, header = None, ""
 
     lang = get_chat_lang(chat["chat_id"])
     body_html = convert_discord_timestamps(body_telegram_html or escape_html(body_plain), lang)
@@ -1031,11 +1039,15 @@ async def edit_inbox_relay_copy(chat_id, message_id_platform, sender_name, body_
     """Rewrite a copy living in a private chat after its origin was edited.
 
     Takes the sender's name rather than a ready header, because the header the
-    other chats show is not the one this chat shows — see inbox_writer_header."""
+    other chats show is not the one this chat shows — see inbox_writer_header.
+    An edit must not put back a name that `/close-header hide admin` took
+    away, so the same question is asked here as on the way in."""
     bot_id, user_id = str(chat_id).split(":")
     bot = inbox_bot_instance(bot_id)
     if bot is None:
         return
+    if db.inbox_staff_header_hidden(bot_id):
+        sender_name = None
     lang = get_chat_lang(chat_id)
     try:
         await bot.edit_message_text(

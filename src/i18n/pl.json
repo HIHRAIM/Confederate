@@ -139,6 +139,10 @@
     "status": "unverified",
     "text": "Utworzono nowy most {bridge_id} i podłączono do niego ten czat. Podaj numer pozostałym czatom — dołączają poleceniem /atb {bridge_id}."
   },
+  "atb_attached_sponsor": {
+    "status": "unverified",
+    "text": "Czat dołączony do twojego nowego mostu sponsorskiego #{bridge_id}. Tylko ty możesz dołączać do niego inne czaty, a numer pozostaje twój, nawet jeśli most kiedyś opustoszeje."
+  },
   "atb_invalid_id": {
     "status": "unverified",
     "text": "Nieprawidłowe ID mostu. Podaj liczbę albo `new`, aby utworzyć most o najniższym wolnym numerze."
@@ -146,6 +150,22 @@
   "atb_no_free_id": {
     "status": "unverified",
     "text": "Nie ma już wolnych numerów mostów poniżej {limit}. Zwolnij numer, odłączając czaty nieużywanego mostu, i spróbuj ponownie."
+  },
+  "atb_no_free_sponsor_id": {
+    "status": "unverified",
+    "text": "Nie został żaden wolny numer mostu sponsorskiego. Powiadom administratorów bota."
+  },
+  "atb_reserved_range": {
+    "status": "unverified",
+    "text": "Numery mostów od {ceiling} w górę są zarezerwowane dla odwołań i rozmów wsparcia, a numery od {floor} w górę należą do sponsorów — żadnego z nich nie można podać ręcznie. Użyj `/atb new` albo numeru poniżej {floor}."
+  },
+  "atb_sponsor_claim_first": {
+    "status": "unverified",
+    "text": "Najpierw zgłoś tę społeczność poleceniem /sponsor-claim (na Telegramie /sponsor_claim); sponsor może otwierać mosty tylko w zgłoszonych przez siebie społecznościach."
+  },
+  "atb_sponsor_not_owner": {
+    "status": "unverified",
+    "text": "Ten most należy do sponsora. Czaty może do niego dołączać tylko jego właściciel — właśnie za to płaci sponsoring."
   },
   "atb_usage": {
     "status": "unverified",
@@ -187,9 +207,17 @@
     "status": "unverified",
     "text": "Numer"
   },
+  "bridge_info.field_sponsor": {
+    "status": "unverified",
+    "text": "Most sponsorski"
+  },
   "bridge_info.not_in_bridge": {
     "status": "unverified",
     "text": "Ten czat nie jest podłączony do mostu."
+  },
+  "bridge_info.sponsor_owner": {
+    "status": "unverified",
+    "text": "Właściciel: {owner}"
   },
   "bridge_info.tg_template": {
     "status": "unverified",
@@ -259,21 +287,41 @@
     "status": "unverified",
     "text": "Zamykam tę rozmowę."
   },
-  "close_header_hidden": {
+  "close_header_hidden_admin": {
     "status": "unverified",
-    "text": "Wiadomości od osób piszących do bota {bot} będą tu przychodzić bez nagłówka — od następnej."
+    "text": "Odpowiedzi twojego zespołu w rozmowach {bot} będą docierać do rozmówcy bez imienia, od następnej. Wiadomości przychodzące tutaj zachowają nagłówek."
+  },
+  "close_header_hidden_both": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do {bot} będą tu przychodzić bez nagłówka, a odpowiedzi twojego zespołu będą do nich docierać bez imienia — od następnej wiadomości."
+  },
+  "close_header_hidden_user": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do {bot} będą tu przychodzić bez nagłówka, od następnej. Odpowiedzi twojego zespołu zachowają imiona."
   },
   "close_header_not_host": {
     "status": "unverified",
     "text": "Ta społeczność nie odbiera rozmów bota {bot}."
   },
-  "close_header_shown": {
+  "close_header_shown_admin": {
     "status": "unverified",
-    "text": "Wiadomości od osób piszących do bota {bot} znów będą miały nagłówek — od następnej."
+    "text": "Odpowiedzi twojego zespołu w rozmowach {bot} znów będą podpisane imionami, od następnej."
+  },
+  "close_header_shown_both": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do {bot} znów będą miały nagłówek, a odpowiedzi twojego zespołu znów będą podpisane imionami — od następnej wiadomości."
+  },
+  "close_header_shown_user": {
+    "status": "unverified",
+    "text": "Wiadomości od osób piszących do {bot} znów będą miały nagłówek, od następnej."
+  },
+  "close_header_unchanged": {
+    "status": "unverified",
+    "text": "Nic się nie zmieniło: nie udało się zaktualizować żadnego czatu-hosta {bot} w tej społeczności. Sprawdź poleceniem /inboxlist, czy nadal prowadzi tu rozmowy."
   },
   "close_header_usage": {
     "status": "unverified",
-    "text": "Użycie: /close-header hide|show [bot]"
+    "text": "Użycie: /close-header hide|show [user|admin|both] [bot] — `user` ukrywa imiona osób piszących do bota, `admin` imiona, którymi podpisane są odpowiedzi zespołu, a pominięcie robi jedno i drugie."
   },
   "close_not_conversation": {
     "status": "unverified",
@@ -419,6 +467,14 @@
     "status": "unverified",
     "text": "To polecenie jest dostępne tylko w grupie."
   },
+  "help.cmd_add_discord_tg": {
+    "status": "unverified",
+    "text": "/add_discord <nazwa> — powiąż swoje konto Discord z tym"
+  },
+  "help.cmd_add_telegram": {
+    "status": "unverified",
+    "text": "/add-telegram <@username> — powiąż swoje konto Telegram z tym"
+  },
   "help.cmd_allow_bots": {
     "status": "unverified",
     "text": "/allow-bots enable|disable — zezwól lub zabroń przekazywania wiadomości od botów"
@@ -457,7 +513,7 @@
   },
   "help.cmd_close_header": {
     "status": "unverified",
-    "text": "/close-header hide|show [bot] — ukryj nagłówek w rozmowach bota odbiorczego w tej społeczności"
+    "text": "/close-header hide|show [user|admin|both] [bot] — ukryj nagłówki z imionami w rozmowach inbox tej społeczności"
   },
   "help.cmd_deadchat": {
     "status": "unverified",
@@ -631,6 +687,42 @@
     "status": "unverified",
     "text": "/shadow-ban <user> — ukryj wiadomości użytkownika przed przekazywaniem"
   },
+  "help.cmd_sponsor": {
+    "status": "unverified",
+    "text": "/sponsor — twój status sponsora, sloty i limity"
+  },
+  "help.cmd_sponsor_claim": {
+    "status": "unverified",
+    "text": "/sponsor-claim — zgłoś tę społeczność jako sponsor"
+  },
+  "help.cmd_sponsor_claim_tg": {
+    "status": "unverified",
+    "text": "/sponsor_claim — zgłoś tę społeczność jako sponsor"
+  },
+  "help.cmd_sponsor_release": {
+    "status": "unverified",
+    "text": "/sponsor-release [id] — zwolnij slot społeczności"
+  },
+  "help.cmd_sponsor_release_tg": {
+    "status": "unverified",
+    "text": "/sponsor_release [id] — zwolnij slot społeczności"
+  },
+  "help.cmd_sponsor_subscribe": {
+    "status": "unverified",
+    "text": "/sponsor-subscribe — jak zostać sponsorem"
+  },
+  "help.cmd_sponsor_subscribe_tg": {
+    "status": "unverified",
+    "text": "/sponsor_subscribe — jak zostać sponsorem"
+  },
+  "help.cmd_unlink_accounts": {
+    "status": "unverified",
+    "text": "/unlink-accounts — zerwij powiązanie swoich kont"
+  },
+  "help.cmd_unlink_accounts_tg": {
+    "status": "unverified",
+    "text": "/unlink_accounts — zerwij powiązanie swoich kont"
+  },
   "help.cmd_unverify": {
     "status": "unverified",
     "text": "/unverify <user> — cofnij weryfikację użytkownika"
@@ -798,6 +890,30 @@
   "lang_usage": {
     "status": "unverified",
     "text": "Użycie: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "link_need_username": {
+    "status": "unverified",
+    "text": "Twoje konto na Telegramie nie ma @username, więc strona Discorda nie ma jak cię wskazać. Ustaw go w ustawieniach Telegrama i spróbuj ponownie."
+  },
+  "link_pending_discord": {
+    "status": "unverified",
+    "text": "Zapisano: twierdzisz, że na Telegramie jesteś @{nick}. Teraz w ciągu 30 minut wykonaj tam /add_discord i podaj swoją nazwę z Discorda. Dopóki obie strony nie wskażą się nawzajem, powiązania nie ma."
+  },
+  "link_pending_telegram": {
+    "status": "unverified",
+    "text": "Zapisano: twierdzisz, że na Discordzie jesteś {nick}. Teraz w ciągu 30 minut wykonaj tam /add-telegram i podaj swój @username z Telegrama. Dopóki obie strony nie wskażą się nawzajem, powiązania nie ma."
+  },
+  "link_success": {
+    "status": "unverified",
+    "text": "Twoje konta Discord i Telegram są powiązane. Mają wspólny status sponsora, wspólne sloty społeczności i wspólne limity źródeł — jeden komplet na oba, a nie po jednym na każde."
+  },
+  "link_usage_discord": {
+    "status": "unverified",
+    "text": "Użycie: /add-telegram <twój @username na Telegramie>. Następnie w ciągu 30 minut wykonaj /add_discord na Telegramie i podaj tam swoją nazwę z Discorda — powiązanie powstaje tylko wtedy, gdy obie strony wskażą się nawzajem."
+  },
+  "link_usage_telegram": {
+    "status": "unverified",
+    "text": "Użycie: /add_discord <twoja nazwa z Discorda>. Następnie w ciągu 30 minut wykonaj /add-telegram na Discordzie i podaj tam swój @username z Telegrama — powiązanie powstaje tylko wtedy, gdy obie strony wskażą się nawzajem."
   },
   "list_chats_discord_header": {
     "status": "unverified",
@@ -1356,6 +1472,126 @@
     "status": "unverified",
     "text": "Użycie: /shadow-ban <id_lub_nazwa_użytkownika>"
   },
+  "sponsor_claim_no_slots": {
+    "status": "unverified",
+    "text": "Wszystkie twoje sloty społeczności są zajęte ({used} z {limit}). Zwolnij jeden poleceniem /sponsor-release albo podnieś poziom."
+  },
+  "sponsor_claim_not_a_community": {
+    "status": "unverified",
+    "text": "Wykonaj to na serwerze lub w grupie, którą chcesz zgłosić."
+  },
+  "sponsor_claim_not_a_sponsor": {
+    "status": "unverified",
+    "text": "Społeczność mogą zgłosić tylko sponsorzy. Wykonaj /sponsor-subscribe (na Telegramie /sponsor_subscribe), aby zobaczyć jak."
+  },
+  "sponsor_claim_not_admin": {
+    "status": "unverified",
+    "text": "Tę społeczność może zgłosić tylko jej administrator."
+  },
+  "sponsor_claim_ok": {
+    "status": "unverified",
+    "text": "Ta społeczność jest teraz twoja: zajęte {used} z {limit} slotów."
+  },
+  "sponsor_claim_taken": {
+    "status": "unverified",
+    "text": "Tę społeczność zgłosił już inny sponsor."
+  },
+  "sponsor_claim_too_soon": {
+    "status": "unverified",
+    "text": "Niedawno zwolniłeś slot społeczności. Nową społeczność można zgłosić za {days} dn. — to oczekiwanie sprawia, że jedna subskrypcja nie obsłuży kolejki społeczności po kolei."
+  },
+  "sponsor_claim_yours": {
+    "status": "unverified",
+    "text": "Już zgłosiłeś tę społeczność."
+  },
+  "sponsor_feed_frozen": {
+    "status": "unverified",
+    "text": "Ten most należy do sponsora, którego subskrypcja nie jest aktywna, więc nie można tu dodać nowych źródeł, a te już podłączone są wstrzymane. Nic nie zostało usunięte: po wznowieniu subskrypcji zaczną przekazywać same."
+  },
+  "sponsor_none": {
+    "status": "unverified",
+    "text": "Nie jesteś sponsorem. Wykonaj /sponsor-subscribe (na Telegramie /sponsor_subscribe), aby zobaczyć, co daje subskrypcja. Jeśli już subskrybujesz, sprawdź, czy konto Patreon jest połączone z Discordem — to połączenie jest jedyną rzeczą, którą bot widzi."
+  },
+  "sponsor_notice_downgraded": {
+    "status": "unverified",
+    "text": "Twój poziom sponsora to teraz {tier}.\n\nNic nie zostało usunięte i żadne przekazywanie nie zostało zatrzymane. Nowe źródła są od teraz ograniczone nowym poziomem ({wikis} wiki i {socials} źródeł społecznościowych na most); już podłączone działają dalej, nawet jeśli jest ich więcej.\n\nMożesz teraz mieć {communities} społeczności. Jeśli masz więcej, zwolnij zbędne w ciągu {days} dni poleceniem /sponsor-release. Jeśli nie wybierzesz sam, zostaną społeczności zgłoszone NAJWCZEŚNIEJ, a zgłoszone najpóźniej zostaną zwolnione."
+  },
+  "sponsor_notice_expired": {
+    "status": "unverified",
+    "text": "Okres karencji twojej subskrypcji dobiegł końca.\n\nSloty społeczności ponad to, co pozwala obecny poziom, zostały zwolnione, a wraz z nimi wygasło wyłączne prawo dołączania czatów do twoich mostów. Numery mostów pozostają twoje — są zarezerwowane i nikomu innemu nie zostaną przyznane — a wszystkie mosty, czaty, źródła i ustawienia nadal są na miejscu, nietknięte.\n\nPonowna subskrypcja od razu przywraca status; trzeba będzie tylko ponownie zgłosić społeczności."
+  },
+  "sponsor_notice_fallback": {
+    "status": "unverified",
+    "text": "{mention} — bot nie mógł napisać do ciebie w wiadomości prywatnej. Czeka na ciebie informacja o twojej subskrypcji: wykonaj /sponsor, aby ją przeczytać, albo otwórz wiadomości prywatne, a zostanie tam wysłana."
+  },
+  "sponsor_notice_frozen": {
+    "status": "unverified",
+    "text": "Twoja subskrypcja sponsorska nie jest już aktywna.\n\nPrzekazywanie ze śledzonych źródeł na twoich mostach zostało wstrzymane. Twoje prawa — sloty społeczności i mosty — pozostają jeszcze przez {days} dni; potem sloty zostaną zwolnione. Nic nie jest usuwane na żadnym etapie: mosty, czaty, źródła i ustawienia zostają takie, jakie są, a po ponownej subskrypcji wszystko wraca samo.\n\nJeśli to pomyłka, sprawdź na Patreonie, czy subskrypcja jest aktywna i czy konto Patreon nadal jest połączone z Discordem."
+  },
+  "sponsor_notice_restored": {
+    "status": "unverified",
+    "text": "Twoja subskrypcja znów jest aktywna. Wszystko, co było wstrzymane, działa, i przez ten czas nic nie zginęło."
+  },
+  "sponsor_quota_socials": {
+    "status": "unverified",
+    "text": "Ten most sponsorski śledzi już {used} z {limit} źródeł społecznościowych — konta Bluesky, kanały YouTube i kanały Telegrama dzielą jeden limit. Usuń jedno albo podnieś poziom."
+  },
+  "sponsor_quota_wikis": {
+    "status": "unverified",
+    "text": "Ten most sponsorski śledzi już {used} z {limit} wiki. Usuń jedną poleceniem /remwikifeed albo podnieś poziom."
+  },
+  "sponsor_release_none": {
+    "status": "unverified",
+    "text": "Nie zgłaszałeś tej społeczności."
+  },
+  "sponsor_release_ok": {
+    "status": "unverified",
+    "text": "Społeczność {server_id} zwolniona; masz teraz {used} slot(ów). Jej mosty, czaty i źródła pozostają nietknięte. Nową społeczność można zgłosić za {days} dn."
+  },
+  "sponsor_status_bridge": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — wiki {wikis}/{wiki_limit}, źródła społecznościowe {socials}/{social_limit}"
+  },
+  "sponsor_status_bridge_empty": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — obecnie bez czatów; numer pozostaje twój"
+  },
+  "sponsor_status_bridges": {
+    "status": "unverified",
+    "text": "Mosty:"
+  },
+  "sponsor_status_communities": {
+    "status": "unverified",
+    "text": "Społeczności:"
+  },
+  "sponsor_status_community": {
+    "status": "unverified",
+    "text": "* {platform}: {server_id}"
+  },
+  "sponsor_status_downgraded": {
+    "status": "unverified",
+    "text": "Płacisz teraz za poziom {tier}. Poprzednie prawa pozostają jeszcze przez {days} dn.; potem zostaje {communities} społeczności zgłoszonych najwcześniej, a reszta zostaje zwolniona. Nowe źródła są już ograniczone nowym poziomem; te już działające pozostają nietknięte."
+  },
+  "sponsor_status_frozen": {
+    "status": "unverified",
+    "text": "Twoja subskrypcja nie jest już aktywna. Przekazywanie ze śledzonych źródeł na twoich mostach jest wstrzymane. Prawa pozostają jeszcze przez {days} dn.; potem sloty społeczności zostaną zwolnione. Nic nie jest usuwane, a po wznowieniu subskrypcji wszystko wraca samo."
+  },
+  "sponsor_status_link": {
+    "status": "unverified",
+    "text": "Powiązane konto Telegram: {telegram_id}"
+  },
+  "sponsor_status_no_link": {
+    "status": "unverified",
+    "text": "Żadne konto Telegram nie jest powiązane. Powiąż je poleceniami /add-telegram tutaj i /add_discord tam — bez tego konto Telegram nie może korzystać z twojej subskrypcji."
+  },
+  "sponsor_status_tier": {
+    "status": "unverified",
+    "text": "Sponsor, poziom {tier}. Zgłoszone społeczności: {communities} z {community_limit}."
+  },
+  "sponsor_subscribe": {
+    "status": "unverified",
+    "text": "Sponsoring wspiera bota i daje ci własną przestrzeń w nim.\n\nPoziom 1: {communities1} społeczności, {wikis1} wiki i {socials1} źródła społecznościowe (Bluesky, YouTube i kanały Telegrama łącznie) na każdym twoim moście.\nPoziom 2: {communities2} społeczności, {wikis2} wiki i {socials2} źródeł społecznościowych.\n\nSponsor może otwierać mosty w zgłoszonych przez siebie społecznościach, a czaty do swoich mostów może dołączać tylko on sam.\n\nSubskrypcja: {url} — i koniecznie połącz konto Patreon z Discordem na stronie Patreona. Patreon przyzna ci wtedy rolę, którą bot odczytuje; bez tego połączenia roli nie ma i bot w ogóle nie wie, że jesteś sponsorem."
+  },
   "status_members_forms": {
     "status": "unverified",
     "text": [
@@ -1479,6 +1715,14 @@
       "lata",
       "lat"
     ]
+  },
+  "unlink_done": {
+    "status": "unverified",
+    "text": "Twoje konta Discord i Telegram nie są już powiązane. Prawa sponsora po stronie Telegrama kończą się natychmiast; społeczności i mosty należą do konta Discord i pozostają nietknięte."
+  },
+  "unlink_none": {
+    "status": "unverified",
+    "text": "To konto nie ma powiązania, które można by zerwać."
   },
   "unverify_done": {
     "status": "unverified",

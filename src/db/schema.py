@@ -15,10 +15,16 @@ literal survive.
 SCHEMA_SQL = """
 -- bridges: one row per bridge; nothing but the number. A bridge exists as
 -- long as at least one chat points at it (see remove_chat_from_bridge).
--- Written by attach_chat, read everywhere. The id space is split in three:
--- ordinary bridges below 100000, appeal bridges in [100000, 1000000)
--- (db/appeals.py: APPEAL_BRIDGE_ID_FLOOR) and inbox conversations at and
--- above 1000000 (db/inbox.py: INBOX_BRIDGE_ID_FLOOR).
+-- Written by attach_chat, read everywhere. What kind of bridge a number is
+-- has no column here and never will: the row dies with the bridge's last
+-- chat, and the number outlives it. The id space is split in FOUR regions,
+-- all four boundaries declared in db/ranges.py and tested with its
+-- bridge_kind():
+--   1 .. 49999          ordinary bridges, holes reused (next_free_bridge_id)
+--   50000 .. 99999      sponsor bridges, holes NEVER reused, owner in
+--                       sponsor_bridges (db/sponsors.py)
+--   100000 .. 999999    appeal bridges (db/appeals.py)
+--   1000000 and above   inbox conversations (db/inbox.py)
 CREATE TABLE IF NOT EXISTS bridges (
     id INTEGER PRIMARY KEY
 );
@@ -476,12 +482,16 @@ CREATE TABLE IF NOT EXISTS inbox_bots (
 -- a topic. Several rows per bot are the point — one incoming private chat
 -- then reaches a thread AND a topic, and the conversation bridge spans them
 -- all.
--- hide_header is /close-header: with it on, messages out of the private chat
--- arrive in this host's threads and topics as bare text, without the
--- '[Telegram | DM] Name:' line. It lives here rather than on the thread
--- because a thread is made fresh for every conversation and a setting on one
--- would die with it — and rather than on the bot, because one team may want
--- the headers and another team hosting the same bot may not.
+-- hide_header and hide_header_admin are the two halves of /close-header, one
+-- per direction of the conversation. hide_header: messages out of the private
+-- chat arrive in this host's threads and topics as bare text, without the
+-- '[Telegram | DM] Name:' line. hide_header_admin: the answers staff write in
+-- those threads reach the writer's private chat with no name in front of them
+-- either. `/close-header hide` sets both, `hide user` and `hide admin` set one.
+-- They live here rather than on the thread because a thread is made fresh for
+-- every conversation and a setting on one would die with it — and rather than
+-- on the bot, because one team may want the headers and another team hosting
+-- the same bot may not.
 CREATE TABLE IF NOT EXISTS inbox_hosts (
     bot_id TEXT NOT NULL,
     platform TEXT NOT NULL,
@@ -587,6 +597,82 @@ CREATE TABLE IF NOT EXISTS avatar_assets (
     url TEXT,
     url_ts INTEGER
 );
+
+-- account_links: the one-to-one Discord <-> Telegram identity of a person,
+-- completed only when each side named the other (see pending_links). The
+-- Discord account is the owner of everything that follows from it: Patreon
+-- binds a subscription to a Discord account and to nothing else, so a
+-- Telegram account is a sponsor only through its link and stops being one
+-- the moment the link is dropped. Read by sponsors.py on every sponsor
+-- check; written by /add-telegram + /add-discord and deleted by
+-- /unlink-accounts.
+CREATE TABLE IF NOT EXISTS account_links (
+    discord_id TEXT PRIMARY KEY,
+    telegram_id TEXT UNIQUE,
+    linked_at INTEGER
+);
+
+-- pending_links: one half of that handshake. `username` is what the caller
+-- is called on THIS platform and `claimed_other` who they say they are on
+-- the other one; the link completes when a row exists whose two fields are
+-- the mirror image, within thirty minutes. One row per account, so naming a
+-- different partner simply replaces the claim. The deadline is enforced by
+-- the read, not only by the sweep in pending_cleanup_loop.
+CREATE TABLE IF NOT EXISTS pending_links (
+    platform TEXT,
+    user_id TEXT,
+    username TEXT,
+    claimed_other TEXT,
+    created_at INTEGER,
+    PRIMARY KEY (platform, user_id)
+);
+
+-- sponsor_state: what the bot last saw of one Discord account's Patreon
+-- tier, and the freeze bookkeeping that follows a drop. `tier` is the tier
+-- the roles say RIGHT NOW (0 = no longer a sponsor); grace_from_tier and
+-- grace_since are set when it drops and hold the tier whose rights stay in
+-- force through the grace period. notified_grace / notified_expired make
+-- each notice fire exactly once, which is what stops a bot that was offline
+-- for a month from posting a month of them at start-up. slot_changed_at is
+-- the last community slot release, for the rotation limit.
+-- Written and read by sponsors.py alone.
+CREATE TABLE IF NOT EXISTS sponsor_state (
+    discord_id TEXT PRIMARY KEY,
+    tier INTEGER NOT NULL DEFAULT 0,
+    since INTEGER,
+    grace_from_tier INTEGER,
+    grace_since INTEGER,
+    notified_grace INTEGER NOT NULL DEFAULT 0,
+    notified_expired INTEGER NOT NULL DEFAULT 0,
+    slot_changed_at INTEGER,
+    updated_at INTEGER
+);
+
+-- sponsor_communities: the communities a sponsor has claimed, one slot each.
+-- Keyed on the community rather than the sponsor because a community can
+-- belong to at most one of them. server_id is the BARE community id -- a
+-- Discord guild id or a Telegram group id with no topic number -- so every
+-- topic of one group is one community and costs one slot.
+CREATE TABLE IF NOT EXISTS sponsor_communities (
+    platform TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    discord_id TEXT NOT NULL,
+    claimed_at INTEGER,
+    PRIMARY KEY (platform, server_id)
+);
+
+-- sponsor_bridges: who owns each number of the sponsor region. The row is
+-- written when the number is allocated and is NEVER deleted -- not when the
+-- bridge empties, not when the subscription lapses. That is the whole point
+-- of the region: the allocator takes max+1 over THIS table as well as over
+-- `bridges`, so a number whose bridge has gone is still spoken for, and its
+-- owner attaching a chat to it again gets their own bridge back rather than
+-- somebody else's.
+CREATE TABLE IF NOT EXISTS sponsor_bridges (
+    bridge_id INTEGER PRIMARY KEY,
+    discord_id TEXT NOT NULL,
+    created_at INTEGER
+);
 """
 
 _COLUMN_ADDITIONS = [
@@ -605,6 +691,7 @@ _COLUMN_ADDITIONS = [
     ("inbox_conversations", "title", "TEXT"),
     ("inbox_conversations", "status", "TEXT DEFAULT 'user'"),
     ("inbox_hosts", "hide_header", "INTEGER DEFAULT 0"),
+    ("inbox_hosts", "hide_header_admin", "INTEGER DEFAULT 0"),
     ("server_file_consents", "left_at", "INTEGER"),
 ]
 

@@ -139,6 +139,10 @@
     "status": "unverified",
     "text": "A new bridge {bridge_id} has been created and this chat attached to it. Give the number to the other chats — they join with /atb {bridge_id}."
   },
+  "atb_attached_sponsor": {
+    "status": "unverified",
+    "text": "Chat attached to your new sponsor bridge #{bridge_id}. Only you can attach other chats to it, and the number stays yours even if the bridge is ever left empty."
+  },
   "atb_invalid_id": {
     "status": "unverified",
     "text": "Invalid bridge ID. Give a number, or `new` to open a bridge on the lowest free number."
@@ -146,6 +150,22 @@
   "atb_no_free_id": {
     "status": "unverified",
     "text": "There are no free bridge numbers below {limit} left. Free one up by detaching the chats of a bridge that is no longer used, then try again."
+  },
+  "atb_no_free_sponsor_id": {
+    "status": "unverified",
+    "text": "There is no free sponsor bridge number left. Please tell the bot's administrators."
+  },
+  "atb_reserved_range": {
+    "status": "unverified",
+    "text": "Bridge numbers from {ceiling} up are reserved for appeals and support conversations, and numbers from {floor} up belong to sponsors — none of them can be named by hand. Use `/atb new`, or a number below {floor}."
+  },
+  "atb_sponsor_claim_first": {
+    "status": "unverified",
+    "text": "Claim this community first with /sponsor-claim (/sponsor_claim on Telegram); a sponsor can open bridges only in the communities they have claimed."
+  },
+  "atb_sponsor_not_owner": {
+    "status": "unverified",
+    "text": "This bridge belongs to a sponsor. Only its owner can attach chats to it — that is what the sponsorship pays for."
   },
   "atb_usage": {
     "status": "unverified",
@@ -187,9 +207,17 @@
     "status": "unverified",
     "text": "Number"
   },
+  "bridge_info.field_sponsor": {
+    "status": "unverified",
+    "text": "Sponsor bridge"
+  },
   "bridge_info.not_in_bridge": {
     "status": "unverified",
     "text": "This chat is not attached to a bridge."
+  },
+  "bridge_info.sponsor_owner": {
+    "status": "unverified",
+    "text": "Owner: {owner}"
   },
   "bridge_info.tg_template": {
     "status": "unverified",
@@ -259,21 +287,41 @@
     "status": "unverified",
     "text": "Closing this conversation."
   },
-  "close_header_hidden": {
+  "close_header_hidden_admin": {
     "status": "unverified",
-    "text": "Messages from the people writing to {bot} will arrive here without the header, from the next one on."
+    "text": "The answers your team writes to {bot}'s conversations will reach the other side with no name in front of them, from the next one on. Messages arriving here keep their header."
+  },
+  "close_header_hidden_both": {
+    "status": "unverified",
+    "text": "Messages from the people writing to {bot} will arrive here without the header, and the answers your team writes will reach them with no name in front — from the next message on."
+  },
+  "close_header_hidden_user": {
+    "status": "unverified",
+    "text": "Messages from the people writing to {bot} will arrive here without the header, from the next one on. Your team's own answers keep their names."
   },
   "close_header_not_host": {
     "status": "unverified",
     "text": "This community does not host the conversations of {bot}."
   },
-  "close_header_shown": {
+  "close_header_shown_admin": {
+    "status": "unverified",
+    "text": "The answers your team writes to {bot}'s conversations will be signed with their names again, from the next one on."
+  },
+  "close_header_shown_both": {
+    "status": "unverified",
+    "text": "Messages from the people writing to {bot} will carry the header again, and your team's answers will be signed with their names again, from the next message on."
+  },
+  "close_header_shown_user": {
     "status": "unverified",
     "text": "Messages from the people writing to {bot} will carry the header again, from the next one on."
   },
+  "close_header_unchanged": {
+    "status": "unverified",
+    "text": "Nothing was changed: no host chat of {bot} in this community could be updated. Check with /inboxlist that it still hosts conversations here."
+  },
   "close_header_usage": {
     "status": "unverified",
-    "text": "Usage: /close-header hide|show [bot]"
+    "text": "Usage: /close-header hide|show [user|admin|both] [bot] — `user` hides the names of people writing to the bot, `admin` the names your team's answers are signed with, and leaving it out does both."
   },
   "close_not_conversation": {
     "status": "unverified",
@@ -419,6 +467,14 @@
     "status": "unverified",
     "text": "This command is only available in a group."
   },
+  "help.cmd_add_discord_tg": {
+    "status": "unverified",
+    "text": "/add_discord <username> — link your Discord account to this one"
+  },
+  "help.cmd_add_telegram": {
+    "status": "unverified",
+    "text": "/add-telegram <@username> — link your Telegram account to this one"
+  },
   "help.cmd_allow_bots": {
     "status": "unverified",
     "text": "/allow-bots enable|disable — allow or forbid relaying messages from bots"
@@ -457,7 +513,7 @@
   },
   "help.cmd_close_header": {
     "status": "unverified",
-    "text": "/close-header hide|show [bot] — hide the relay header in this community's inbox conversations"
+    "text": "/close-header hide|show [user|admin|both] [bot] — hide the name headers in this community's inbox conversations"
   },
   "help.cmd_deadchat": {
     "status": "unverified",
@@ -631,6 +687,42 @@
     "status": "unverified",
     "text": "/shadow-ban <user> — hide a user's messages from relaying"
   },
+  "help.cmd_sponsor": {
+    "status": "unverified",
+    "text": "/sponsor — your sponsor status, slots and limits"
+  },
+  "help.cmd_sponsor_claim": {
+    "status": "unverified",
+    "text": "/sponsor-claim — claim this community as a sponsor"
+  },
+  "help.cmd_sponsor_claim_tg": {
+    "status": "unverified",
+    "text": "/sponsor_claim — claim this community as a sponsor"
+  },
+  "help.cmd_sponsor_release": {
+    "status": "unverified",
+    "text": "/sponsor-release [id] — give a community slot back"
+  },
+  "help.cmd_sponsor_release_tg": {
+    "status": "unverified",
+    "text": "/sponsor_release [id] — give a community slot back"
+  },
+  "help.cmd_sponsor_subscribe": {
+    "status": "unverified",
+    "text": "/sponsor-subscribe — how to become a sponsor"
+  },
+  "help.cmd_sponsor_subscribe_tg": {
+    "status": "unverified",
+    "text": "/sponsor_subscribe — how to become a sponsor"
+  },
+  "help.cmd_unlink_accounts": {
+    "status": "unverified",
+    "text": "/unlink-accounts — break the link between your accounts"
+  },
+  "help.cmd_unlink_accounts_tg": {
+    "status": "unverified",
+    "text": "/unlink_accounts — break the link between your accounts"
+  },
   "help.cmd_unverify": {
     "status": "unverified",
     "text": "/unverify <user> — revoke a user's verification"
@@ -798,6 +890,30 @@
   "lang_usage": {
     "status": "unverified",
     "text": "Usage: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "link_need_username": {
+    "status": "unverified",
+    "text": "Your Telegram account has no @username, so the Discord side has nothing to name you by. Set one in Telegram's settings and try again."
+  },
+  "link_pending_discord": {
+    "status": "unverified",
+    "text": "Noted: you say you are @{nick} on Telegram. Now run /add_discord there within 30 minutes and name your Discord username. Nothing is linked until both sides have named each other."
+  },
+  "link_pending_telegram": {
+    "status": "unverified",
+    "text": "Noted: you say you are {nick} on Discord. Now run /add-telegram there within 30 minutes and name your Telegram @username. Nothing is linked until both sides have named each other."
+  },
+  "link_success": {
+    "status": "unverified",
+    "text": "Your Discord and Telegram accounts are now linked. They share one sponsor status, one set of community slots and one set of source limits — not one each."
+  },
+  "link_usage_discord": {
+    "status": "unverified",
+    "text": "Usage: /add-telegram <your Telegram @username>. Then run /add_discord on Telegram within 30 minutes and name your Discord username there — the link is only made when both sides name each other."
+  },
+  "link_usage_telegram": {
+    "status": "unverified",
+    "text": "Usage: /add_discord <your Discord username>. Then run /add-telegram on Discord within 30 minutes and name your Telegram @username there — the link is only made when both sides name each other."
   },
   "list_chats_discord_header": {
     "status": "unverified",
@@ -1356,6 +1472,126 @@
     "status": "unverified",
     "text": "Usage: /shadow-ban <user_id_or_name>"
   },
+  "sponsor_claim_no_slots": {
+    "status": "unverified",
+    "text": "All your community slots are taken ({used} of {limit}). Release one with /sponsor-release, or raise your tier."
+  },
+  "sponsor_claim_not_a_community": {
+    "status": "unverified",
+    "text": "Run this in the server or group you want to claim."
+  },
+  "sponsor_claim_not_a_sponsor": {
+    "status": "unverified",
+    "text": "Only sponsors can claim a community. Run /sponsor-subscribe (/sponsor_subscribe on Telegram) to see how."
+  },
+  "sponsor_claim_not_admin": {
+    "status": "unverified",
+    "text": "Only an administrator of this community can claim it."
+  },
+  "sponsor_claim_ok": {
+    "status": "unverified",
+    "text": "This community is now one of yours: {used} of {limit} slots used."
+  },
+  "sponsor_claim_taken": {
+    "status": "unverified",
+    "text": "Another sponsor has already claimed this community."
+  },
+  "sponsor_claim_too_soon": {
+    "status": "unverified",
+    "text": "You released a community slot recently. A new community can be claimed in {days} day(s) — the wait is there so that one subscription cannot serve a queue of communities in turn."
+  },
+  "sponsor_claim_yours": {
+    "status": "unverified",
+    "text": "You have already claimed this community."
+  },
+  "sponsor_feed_frozen": {
+    "status": "unverified",
+    "text": "This bridge belongs to a sponsor whose subscription is not active, so no new sources can be added here and the ones already attached are paused. Nothing was deleted: they start relaying again by themselves once the subscription returns."
+  },
+  "sponsor_none": {
+    "status": "unverified",
+    "text": "You are not a sponsor. Run /sponsor-subscribe (/sponsor_subscribe on Telegram) to see what a subscription gives you. If you have already subscribed, check that your Patreon account is connected to Discord — that connection is the only thing the bot can see."
+  },
+  "sponsor_notice_downgraded": {
+    "status": "unverified",
+    "text": "Your sponsor tier is now {tier}.\n\nNothing has been deleted and no relaying has stopped. New sources are limited to the new tier from now on ({wikis} wikis and {socials} social sources per bridge); the sources already attached keep working even where there are more of them than that.\n\nYou may now claim {communities} communities. If you hold more than that, please release the ones you no longer need within {days} days with /sponsor-release. If you have not chosen by then, the communities claimed FIRST are kept and the ones claimed most recently are released."
+  },
+  "sponsor_notice_expired": {
+    "status": "unverified",
+    "text": "The grace period on your sponsorship has ended.\n\nYour community slots beyond what the current tier allows have been released, and the exclusive right to attach chats to your bridges has ended with them. Your bridges keep their numbers — they stay reserved for you and are given to nobody else — and every bridge, chat, source and setting is still there, untouched.\n\nSubscribing again gives the status straight back; you would only need to claim your communities once more."
+  },
+  "sponsor_notice_fallback": {
+    "status": "unverified",
+    "text": "{mention} — the bot could not reach you in direct messages. There is something waiting for you about your sponsorship: run /sponsor to read it, or open your direct messages and it will be sent there."
+  },
+  "sponsor_notice_frozen": {
+    "status": "unverified",
+    "text": "Your sponsor subscription is no longer active.\n\nRelaying from followed sources on your bridges has been paused. Your rights — your community slots and your bridges — stay for {days} more days; after that the slots are released. Nothing is deleted at any point: your bridges, chats, sources and settings all stay exactly as they are, and everything starts working again by itself if you subscribe again.\n\nIf this is a mistake, check on Patreon that your subscription is active and that your Patreon account is still connected to Discord."
+  },
+  "sponsor_notice_restored": {
+    "status": "unverified",
+    "text": "Your sponsorship is active again. Everything that was paused is running, and nothing was lost while it was."
+  },
+  "sponsor_quota_socials": {
+    "status": "unverified",
+    "text": "This sponsor bridge already follows {used} of {limit} social sources — Bluesky accounts, YouTube channels and Telegram channels share one limit. Remove one, or raise the tier."
+  },
+  "sponsor_quota_wikis": {
+    "status": "unverified",
+    "text": "This sponsor bridge already follows {used} of {limit} wikis. Remove one with /remwikifeed, or raise the tier."
+  },
+  "sponsor_release_none": {
+    "status": "unverified",
+    "text": "You have not claimed that community."
+  },
+  "sponsor_release_ok": {
+    "status": "unverified",
+    "text": "Community {server_id} released; you now hold {used} slot(s). Its bridges, chats and sources are untouched. A new community can be claimed in {days} day(s)."
+  },
+  "sponsor_status_bridge": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — wikis {wikis}/{wiki_limit}, social sources {socials}/{social_limit}"
+  },
+  "sponsor_status_bridge_empty": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — no chats right now; the number stays yours"
+  },
+  "sponsor_status_bridges": {
+    "status": "unverified",
+    "text": "Bridges:"
+  },
+  "sponsor_status_communities": {
+    "status": "unverified",
+    "text": "Communities:"
+  },
+  "sponsor_status_community": {
+    "status": "unverified",
+    "text": "* {platform}: {server_id}"
+  },
+  "sponsor_status_downgraded": {
+    "status": "unverified",
+    "text": "You are now paying for tier {tier}. Your previous rights stay for {days} more day(s); after that you keep the {communities} community slot(s) claimed first and the rest are released. New sources are already limited to the new tier; the ones already running are not touched."
+  },
+  "sponsor_status_frozen": {
+    "status": "unverified",
+    "text": "Your subscription is no longer active. Relaying from followed sources on your bridges is paused. Your rights stay for {days} more day(s); after that your community slots are released. Nothing is deleted, and everything starts working again by itself if the subscription returns."
+  },
+  "sponsor_status_link": {
+    "status": "unverified",
+    "text": "Linked Telegram account: {telegram_id}"
+  },
+  "sponsor_status_no_link": {
+    "status": "unverified",
+    "text": "No Telegram account is linked. Use /add-telegram here and /add_discord there to link one — without it a Telegram account cannot use your sponsorship."
+  },
+  "sponsor_status_tier": {
+    "status": "unverified",
+    "text": "Sponsor, tier {tier}. Communities claimed: {communities} of {community_limit}."
+  },
+  "sponsor_subscribe": {
+    "status": "unverified",
+    "text": "Sponsorship supports the bot and gives you your own space in it.\n\nTier 1: {communities1} communities, {wikis1} wikis and {socials1} social sources (Bluesky, YouTube and Telegram channels together) on each of your bridges.\nTier 2: {communities2} communities, {wikis2} wikis and {socials2} social sources.\n\nA sponsor may open bridges in the communities they have claimed, and only they can attach chats to their own bridges.\n\nSubscribe at {url} — and be sure to connect your Patreon account to Discord on Patreon's own site. Patreon then grants you the role this bot reads; without that connection there is no role and the bot cannot tell that you are a sponsor at all."
+  },
   "status_members_forms": {
     "status": "unverified",
     "text": [
@@ -1479,6 +1715,14 @@
       "years",
       "years"
     ]
+  },
+  "unlink_done": {
+    "status": "unverified",
+    "text": "Your Discord and Telegram accounts are no longer linked. Sponsor rights on the Telegram side end immediately; the communities and bridges belong to the Discord account and are untouched."
+  },
+  "unlink_none": {
+    "status": "unverified",
+    "text": "There is no link on this account to break."
   },
   "unverify_done": {
     "status": "unverified",

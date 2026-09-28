@@ -9,12 +9,20 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 import db
+import sponsors
 from utils import feed_scope_name, get_chat_lang, is_admin, is_chat_admin, localized
 
 from telegram_bot.client import router
 
 async def _feed_command_tg(message: Message, kind, keys, usage_key):
-    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed` on Telegram."""
+    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed` on Telegram.
+
+    The quota check comes after the permission check and is a separate
+    question: whether the person may configure feeds here, and whether this
+    bridge has room for another one, have different answers and different
+    reasons. It is a no-op anywhere but on a sponsor bridge
+    (sponsors.feed_quota).
+    """
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_id)
@@ -30,6 +38,11 @@ async def _feed_command_tg(message: Message, kind, keys, usage_key):
     source = parts[1].strip() if len(parts) > 1 else ""
     if not source:
         await message.reply(localized(usage_key, lang))
+        return
+
+    allowed, reason, used, limit = sponsors.feed_quota(chat_id, kind)
+    if not allowed:
+        await message.reply(localized(reason, lang, used=used, limit=limit))
         return
 
     from discord_bot import attach_feed

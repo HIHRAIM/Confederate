@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 
 import db
+import sponsors
 import wiki_events
 from utils import bridge_feed_permission, feed_scope_name, get_chat_lang, localized
 
@@ -42,6 +43,12 @@ async def setwikifeed_cmd(interaction: discord.Interaction, wiki: str):
     allowed, in_bridge = bridge_feed_permission("discord", chat_id, interaction.user.id)
     if not allowed:
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    within_quota, reason, used, limit = sponsors.feed_quota(chat_id, "wiki")
+    if not within_quota:
+        await interaction.response.send_message(
+            localized(reason, lang, used=used, limit=limit), ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)

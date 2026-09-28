@@ -534,6 +534,12 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_locale", lang),
         localized_help("cmd_loc_compare", lang),
         localized_help("cmd_loc_suggest", lang),
+        localized_help("cmd_add_telegram", lang),
+        localized_help("cmd_unlink_accounts", lang),
+        localized_help("cmd_sponsor", lang),
+        localized_help("cmd_sponsor_claim", lang),
+        localized_help("cmd_sponsor_release", lang),
+        localized_help("cmd_sponsor_subscribe", lang),
         localized_help("cmd_help", lang),
     ])
 

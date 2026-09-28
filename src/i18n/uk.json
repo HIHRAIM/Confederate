@@ -139,6 +139,10 @@
     "status": "unverified",
     "text": "Створено новий міст {bridge_id}, чат підключено до нього. Повідомте номер іншим чатам — вони підключаються командою /atb {bridge_id}."
   },
+  "atb_attached_sponsor": {
+    "status": "unverified",
+    "text": "Чат приєднано до вашого нового спонсорського мосту #{bridge_id}. Приєднувати до нього інші чати можете лише ви, а номер лишається за вами, навіть якщо міст колись спорожніє."
+  },
   "atb_invalid_id": {
     "status": "unverified",
     "text": "Невірний ID мосту. Вкажіть число або `new`, щоб створити міст із найменшим вільним номером."
@@ -146,6 +150,22 @@
   "atb_no_free_id": {
     "status": "unverified",
     "text": "Вільних номерів мостів нижче {limit} не залишилося. Звільніть номер, від'єднавши чати невикористовуваного мосту, і повторіть."
+  },
+  "atb_no_free_sponsor_id": {
+    "status": "unverified",
+    "text": "Вільних номерів спонсорських мостів не лишилося. Повідомте адміністраторів бота."
+  },
+  "atb_reserved_range": {
+    "status": "unverified",
+    "text": "Номери мостів від {ceiling} і вище зарезервовані за апеляціями та розмовами підтримки, а номери від {floor} і вище належать спонсорам — жоден з них не можна назвати вручну. Використайте `/atb new` або номер менший за {floor}."
+  },
+  "atb_sponsor_claim_first": {
+    "status": "unverified",
+    "text": "Спершу заявіть цю спільноту командою /sponsor-claim (у Telegram — /sponsor_claim); спонсор може створювати мости лише в заявлених ним спільнотах."
+  },
+  "atb_sponsor_not_owner": {
+    "status": "unverified",
+    "text": "Цей міст належить спонсору. Приєднувати до нього чати може лише його власник — саме за це й заплачено."
   },
   "atb_usage": {
     "status": "unverified",
@@ -187,9 +207,17 @@
     "status": "unverified",
     "text": "Номер"
   },
+  "bridge_info.field_sponsor": {
+    "status": "unverified",
+    "text": "Спонсорський міст"
+  },
   "bridge_info.not_in_bridge": {
     "status": "unverified",
     "text": "Цей чат не підключено до мосту."
+  },
+  "bridge_info.sponsor_owner": {
+    "status": "unverified",
+    "text": "Власник: {owner}"
   },
   "bridge_info.tg_template": {
     "status": "unverified",
@@ -259,21 +287,41 @@
     "status": "unverified",
     "text": "Закриваю цей діалог."
   },
-  "close_header_hidden": {
+  "close_header_hidden_admin": {
     "status": "unverified",
-    "text": "Повідомлення від тих, хто пише боту {bot}, надходитимуть сюди без заголовка — починаючи з наступного."
+    "text": "Відповіді вашої команди в розмовах {bot} доходитимуть до співрозмовника без імені, починаючи з наступної. Повідомлення, що надходять сюди, збережуть заголовок."
+  },
+  "close_header_hidden_both": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, надходитимуть сюди без заголовка, а відповіді вашої команди доходитимуть до них без імені — починаючи з наступного повідомлення."
+  },
+  "close_header_hidden_user": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, надходитимуть сюди без заголовка, починаючи з наступного. Відповіді вашої команди збережуть імена."
   },
   "close_header_not_host": {
     "status": "unverified",
     "text": "Ця спільнота не приймає діалоги {bot}."
   },
-  "close_header_shown": {
+  "close_header_shown_admin": {
     "status": "unverified",
-    "text": "Повідомлення від тих, хто пише боту {bot}, знову надходитимуть із заголовком — починаючи з наступного."
+    "text": "Відповіді вашої команди в розмовах {bot} знову будуть підписані іменами, починаючи з наступної."
+  },
+  "close_header_shown_both": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, знову будуть із заголовком, а відповіді вашої команди знову будуть підписані іменами — починаючи з наступного повідомлення."
+  },
+  "close_header_shown_user": {
+    "status": "unverified",
+    "text": "Повідомлення від тих, хто пише боту {bot}, знову будуть із заголовком, починаючи з наступного."
+  },
+  "close_header_unchanged": {
+    "status": "unverified",
+    "text": "Нічого не змінилося: жоден хост-чат {bot} у цій спільноті оновити не вдалося. Перевірте через /inboxlist, що він усе ще приймає тут розмови."
   },
   "close_header_usage": {
     "status": "unverified",
-    "text": "Використання: /close-header hide|show [бот]"
+    "text": "Використання: /close-header hide|show [user|admin|both] [бот] — `user` приховує імена тих, хто пише боту, `admin` — імена, якими підписані відповіді вашої команди, без зазначення — і те, і те."
   },
   "close_not_conversation": {
     "status": "unverified",
@@ -419,6 +467,14 @@
     "status": "unverified",
     "text": "Ця команда доступна лише в групі."
   },
+  "help.cmd_add_discord_tg": {
+    "status": "unverified",
+    "text": "/add_discord <нік> — зв'язати ваш акаунт Discord із цим"
+  },
+  "help.cmd_add_telegram": {
+    "status": "unverified",
+    "text": "/add-telegram <@username> — зв'язати ваш акаунт Telegram із цим"
+  },
   "help.cmd_allow_bots": {
     "status": "unverified",
     "text": "/allow-bots enable|disable — дозволити або заборонити пересилання повідомлень від ботів"
@@ -457,7 +513,7 @@
   },
   "help.cmd_close_header": {
     "status": "unverified",
-    "text": "/close-header hide|show [бот] — сховати заголовок у діалогах бота-приймальні в цій спільноті"
+    "text": "/close-header hide|show [user|admin|both] [бот] — приховати заголовки з іменами в розмовах inbox цієї спільноти"
   },
   "help.cmd_deadchat": {
     "status": "unverified",
@@ -631,6 +687,42 @@
     "status": "unverified",
     "text": "/shadow-ban <user> — приховати повідомлення користувача від пересилання"
   },
+  "help.cmd_sponsor": {
+    "status": "unverified",
+    "text": "/sponsor — ваш спонсорський статус, слоти та ліміти"
+  },
+  "help.cmd_sponsor_claim": {
+    "status": "unverified",
+    "text": "/sponsor-claim — заявити цю спільноту як спонсорську"
+  },
+  "help.cmd_sponsor_claim_tg": {
+    "status": "unverified",
+    "text": "/sponsor_claim — заявити цю спільноту як спонсорську"
+  },
+  "help.cmd_sponsor_release": {
+    "status": "unverified",
+    "text": "/sponsor-release [id] — звільнити слот спільноти"
+  },
+  "help.cmd_sponsor_release_tg": {
+    "status": "unverified",
+    "text": "/sponsor_release [id] — звільнити слот спільноти"
+  },
+  "help.cmd_sponsor_subscribe": {
+    "status": "unverified",
+    "text": "/sponsor-subscribe — як стати спонсором"
+  },
+  "help.cmd_sponsor_subscribe_tg": {
+    "status": "unverified",
+    "text": "/sponsor_subscribe — як стати спонсором"
+  },
+  "help.cmd_unlink_accounts": {
+    "status": "unverified",
+    "text": "/unlink-accounts — розірвати зв'язку ваших акаунтів"
+  },
+  "help.cmd_unlink_accounts_tg": {
+    "status": "unverified",
+    "text": "/unlink_accounts — розірвати зв'язку ваших акаунтів"
+  },
   "help.cmd_unverify": {
     "status": "unverified",
     "text": "/unverify <user> — відкликати верифікацію користувача"
@@ -798,6 +890,30 @@
   "lang_usage": {
     "status": "unverified",
     "text": "Використання: /lang <ru|uk|pl|en|es|pt>"
+  },
+  "link_need_username": {
+    "status": "unverified",
+    "text": "У вашого акаунта Telegram немає @username, і з боку Discord вас немає чим назвати. Задайте його в налаштуваннях Telegram і повторіть."
+  },
+  "link_pending_discord": {
+    "status": "unverified",
+    "text": "Записано: ви кажете, що в Telegram ви @{nick}. Тепер протягом 30 хвилин виконайте там /add_discord і назвіть свій нік Discord. Доки обидві сторони не назвали одна одну, зв'язки немає."
+  },
+  "link_pending_telegram": {
+    "status": "unverified",
+    "text": "Записано: ви кажете, що в Discord ви {nick}. Тепер протягом 30 хвилин виконайте там /add-telegram і назвіть свій @username у Telegram. Доки обидві сторони не назвали одна одну, зв'язки немає."
+  },
+  "link_success": {
+    "status": "unverified",
+    "text": "Акаунти Discord і Telegram зв'язані. У них спільний спонсорський статус, спільні слоти спільнот і спільні ліміти джерел — один комплект на двох, а не по одному на кожен."
+  },
+  "link_usage_discord": {
+    "status": "unverified",
+    "text": "Використання: /add-telegram <ваш @username у Telegram>. Потім протягом 30 хвилин виконайте /add_discord у Telegram і назвіть там свій нік Discord — зв'язка створюється, лише коли обидві сторони назвали одна одну."
+  },
+  "link_usage_telegram": {
+    "status": "unverified",
+    "text": "Використання: /add_discord <ваш нік у Discord>. Потім протягом 30 хвилин виконайте /add-telegram у Discord і назвіть там свій @username у Telegram — зв'язка створюється, лише коли обидві сторони назвали одна одну."
   },
   "list_chats_discord_header": {
     "status": "unverified",
@@ -1356,6 +1472,126 @@
     "status": "unverified",
     "text": "Використання: /shadow-ban <id_або_ім'я_користувача>"
   },
+  "sponsor_claim_no_slots": {
+    "status": "unverified",
+    "text": "Усі ваші слоти спільнот зайняті ({used} з {limit}). Звільніть один командою /sponsor-release або підвищте рівень."
+  },
+  "sponsor_claim_not_a_community": {
+    "status": "unverified",
+    "text": "Виконайте це в сервері або групі, які хочете заявити."
+  },
+  "sponsor_claim_not_a_sponsor": {
+    "status": "unverified",
+    "text": "Заявити спільноту можуть лише спонсори. Виконайте /sponsor-subscribe (у Telegram — /sponsor_subscribe), щоб дізнатися як."
+  },
+  "sponsor_claim_not_admin": {
+    "status": "unverified",
+    "text": "Заявити цю спільноту може лише її адміністратор."
+  },
+  "sponsor_claim_ok": {
+    "status": "unverified",
+    "text": "Ця спільнота тепер ваша: зайнято {used} з {limit} слотів."
+  },
+  "sponsor_claim_taken": {
+    "status": "unverified",
+    "text": "Цю спільноту вже заявив інший спонсор."
+  },
+  "sponsor_claim_too_soon": {
+    "status": "unverified",
+    "text": "Ви нещодавно звільнили слот спільноти. Нову спільноту можна заявити через {days} дн. — очікування потрібне, щоб одна підписка не обслуговувала спільноти по черзі."
+  },
+  "sponsor_claim_yours": {
+    "status": "unverified",
+    "text": "Ви вже заявили цю спільноту."
+  },
+  "sponsor_feed_frozen": {
+    "status": "unverified",
+    "text": "Цей міст належить спонсору, чия підписка неактивна, тому нові джерела сюди додати не можна, а вже прив'язані призупинені. Нічого не видалено: з поновленням підписки вони знову почнуть пересилати самі."
+  },
+  "sponsor_none": {
+    "status": "unverified",
+    "text": "Ви не спонсор. Виконайте /sponsor-subscribe (у Telegram — /sponsor_subscribe), щоб дізнатися, що дає підписка. Якщо ви вже підписалися, перевірте, що акаунт Patreon пов'язаний з Discord: цей зв'язок — єдине, що бачить бот."
+  },
+  "sponsor_notice_downgraded": {
+    "status": "unverified",
+    "text": "Ваш спонсорський рівень тепер {tier}.\n\nНічого не видалено і жодне пересилання не зупинено. Нові джерела тепер обмежені новим рівнем ({wikis} вікі та {socials} джерел соцмереж на міст); уже прив'язані продовжують працювати, навіть якщо їх більше.\n\nТепер вам доступно {communities} спільнот. Якщо зайнято більше, звільніть зайві протягом {days} днів командою /sponsor-release. Якщо ви не оберете самі, лишаться спільноти, заявлені НАЙРАНІШЕ, а заявлені пізніше буде звільнено."
+  },
+  "sponsor_notice_expired": {
+    "status": "unverified",
+    "text": "Пільговий строк за вашою підпискою вичерпано.\n\nСлоти спільнот понад те, що дозволяє поточний рівень, звільнено, і разом з ними припинилося виняткове право приєднувати чати до ваших мостів. Номери мостів лишаються за вами — вони зарезервовані й нікому іншому не видаються, — а всі мости, чати, джерела й налаштування на місці й недоторкані.\n\nЗ поновленням підписки статус повернеться одразу; заявити спільноти доведеться заново."
+  },
+  "sponsor_notice_fallback": {
+    "status": "unverified",
+    "text": "{mention} — бот не зміг написати вам у приватні повідомлення. На вас чекає повідомлення про вашу підписку: виконайте /sponsor, щоб його прочитати, або відкрийте приватні повідомлення, і воно надійде туди."
+  },
+  "sponsor_notice_frozen": {
+    "status": "unverified",
+    "text": "Ваша спонсорська підписка більше не активна.\n\nПересилання з відстежуваних джерел на ваших мостах призупинено. Права — слоти спільнот і мости — зберігаються ще {days} днів; після цього слоти звільняються. Нічого не видаляється на жодному кроці: мости, чати, джерела й налаштування лишаються як є, і з поновленням підписки все оживає саме.\n\nЯкщо це помилка, перевірте на Patreon, що підписка активна і акаунт Patreon усе ще пов'язаний з Discord."
+  },
+  "sponsor_notice_restored": {
+    "status": "unverified",
+    "text": "Ваша підписка знову активна. Усе, що було призупинено, працює, і за цей час нічого не втрачено."
+  },
+  "sponsor_quota_socials": {
+    "status": "unverified",
+    "text": "Цей спонсорський міст уже відстежує {used} з {limit} джерел соцмереж — акаунти Bluesky, канали YouTube і канали Telegram ділять один ліміт. Приберіть одне або підвищте рівень."
+  },
+  "sponsor_quota_wikis": {
+    "status": "unverified",
+    "text": "Цей спонсорський міст уже відстежує {used} з {limit} вікі. Приберіть одну командою /remwikifeed або підвищте рівень."
+  },
+  "sponsor_release_none": {
+    "status": "unverified",
+    "text": "Ви не заявляли цю спільноту."
+  },
+  "sponsor_release_ok": {
+    "status": "unverified",
+    "text": "Спільноту {server_id} звільнено; у вас тепер {used} слот(ів). Її мости, чати та джерела не зачеплені. Нову спільноту можна заявити через {days} дн."
+  },
+  "sponsor_status_bridge": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — вікі {wikis}/{wiki_limit}, соцмережі {socials}/{social_limit}"
+  },
+  "sponsor_status_bridge_empty": {
+    "status": "unverified",
+    "text": "* #{bridge_id} — зараз без чатів; номер лишається за вами"
+  },
+  "sponsor_status_bridges": {
+    "status": "unverified",
+    "text": "Мости:"
+  },
+  "sponsor_status_communities": {
+    "status": "unverified",
+    "text": "Спільноти:"
+  },
+  "sponsor_status_community": {
+    "status": "unverified",
+    "text": "* {platform}: {server_id}"
+  },
+  "sponsor_status_downgraded": {
+    "status": "unverified",
+    "text": "Зараз ви платите за рівень {tier}. Попередні права зберігаються ще {days} дн.; після цього лишаються {communities} спільнот(и), заявлені найраніше, а решта звільняються. Нові джерела вже обмежені новим рівнем; ті, що вже працюють, не чіпаються."
+  },
+  "sponsor_status_frozen": {
+    "status": "unverified",
+    "text": "Підписка більше не активна. Пересилання з відстежуваних джерел на ваших мостах призупинено. Права зберігаються ще {days} дн.; після цього слоти спільнот звільняються. Нічого не видаляється, і з поновленням підписки все оживає саме."
+  },
+  "sponsor_status_link": {
+    "status": "unverified",
+    "text": "Пов'язаний акаунт Telegram: {telegram_id}"
+  },
+  "sponsor_status_no_link": {
+    "status": "unverified",
+    "text": "Акаунт Telegram не пов'язаний. Зв'яжіть його командами /add-telegram тут і /add_discord там — без зв'язки акаунт Telegram не може користуватися вашою підпискою."
+  },
+  "sponsor_status_tier": {
+    "status": "unverified",
+    "text": "Спонсор, рівень {tier}. Заявлено спільнот: {communities} з {community_limit}."
+  },
+  "sponsor_subscribe": {
+    "status": "unverified",
+    "text": "Спонсорство підтримує бота й дає вам власний простір у ньому.\n\nРівень 1: {communities1} спільноти, {wikis1} вікі та {socials1} джерела соцмереж (Bluesky, YouTube і канали Telegram сумарно) на кожен ваш міст.\nРівень 2: {communities2} спільнот, {wikis2} вікі та {socials2} джерел соцмереж.\n\nСпонсор може створювати мости в заявлених ним спільнотах, і приєднувати чати до своїх мостів може лише він сам.\n\nОформити підписку: {url} — і обов'язково зв'яжіть акаунт Patreon з Discord на сайті Patreon. Після цього Patreon видасть вам роль, яку читає бот; без цього зв'язку ролі немає, і бот взагалі не дізнається, що ви спонсор."
+  },
   "status_members_forms": {
     "status": "unverified",
     "text": [
@@ -1479,6 +1715,14 @@
       "роки",
       "років"
     ]
+  },
+  "unlink_done": {
+    "status": "unverified",
+    "text": "Акаунти Discord і Telegram більше не зв'язані. Спонсорські права на боці Telegram припиняються негайно; спільноти та мости належать акаунту Discord і лишаються недоторканими."
+  },
+  "unlink_none": {
+    "status": "unverified",
+    "text": "У цього акаунта немає зв'язки, яку можна було б розірвати."
   },
   "unverify_done": {
     "status": "unverified",

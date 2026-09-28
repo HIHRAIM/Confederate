@@ -15,7 +15,10 @@ the process must run with cwd = src/ (main.py and the control panel both do).
 Import order at the bottom matters: submodules do ``from db import conn,
 cur`` against this partially-initialized module, which works only because
 conn/cur are defined above those imports. Keep new submodule imports at the
-bottom, and re-export new helpers here.
+bottom, and re-export new helpers here. The one submodule outside that rule
+is db/ranges.py, which imports nothing at all -- it holds the four boundaries
+of the bridge-number space, and every other module that needs one takes it
+from there rather than from whichever neighbour happened to declare it.
 """
 import sqlite3
 import threading
@@ -147,7 +150,6 @@ from db.feeds import (
     wiki_settings_chat,
 )
 from db.appeals import (
-    APPEAL_BRIDGE_ID_FLOOR,
     create_appeal,
     delete_appeal,
     find_consul_name_owner,
@@ -165,7 +167,7 @@ from db.appeals import (
     set_consul_name,
 )
 from db.inbox import (
-    INBOX_BRIDGE_ID_FLOOR,
+    HEADER_SCOPES,
     add_inbox_ban,
     add_inbox_bot,
     add_inbox_host,
@@ -189,6 +191,7 @@ from db.inbox import (
     inbox_chat_id,
     inbox_file_relay_enabled,
     inbox_header_hidden,
+    inbox_staff_header_hidden,
     is_inbox_banned,
     is_inbox_bridge,
     remember_inbox_topic,
@@ -254,4 +257,40 @@ from db.assets import (
     get_avatar_asset,
     save_avatar_asset,
     set_avatar_asset_url,
+)
+from db.ranges import (
+    APPEAL_BRIDGE_ID_FLOOR,
+    INBOX_BRIDGE_ID_FLOOR,
+    ORDINARY_BRIDGE_ID_FLOOR,
+    SPONSOR_BRIDGE_ID_FLOOR,
+    bridge_kind,
+    bridge_range,
+    is_reserved_bridge_id,
+)
+from db.sponsors import (
+    LINK_WINDOW_SECONDS,
+    add_pending_link,
+    canonical_sponsor_id,
+    claim_community,
+    claim_sponsor_bridge_id,
+    cleanup_old_pending_links,
+    frozen_sponsor_chat_ids,
+    get_community_claim,
+    get_known_sponsors,
+    get_link_by_discord,
+    get_link_by_telegram,
+    get_pending_links,
+    get_sponsor_bridge,
+    get_sponsor_bridges,
+    get_sponsor_communities,
+    get_sponsor_state,
+    get_sponsors_in_grace,
+    link_accounts,
+    mark_sponsor_notified,
+    register_link_attempt,
+    remove_pending_link,
+    release_community,
+    save_sponsor_state,
+    touch_sponsor_slot_change,
+    unlink_accounts,
 )

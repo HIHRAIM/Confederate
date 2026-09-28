@@ -10,19 +10,33 @@ import discord
 from discord import app_commands
 
 import db
+import sponsors
 from utils import feed_scope_name, get_chat_lang, is_admin, is_chat_admin, localized
 
 from discord_bot.client import bot
 from discord_bot.feeds import attach_feed, feed_module
 
 async def _feed_command(interaction: discord.Interaction, kind, account, keys):
-    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed`."""
+    """Shared body of `/setbskyfeed`, `/setytfeed` and `/settgfeed`.
+
+    The quota check comes after the permission check and is a separate
+    question: whether the person may configure feeds here, and whether this
+    bridge has room for another one, have different answers and different
+    reasons. It is a no-op anywhere but on a sponsor bridge
+    (sponsors.feed_quota).
+    """
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id)
 
     if not (is_admin("discord", interaction.user.id)
             or is_chat_admin("discord", chat_id, interaction.user.id)):
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+
+    allowed, reason, used, limit = sponsors.feed_quota(chat_id, kind)
+    if not allowed:
+        await interaction.response.send_message(
+            localized(reason, lang, used=used, limit=limit), ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)

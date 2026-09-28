@@ -83,21 +83,41 @@ def _media_url(holder):
 
 _GENERATED_EMBED_TYPES = ("image", "gifv", "video", "article", "link")
 
-def _is_authored_embed(embed):
+def _is_authored_embed(embed, message=None):
     """Whether this embed was *sent* with the message, rather than unfurled by
     Discord from a link inside it.
 
-    Discord stamps its own link previews with a type of their own — `video` for
-    a YouTube link, `article` for a news page, plus `image`, `gifv` and `link`
-    — and leaves `rich` for the embeds a bot or a webhook actually posted.
-    Only the second kind is content. A preview is Discord's rendering of a URL
-    that is already in the message text, so flattening it would append to the
-    copy a paragraph the sender never wrote — channel name, video title,
-    description, thumbnail and the link a second time — and the target chat
-    unfurls the very same link on its own. A message carrying a link must
-    cross as the message it is."""
+    A preview is Discord's rendering of a URL that is already in the message
+    text, so flattening it appends to the copy a paragraph the sender never
+    wrote — title, description, fields, thumbnail and the link a second time —
+    while the target chat unfurls that same link by itself. A message carrying
+    a link must cross as the message it is.
+
+    Three tests, because the obvious one is not enough. The embed `type` is
+    the weakest: it is documented as deprecated, and Discord hands back `rich`
+    — the type that is supposed to mean "somebody sent this" — for the preview
+    of any site with full OpenGraph markup. A Steam store page unfurls as
+    `rich`, with fields and all, which is how a one-line message came out the
+    other side with the whole shop entry pasted after it.
+
+    So the decisive test is the author: **a human cannot send an embed at
+    all.** Only bots, webhooks and applications can, so on a message from a
+    person every embed is Discord's own, whatever it is typed. And on a
+    message from a bot — which the relay carries where `/allow-bots` is on —
+    an embed whose own URL is already in the text is a preview of that text,
+    not a second thing the bot had to say."""
     kind = getattr(embed, "type", None)
-    return kind is None or kind not in _GENERATED_EMBED_TYPES
+    if kind is not None and kind in _GENERATED_EMBED_TYPES:
+        return False
+    if message is None:
+        return True
+    author = getattr(message, "author", None)
+    if author is not None and not getattr(author, "bot", False):
+        return False
+    url = getattr(embed, "url", None)
+    if url and url in (getattr(message, "content", "") or ""):
+        return False
+    return True
 
 def _one_embed_text(embed, keep_media_only):
     """One embed as a block of markdown lines, or ``None`` when it carries
@@ -165,7 +185,8 @@ def _discord_embed_texts(message: discord.Message):
     Telegram — where embeds do not exist — as readable text, and reaches a
     Discord target as text too rather than as a rebuilt embed.
 
-    Only embeds somebody *sent* are flattened (`_is_authored_embed`); the
+    Only embeds somebody *sent* are flattened (`_is_authored_embed`, which is
+    handed the whole message because the sender is what settles it); the
     previews Discord builds for the links in a message are left alone, since
     the link they came from is already in the text being relayed. Among the
     sent ones, an embed that is only a picture is dropped while the message
@@ -176,7 +197,7 @@ def _discord_embed_texts(message: discord.Message):
                         or getattr(message, "attachments", None))
     texts = []
     for embed in embeds:
-        if not _is_authored_embed(embed):
+        if not _is_authored_embed(embed, message):
             continue
         block = _one_embed_text(embed, keep_media_only=not has_own_text)
         if block:

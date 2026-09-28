@@ -84,11 +84,15 @@ src/
   backup_crypto.py     encrypted database snapshots and stored-token encryption
   restore_backup.py    their restore tool
 
+  sponsors.py          Patreon tiers: what one is worth, freezing, quotas
+
   db/                  SQLite layer: one connection, one module per domain
     __init__.py          connection (conn/cur), init(), the whole public API
     schema.py            every CREATE TABLE + additive migrations
+    ranges.py            the four regions of the bridge-number space
     bridges.py  messages.py  admins.py  users.py
     feeds.py    appeals.py   settings.py  polls.py  inbox.py
+    sponsors.py          account links, sponsor state, slots, owned bridges
     onboarding.py        join times and the setup-deadline bookkeeping
 
   discord_bot/         the Discord half
@@ -127,6 +131,7 @@ Permission roles used below:
 - **Local Admins** — users delegated with `/setlocaladmin`: they hold chat-admin rights in every chat of one server/group and may manage that server through the [control panel](https://github.com/HIHRAIM/Confederate-Panel).
 - **Localizers** — users granted `/localizer-add`: they may edit this bot's localization through the control panel. Bridge Admins and Local Admins hold the status implicitly while they keep those roles.
 - **Consuls** — holders of a `CONSULS` role on the appeal server (see “Purgatorium appeals”): they decide appeal verdicts and may set their own alias with `/setname`. Bot Admins count as consuls implicitly.
+- **Sponsor Bridge Admins** — holders of an active Patreon subscription (see “Sponsors”). The status is not granted by a person but follows from the subscription itself. A sponsor may open bridges in the communities they have claimed, and chats are attached to those bridges by their owner alone.
 - **Bot Admins** — global admins defined in `config.py` (`ADMINS`).
 
 > Notes:
@@ -138,7 +143,7 @@ Permission roles used below:
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
-| `/atb <bridge_id \| new>` | Attach current Discord channel to a bridge — `new` opens one on the lowest free number | ❌ | ❌ | ✅ |
+| `/atb <bridge_id \| new>` | Attach current Discord channel to a bridge — `new` opens one on the lowest free number ⁽⁵⁾ | ❌ | ❌ | ✅ |
 | `/setbskyfeed <account>` · `/rembskyfeed <account>` | Attach/detach a public Bluesky account: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/setytfeed <channel>` · `/remytfeed <channel>` | Attach/detach a public YouTube channel: its uploads are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/settgfeed <channel>` · `/remtgfeed <channel>` | Attach/detach a public Telegram channel: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
@@ -178,7 +183,7 @@ Permission roles used below:
 | `/inboxanon <enable\|disable> [bot]` | Sign staff as “Staff A”, “Staff B”, … to the people writing to a receiver bot | ❌ | ❌ | ✅ ⁽²⁾ |
 | `/inboxlist` | List the registered receiver bots, their state, host chats and open conversations (non-admins see only their own) | ❌ | ❌ | ✅ |
 | `/close` | Close the inbox conversation of this thread — run inside it; the title goes ⬛ | ❌ | ✅ ⁽³⁾ | ✅ |
-| `/close-header <hide\|show> [bot]` | Hide the `[Telegram \| DM] Name:` line from the copies a receiver bot's conversations deliver into this server | ❌ | ✅ | ✅ |
+| `/close-header <hide\|show> [user\|admin\|both] [bot]` | Hide the name headers in a receiver bot's conversations — `user` the `[Telegram \| DM] Name:` line people writing to the bot arrive under, `admin` the name your team's own answers are signed with, neither word both | ❌ | ✅ | ✅ |
 | `/inboxban [user] [bot]` | Bar a user from one receiver bot and close their conversation; no arguments needed inside their thread | ❌ | ❌ | ✅ ⁽²⁾ |
 | `/inboxunban [user] [bot]` | Let a banned user write to a receiver bot again | ❌ | ❌ | ✅ ⁽²⁾ |
 | `/setname [name] [user]` ⁽¹⁾ | Set the alias appellants see instead of “Consul A”. Without `name` it resets to the anonymous signature | ❌ | ❌ | ✅ |
@@ -188,6 +193,12 @@ Permission roles used below:
 | `/allow-bots <enable\|disable>` | Allow or block relay of bot/webhook messages from this channel | ❌ | ✅ | ✅ |
 | `/allow-files <enable\|disable> [local]` | Consent to re-uploading Telegram files to Discord and handing out their links. Without `local` it covers every chat of this server, in any bridge, including bridges built later; with `local`, every side of this bridge | ❌ | ✅ | ✅ |
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
+| `/add-telegram <@username>` | Link your Telegram account to this Discord account (the other half is `/add_discord` on Telegram) | ✅ | ✅ | ✅ |
+| `/unlink-accounts` | Break that link | ✅ | ✅ | ✅ |
+| `/sponsor` | Your sponsor status: tier, community slots, owned bridges and the sources counted against their limits | ✅ | ✅ | ✅ |
+| `/sponsor-claim` | Claim this server as one of your sponsor communities ⁽⁴⁾ | ✅ | ✅ | ✅ |
+| `/sponsor-release [id]` | Give a community slot back | ✅ | ✅ | ✅ |
+| `/sponsor-subscribe` | How to become a sponsor, and what each tier gives | ✅ | ✅ | ✅ |
 
 ⁽¹⁾ `/setname` is a **Consuls** command — the table has no column for that role. Any consul may set their own alias, on the appeal server where their `CONSULS` role is visible; the `user` parameter, which changes someone else's alias, is Bot Admins only.
 
@@ -195,11 +206,13 @@ Permission roles used below:
 
 ⁽³⁾ Closing a conversation is routine support work, so the host chat's own admins may do it besides the bot's registrant and the Bot Admins.
 
+⁽⁴⁾ Sponsors only, and only an administrator of the community in question — Discord's own **Manage Server** permission counts, because claiming a community is the first thing done in it, before this bot has any grant of its own there.
+
 ### Telegram commands
 
 | Command | Purpose | Everyone | Bridge Admins | Bot Admins |
 |---|---|:---:|:---:|:---:|
-| `/atb <bridge_id \| new>` | Attach current Telegram chat/topic to a bridge — `new` opens one on the lowest free number | ❌ | ❌ | ✅ |
+| `/atb <bridge_id \| new>` | Attach current Telegram chat/topic to a bridge — `new` opens one on the lowest free number ⁽⁵⁾ | ❌ | ❌ | ✅ |
 | `/setbskyfeed <account>` · `/rembskyfeed <account>` | Attach/detach a public Bluesky account: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/setytfeed <channel>` · `/remytfeed <channel>` | Attach/detach a public YouTube channel: its uploads are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
 | `/settgfeed <channel>` · `/remtgfeed <channel>` | Attach/detach a public Telegram channel: its posts are relayed to every chat of this bridge | ❌ | ✅ | ✅ |
@@ -234,14 +247,21 @@ Permission roles used below:
 | `/inboxanon <enable\|disable> [bot]` | Sign staff as “Staff A”, “Staff B”, … to the people writing to a receiver bot | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/inboxlist` | List the registered receiver bots, their state, host chats and open conversations (non-admins see only their own) | ❌ | ❌ | ✅ |
 | `/close` | Close the inbox conversation of this topic — run inside it; the title goes ⬛ | ❌ | ✅ ⁽²⁾ | ✅ |
-| `/close-header <hide\|show> [bot]` | Hide the `[Telegram \| ЛС] Name:` line from the copies a receiver bot's conversations deliver into this group | ❌ | ✅ | ✅ |
+| `/close-header <hide\|show> [user\|admin\|both] [bot]` | Hide the name headers in a receiver bot's conversations — `user` the `[Telegram \| ЛС] Name:` line people writing to the bot arrive under, `admin` the name your team's own answers are signed with, neither word both | ❌ | ✅ | ✅ |
 | `/inboxban [user] [bot]` | Bar a user from one receiver bot and close their conversation; no arguments needed inside their topic | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/inboxunban [user] [bot]` | Let a banned user write to a receiver bot again | ❌ | ❌ | ✅ ⁽¹⁾ |
 | `/allow_bots <enable\|disable>` | Allow or block relay of bot messages from this chat | ❌ | ✅ | ✅ |
 | `/allow_files <enable\|disable> [local]` | Consent to re-uploading this group's files to Discord and handing out their links. Without `local` it covers every chat of this group, in any bridge, including bridges built later; with `local`, every side of this bridge | ❌ | ✅ | ✅ |
 | `/backup` | Send current database backup file | ❌ | ❌ | ✅ |
 
-⁽¹⁾ Also whoever registered that receiver bot — see the same note under the Discord table. ⁽²⁾ Also the host group's own admins.
+| `/add_discord <username>` | Link your Discord account to this Telegram account (the other half is `/add-telegram` on Discord) | ✅ | ✅ | ✅ |
+| `/unlink_accounts` | Break that link | ✅ | ✅ | ✅ |
+| `/sponsor` | Your sponsor status: tier, community slots, owned bridges and the sources counted against their limits | ✅ | ✅ | ✅ |
+| `/sponsor_claim` | Claim this group as one of your sponsor communities ⁽⁴⁾ | ✅ | ✅ | ✅ |
+| `/sponsor_release [id]` | Give a community slot back | ✅ | ✅ | ✅ |
+| `/sponsor_subscribe` | How to become a sponsor, and what each tier gives | ✅ | ✅ | ✅ |
+
+⁽¹⁾ Also whoever registered that receiver bot — see the same note under the Discord table. ⁽²⁾ Also the host group's own admins. ⁽⁴⁾ Sponsors only, and only an administrator of the group. ⁽⁵⁾ Also sponsors, in the communities they have claimed and in their own number range — see “Sponsors”.
 
 > Telegram command names use underscores where Discord uses hyphens (`/loc_compare` ↔ `/loc-compare`); both spellings are accepted on Telegram. The `/inbox*` commands are spelled the same on both platforms.
 
@@ -432,6 +452,30 @@ Requests to a wiki carry a User-Agent naming this bot and a contact address (`WI
 
 A deferral is not an error. When the wiki answers that it is lagging behind its database — its replicas have fallen more than five seconds behind, which a busy wiki farm does at unpredictable moments — the poll simply backs off and tries again later, and the changes it did not read are picked up whole on the next attempt, because the subscription remembers its place by change id rather than by time. Nothing is lost and nobody has to do anything, so this is written to the log file only and never to `SERVICE_CHATS`. Wikis that do it constantly are asking to be polled less often, not more urgently.
 
+### Sponsors
+
+A paid subscription on Patreon makes somebody a **sponsor**, at one of two tiers. A sponsor may open bridges of their own, in the communities they name, and nobody else can attach a chat to those bridges.
+
+| | Tier 1 | Tier 2 |
+|---|:---:|:---:|
+| Communities | 2 | 6 |
+| Wikis per bridge | 3 | 9 |
+| Social sources per bridge | 3 | 9 |
+
+Communities count **together**, in any mixture: two of the first tier means two Discord servers, or two Telegram groups, or one of each. Every topic of one Telegram group is one community, not several. Social sources — Bluesky accounts, YouTube channels and Telegram channels — share **one** limit between them, and wikis are counted separately; a wiki's discussions, attached automatically alongside the wiki, are not charged a second time. Every count is per **bridge**, over all of its chats, so adding a second chat does not lift a limit. Ordinary bridges, the ones Bot Admins open, are not limited at all.
+
+**How the bot knows.** Through Discord, not through Patreon. A patron connects Patreon to Discord on Patreon's own site; Patreon's bot then grants them a role on the creator's server, and the only thing Confederate reads is whether a Discord account holds one of the roles named in `config.py` (`PATREON_GUILD_ID`, `PATREON_TIER_ROLES`). There is no Patreon API call, no webhook, no OAuth and no additional secret anywhere in this feature. **A patron who has not connected Patreon to Discord gets no role, and the bot cannot tell they exist** — that is Patreon's behaviour rather than the bot's, and it is the same for every bot that works this way. Holding both roles counts as the higher tier. The status is refreshed the moment the role changes and re-checked once an hour regardless, so it survives restarts and lost events.
+
+**Telegram.** Patreon cannot bind a subscription to Telegram, so a Telegram account becomes a sponsor by being **linked** to the Discord account that holds one: `/add-telegram` on Discord and `/add_discord` on Telegram, each naming the other, both within thirty minutes. Neither half does anything alone, which is what stops anybody attaching an account they do not hold. A linked pair holds **one** set of rights, slots and limits between them — not one each — and `/unlink-accounts` ends the Telegram side's rights immediately.
+
+**Claiming a community.** `/sponsor-claim` spends one slot on the server or group it is run in, and `/sponsor-release` gives it back. Claiming is explicit so that a slot cannot be spent by accident, and a new one cannot be claimed within 30 days of a release — otherwise one subscription could serve a queue of communities in turn. Releasing changes nothing in the community itself: its bridges, chats and sources stay exactly as they are.
+
+**Bridges.** `/atb new` run by a sponsor in a claimed community opens a bridge in the sponsor number range (50000–99999). Chats are attached to it by its owner alone — not by its Bridge Admins, not by the administrators of the servers in it. The number is never handed out to anybody else, even after the bridge loses its last chat and disappears: attaching a chat to it later brings the owner's own bridge back. Bot Admins stand above all of this; the appeal and inbox number ranges, by contrast, can now be named by **nobody**, Bot Admins included, since they belong to allocators that run with no human in the loop.
+
+**When a subscription ends.** Nothing is ever deleted. The moment the role goes, relaying from followed sources on the sponsor's bridges pauses — ordinary relay between the chats carries on — and the sponsor is told in DM. If their DMs are shut, they are instead mentioned in `SPONSOR_NOTICE_CHANNEL` and told to run `/sponsor`; the tier, the reason and the deadline stay out of that message, because the channel has readers other than them. Rights, slots and the exclusive right to attach chats survive a further **30 days**; only then are the slots released. Everything else stays: bridges, chats, sources and settings are untouched, and a subscription that comes back before the 30 days are up revives it all by itself with nothing for anybody to do. After that, the status has to be earned again and the communities claimed again — the bridges are still there and still carry their numbers.
+
+A drop from tier 2 to tier 1 works the same way, with one difference: relaying does not pause. New sources are limited to the new tier at once, while sources already attached keep working even where there are more of them than the new tier allows. If more communities are claimed than the new tier allows, the sponsor has the same 30 days to choose which to give up; if they do not, the ones claimed **first** are kept and the most recent released — a rule stated in the first notice, so the outcome is never a surprise.
+
 ### Shadow bans
 
 `/shadow-ban <user>` (Bridge Admins) silently drops a user from the relay: their new messages are deleted in the origin chat and never forwarded, with no notification to them.
@@ -477,7 +521,7 @@ Naming more than one host chat is the point of the second command: with a Discor
 - **Token handling.** The token is checked against Telegram before anything is stored, encrypted with `BACKUP_KEY` on the way into the database, and never logged, echoed or shown in a reply. A deployment with no `BACKUP_KEY` refuses to register a bot rather than write a token down in clear. On Telegram the command works **only in a private chat with Confederate**, and the message carrying the token is deleted immediately; sent in a group, it is deleted and refused.
 - **Consent.** Writing to a receiver bot is itself the consent: `/start` answers with what forwarding means — that the message goes to the team's chat together with the writer's name and Telegram username, that answers come back, and that it goes nowhere else — and no consent button is shown afterwards. This consent does **not** verify the user anywhere else in the bot: agreeing to talk to one inbox is not agreeing to be relayed in bridged communities.
 - **Anonymous staff (`/inboxanon enable`).** Everyone answering from a host chat reaches the writer as “Staff A”, “Staff B”, … — one stable letter each for as long as the conversation lasts, kept even if anonymization is switched off and on again. As with consul signatures the label is not localized, so one person is the same “Staff B” to everybody. Avatars are dropped along with the name, and edits keep the label. Switching it changes only **new** messages; copies already delivered keep the signature they were sent with.
-- **The two sides read differently, on purpose.** Staff see the full `[Telegram | DM] Name:` header the appeal threads use: the platform and the DM marker are what tell a conversation apart from a bridged chat, and the name is who is on the other end. The writer sees just `Name:` — which platform an answer was typed on and which server it came from say nothing they can use, and naming the server would hand out an internal detail the “Staff A” anonymization exists to withhold. `/close-header hide` drops the staff-side header too, for teams whose threads read better without it: a thread is one person talking to one team, so the line largely repeats what the thread already says. It is scoped to one community and one receiver bot — another team hosting the same bot keeps its own answer — and applies from the next message on.
+- **The two sides read differently, on purpose.** Staff see the full `[Telegram | DM] Name:` header the appeal threads use: the platform and the DM marker are what tell a conversation apart from a bridged chat, and the name is who is on the other end. The writer sees just `Name:` — which platform an answer was typed on and which server it came from say nothing they can use, and naming the server would hand out an internal detail the “Staff A” anonymization exists to withhold. `/close-header` drops those names, and takes a side: `hide user` drops the staff-side header, for teams whose threads read better without it — a thread is one person talking to one team, so the line largely repeats what the thread already says; `hide admin` drops the name in front of the team's own answers, for a team that would rather sign collectively; and `hide` on its own does both. The user side is scoped to one community and one receiver bot — another team hosting the same bot keeps its own answer — while the admin side is scoped to the receiver bot, because the chat it changes is the writer's own and belongs to no community. Either applies from the next message on.
 - **`/whois` answers about one person only** — whoever is writing to the bot. Staff are off limits: they may be reading under a label, and a conversation is a workplace rather than a bridge whose members agreed to be identifiable to each other. The writer has no commands of their own either: `/start` is the only one a receiver bot knows, and anything else they send is relayed as the text it is.
 - **Bans (`/inboxban`).** Run inside someone's conversation it needs no arguments at all — the thread names both the bot and the person. It closes their conversation, tells them once, and drops everything they send that bot afterwards; `/inboxunban` lifts it, and their next message opens a new conversation. The ban covers **that receiver bot only** — `/shadow-ban` remains the bot-wide instrument.
 - **Closing and reopening.** `/close` inside a conversation closes it; so does unregistering the bot, banning the writer, or **30 days** without a message from either side. Both sides are told, the title goes ⬛, the thread is archived and locked, the topic is closed, and the bridge goes.
@@ -554,6 +598,10 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
   - Kind (Bluesky, YouTube or Telegram), the handle and display name, the chat it was attached in, the channel's numeric ID where Telegram gives one, whether the posts arrive live, the ID of the last relayed post, who attached it and when.
 - **Setup deadline**
   - One row per community added after the rule came into force: platform, server or group ID, when the bot joined, and — once the community has been set up — when that was noticed. No user is named.
+- **Account links and sponsorship**
+  - The pairing of one Discord account ID with one Telegram account ID, and when it was made. While a link is being made, the half-handshake also holds the usernames the two sides typed for each other.
+  - Per Discord account: the Patreon tier the bot last saw, when it changed, and the freeze bookkeeping if a subscription has lapsed — no payment data of any kind, because the bot never sees any.
+  - The communities a sponsor has claimed (platform and server/group ID) and the bridge numbers they own.
 
 ### Retention periods
 
@@ -571,6 +619,8 @@ The bot stores operational data in local SQLite (`bridge.db`) to provide relayin
 - **Wiki relay bookkeeping**: each chat keeps the records of only its **100 most recent** relayed wiki changes, and nothing older than **30 days**. Wiki activity cannot be edited after the fact, so the rows exist only briefly to link the copies of one change across a bridge; past that window, deleting one relayed wiki message no longer removes the others.
 - **Webhook-relay scopes (`/webhooks`)**: kept until turned off, or removed when the bot leaves the server.
 - **Setup-deadline rows**: kept while the week runs, and afterwards as the note that the community was set up. Removed when the bot leaves the community, so that a re-invitation starts a fresh seven days.
+- **Account links**: kept until broken with `/unlink-accounts` by either side. Half-finished link attempts (`pending_links`) expire after **30 minutes** and are swept continuously.
+- **Sponsor state, claimed communities and owned bridge numbers**: kept **indefinitely**, including after a subscription ends — that is deliberate. The state row is what stops a lapsed subscription being announced twice, and the bridge-ownership row is what keeps a number reserved for the person who paid for it, so that they get their own bridge back rather than somebody else's. Community claims are released at the end of the 30-day grace period; nothing here is ever deleted by the passage of time, and `/unlink-accounts` removes the Telegram half of the identity on request.
 - **Settings/admin/bridge mappings**: kept until manually changed/removed, or automatically cleaned when the bot leaves a server/chat.
 
 ### Data usage boundaries

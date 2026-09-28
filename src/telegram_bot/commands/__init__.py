@@ -10,6 +10,7 @@ from telegram_bot.commands import (
     locale,
     polls,
     settings,
+    sponsors,
     user,
     wiki,
 )

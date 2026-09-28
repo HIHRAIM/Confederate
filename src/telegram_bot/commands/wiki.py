@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 import db
+import sponsors
 from utils import bridge_feed_permission, feed_scope_name, get_chat_lang, localized
 
 from telegram_bot.client import router
@@ -36,6 +37,11 @@ async def setwikifeed_cmd(message: Message):
     raw = parts[1].strip() if len(parts) > 1 else ""
     if not raw:
         await message.reply(localized("wikifeed_usage", lang))
+        return
+
+    within_quota, reason, used, limit = sponsors.feed_quota(chat_id, "wiki")
+    if not within_quota:
+        await message.reply(localized(reason, lang, used=used, limit=limit))
         return
 
     from discord_bot import attach_feed

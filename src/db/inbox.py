@@ -14,18 +14,17 @@ never looks inside them: it takes and returns the stored string as it is.
 import time
 
 from db import conn, cur
-
-INBOX_BRIDGE_ID_FLOOR = 1000000
+from db.ranges import INBOX_BRIDGE_ID_FLOOR, bridge_kind
 
 def claim_inbox_bridge_id():
     """Take the next bridge id in the reserved inbox range, or None if the
     row could not be claimed.
 
-    Conversation bridges live at and above INBOX_BRIDGE_ID_FLOOR, the third
-    and topmost region of the one id space: hand-numbered ordinary bridges
-    stay below APPEAL_BRIDGE_ID_FLOOR, appeal bridges between the two floors.
-    Simple max+1 — conversations close after 30 days of silence and the range
-    is effectively unbounded, so holes need no reuse here.
+    Conversation bridges live at and above INBOX_BRIDGE_ID_FLOOR, the fourth
+    and topmost region of the one id space — ordinary, sponsor and appeal
+    bridges all stay below it, see db/ranges.py. Simple max+1: conversations
+    close after 30 days of silence and the range is open-ended above, so holes
+    need no reuse here.
 
     The number is claimed by a single INSERT … SELECT, for the reason
     db/bridges.py: attach_chat_to_new_bridge spells out: SQLite evaluates one
@@ -47,11 +46,12 @@ def claim_inbox_bridge_id():
 def is_inbox_bridge(bridge_id):
     """Whether a bridge number belongs to the inbox range — the cheap test
     every inbound handler uses to tell a conversation from an ordinary
-    bridge, before touching a table."""
-    try:
-        return int(bridge_id) >= INBOX_BRIDGE_ID_FLOOR
-    except (TypeError, ValueError):
-        return False
+    bridge, before touching a table.
+
+    A thin name over db/ranges.py: bridge_kind, kept because a dozen call
+    sites read better asking this question than asking which of four regions
+    a number is in."""
+    return bridge_kind(bridge_id) == "inbox"
 
 def inbox_chat_id(bot_id, user_id):
     """The bot-wide chat key of a private chat with a receiver bot.
@@ -188,10 +188,14 @@ def get_inbox_host_of_community(bot_id, platform, chat_id):
 
     A conversation's thread is keyed `guild:thread` and its host `guild:
     channel` — different chats with a common prefix, and nothing in the
-    database links them directly. The prefix is enough for what this answers,
-    because `/close-header` is a per-community setting: 'this team, this
-    receiver bot'. A community hosting one bot in two channels gets one answer
-    for both, which is the scope asked for rather than a limitation of it."""
+    database links them directly. The prefix is enough to answer "does this
+    community host that bot at all", which is all this is now used for.
+
+    It returns ONE row of possibly several and does not promise which: a
+    community may host one receiver bot in two channels. Nothing that reads or
+    writes a per-community setting may go through here for that reason — see
+    set_inbox_header_hidden and inbox_header_hidden, which both work over
+    every row of the community instead."""
     prefix = str(chat_id).split(":", 1)[0]
     return cur.execute(
         "SELECT * FROM inbox_hosts WHERE bot_id=? AND platform=?"
@@ -199,21 +203,76 @@ def get_inbox_host_of_community(bot_id, platform, chat_id):
         (str(bot_id), platform, f"{prefix}:%", prefix)
     ).fetchone()
 
-def set_inbox_header_hidden(bot_id, chat_id, hidden):
-    """Turn the relay header of a receiver bot's conversations on or off for
-    one community. Returns True when a host row was touched."""
+HEADER_SCOPES = ("both", "user", "admin")
+
+_HEADER_SCOPE_COLUMNS = {
+    "user": ("hide_header",),
+    "admin": ("hide_header_admin",),
+    "both": ("hide_header", "hide_header_admin"),
+}
+
+def set_inbox_header_hidden(bot_id, platform, chat_id, hidden, scope="both"):
+    """Turn a receiver bot's relay headers on or off for one community.
+    Returns how many host rows were touched.
+
+    A conversation has two directions and `scope` says which of them this is
+    about: 'user' the messages coming out of the private chat, 'admin' the
+    answers staff write back, 'both' the pair of them. They are separate
+    columns because they are separate questions — a team may well want to see
+    who is writing to them while signing their own replies with nothing.
+
+    EVERY host row of that bot in the community is written, not one of them.
+    The setting is documented and worded as 'this team, this receiver bot',
+    and a community is free to host one bot in several channels; flipping
+    whichever row a `LIMIT 1` happened to return left the others as they were
+    and made the answer depend on the order SQLite chose to hand rows back —
+    which is not stable across an inserted or deleted host. That is how
+    `/close-header hide` came to report success and change nothing.
+
+    The count is returned rather than dropped so the command can tell the
+    difference between having done something and only having said so."""
+    columns = _HEADER_SCOPE_COLUMNS[scope]
+    assignments = ", ".join(f"{column}=?" for column in columns)
+    prefix = str(chat_id).split(":", 1)[0]
     changed = cur.execute(
-        "UPDATE inbox_hosts SET hide_header=? WHERE bot_id=? AND chat_id=?",
-        (1 if hidden else 0, str(bot_id), str(chat_id))
+        f"UPDATE inbox_hosts SET {assignments} WHERE bot_id=? AND platform=?"
+        " AND (chat_id LIKE ? OR chat_id=?)",
+        tuple(1 if hidden else 0 for _ in columns)
+        + (str(bot_id), platform, f"{prefix}:%", prefix)
     ).rowcount
     conn.commit()
-    return changed > 0
+    return changed
 
 def inbox_header_hidden(bot_id, platform, chat_id):
-    """Whether copies delivered into this conversation chat should go without
-    the ``[Messenger | DM] Name:`` header."""
-    row = get_inbox_host_of_community(bot_id, platform, chat_id)
-    return bool(row and row["hide_header"])
+    """Whether a message out of the private chat should reach this host's
+    threads and topics without its ``[Messenger | DM] Name:`` header.
+
+    Asked of the whole community, exactly as the setting is written: the
+    header is off here when ANY host row of this bot in this community says
+    so. Reading one arbitrary row instead made the answer flip about as the
+    table changed underneath it, with the setting still recorded and the
+    headers back."""
+    prefix = str(chat_id).split(":", 1)[0]
+    return cur.execute(
+        "SELECT 1 FROM inbox_hosts WHERE bot_id=? AND platform=?"
+        " AND (chat_id LIKE ? OR chat_id=?) AND hide_header=1 LIMIT 1",
+        (str(bot_id), platform, f"{prefix}:%", prefix)
+    ).fetchone() is not None
+
+def inbox_staff_header_hidden(bot_id):
+    """Whether a staff answer should reach the writer's private chat with no
+    name in front of it.
+
+    Asked of the receiver bot rather than of one community, because the chat
+    it is asked for is the writer's own: its key is `<bot>:<user>` and it
+    belongs to the bot, not to any of the communities answering through it. A
+    conversation whose bridge spans two host communities that disagree
+    resolves to hiding — the quieter of the two answers, and the one a team
+    that asked for it will not be surprised by."""
+    return cur.execute(
+        "SELECT 1 FROM inbox_hosts WHERE bot_id=? AND hide_header_admin=1 LIMIT 1",
+        (str(bot_id),)
+    ).fetchone() is not None
 
 def get_inbox_hosts_of_chat(chat_id):
     """Every receiver bot that opens its conversations in this chat.

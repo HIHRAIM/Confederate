@@ -10,11 +10,14 @@ Both halves of the bot run in one Python process on one asyncio loop: `discord.p
 
 ## The bridge-number space
 
-One integer space cut into three regions by two floors — `APPEAL_BRIDGE_ID_FLOOR` = 100000 and `INBOX_BRIDGE_ID_FLOOR` = 1000000 — and served by three allocators that must never meet:
+One integer space cut into **four** regions by three floors, all of them declared in `db/ranges.py` and nowhere else, and served by four allocators that must never meet. Nothing stores which kind a bridge is: `bridges` is `id INTEGER PRIMARY KEY` and the number *is* the category, tested with `db/ranges.py: bridge_kind`. A column would be worse than useless — the row is deleted with the bridge's last chat, and the number outlives it.
 
-* **below the first floor — ordinary bridges.** `/atb <n>` takes the number the admin names (creating the bridge if it is new); `/atb new` asks `db/bridges.py: next_free_bridge_id` for the *lowest free* number. Holes are reused deliberately — a bridge disappears with its last chat, and its number returns to circulation instead of pushing a counter up forever. If everything below the line is taken, `/atb new` says so rather than spilling over.
-* **between the floors — appeal bridges.** `db/appeals.py: next_appeal_bridge_id` hands out max+1 *within that band*; these are short-lived (one per appeal, garbage-collected 30 days after the verdict), so holes there are not worth reusing. The upper bound is what keeps the allocator from reading the newest inbox conversation as the newest appeal.
-* **at and above the second floor — inbox conversations.** `db/inbox.py: claim_inbox_bridge_id`, same max+1 shape; a conversation closes after 30 days of silence, so holes are not worth reusing here either.
+* **1 … 49999 — ordinary bridges.** `/atb <n>` takes the number the admin names (creating the bridge if it is new); `/atb new` asks `db/bridges.py: next_free_bridge_id` for the *lowest free* number. Holes are reused deliberately — a bridge disappears with its last chat, and its number returns to circulation instead of pushing a counter up forever. The ceiling used to be the appeal floor and was lowered to the sponsor floor when that region was cut out; fifty thousand numbers is three orders of magnitude more than this deployment has used.
+* **50000 … 99999 — sponsor bridges.** `db/sponsors.py: claim_sponsor_bridge_id`, max+1 taken over `bridges` **and** over `sponsor_bridges`. Holes are deliberately **not** reused: the ownership row outlives the bridge, so an emptied number is still spoken for and its owner gets their own bridge back by attaching a chat to it. Handing it to somebody else would give them a bridge with a stranger's owner.
+* **100000 … 999999 — appeal bridges.** `db/appeals.py: next_appeal_bridge_id` hands out max+1 *within that band*; these are short-lived (one per appeal, garbage-collected 30 days after the verdict), so holes there are not worth reusing. The upper bound is what keeps the allocator from reading the newest inbox conversation as the newest appeal.
+* **1000000 and above — inbox conversations.** `db/inbox.py: claim_inbox_bridge_id`, same max+1 shape; a conversation closes after 30 days of silence, so holes are not worth reusing here either.
+
+The last two regions are reachable through their allocators and through **nothing else**: `/atb <n>` refuses them to everybody, Bot Admins included (`sponsors.py: atb_decision`). Before sponsors existed that was untidiness — `/atb 100000` would attach a chat into somebody's appeal — and it became a hole the moment `/atb` was opened to people who are not the operator.
 
 Numbers are claimed with a single `INSERT … SELECT` so that two admins running `/atb new` at once — or one of them through the control panel, which is a separate process on the same file — cannot receive the same number. The inbox allocator does the same for a sharper reason: it is reached with no human in the loop, so two people writing to one receiver bot in the same instant would otherwise land in a single merged thread.
 
@@ -54,6 +57,7 @@ Each side of a bridge answers for itself, and the relay asks twice per message:
 * **Chat Admin** — per-chat rows in `chat_admins`, written as a side effect of the grants above; checked by `utils.is_chat_admin`, which also honors the two server-wide roles.
 * **Local Admin** — `/setlocaladmin`, stored in `server_admins`. Exists for the external control panel (scoped panel login), not for bot commands.
 * **Localizer** — `/localizer-add`, stored in `localizers`. May edit this bot's localization through the control panel.
+* **Sponsor Bridge Admin** — not granted by anybody: it follows from holding a Patreon tier role on the creator's server (`sponsors.py`). Scoped to the communities the sponsor claimed with `/sponsor-claim` (`sponsor_communities`), it allows opening bridges there, and on those bridges (`sponsor_bridges`) it is the *exclusive* right to attach chats. A linked Telegram account (`account_links`) holds the status through its Discord account and never on its own.
 
 ## Background loops
 
@@ -61,8 +65,8 @@ From `main.py` (cross-platform, started in `main()`):
 
 | Loop                  | Period            | Job |
 |-----------------------|-------------------|-----|
-| `rules_loop`          | checks every 60 s | posts bridge rules on schedule (legacy twin of the client loop below) |
-| `pending_cleanup_loop`| every 60 s        | expires consent prompts older than 24 h, expired verifications, old loc suggestions and polls, and the `/allow-files` consents of communities the bot left more than 7 days ago |
+| `pending_cleanup_loop`| every 60 s        | expires consent prompts older than 24 h, expired verifications, old loc suggestions and polls, half-finished account links older than 30 min, and the `/allow-files` consents of communities the bot left more than 7 days ago |
+| `sponsor_loop`        | every 60 min      | reconciles stored sponsor tiers against the Patreon roles, carries finished grace periods over the line and delivers the notices (`sponsors.py: reconcile_pass`). A notice goes to DM in full, or — when DMs are shut — to `SPONSOR_NOTICE_CHANNEL` as a bare mention with none of the substance; only a delivered notice is marked, and an undelivered one is re-offered hourly while the grace period lasts |
 | `poll_loop`           | every 30 s        | posts results of expired polls, closes them |
 | `feed_loop`           | tick every 30 s   | polls followed sources; per-kind intervals in `FEED_POLL_INTERVALS` (telegram 60 s, wiki 90 s, bluesky 120 s, wiki discussions 180 s, youtube 5 min), one source per kind per tick, exponential backoff per source, flat per-host backoff on throttling |
 | `daily_check_loop`    | every 24 h        | verifies every chat is reachable and the bot has delete rights; auto-detaches chats unreachable for 24 h |
@@ -127,7 +131,7 @@ A conversation's thread and topic are named `<mark> <writer>`, where the mark is
 
 Discord conversation threads register themselves with the `/deadtopic` keep-alive at `INBOX_DEADTOPIC_DAYS` = 3 rather than the command's 6 — nobody enabled it by hand here, so it has to act before the auto-archive window it protects against. `deadtopic_chats.days` carries the per-chat window; `touch_inbox_bridge` refreshes `last_message_ts` for copies the bot relays *into* the thread, which `on_message` would not count as activity.
 
-The header is asymmetric. Staff get the ordinary `[Messenger | DM] Name:` line, with `inbox_place_name` supplying the localized DM marker exactly as the appeal system does for an appellant's DM; the writer gets `inbox_writer_header` — the name alone, since the platform and server behind an answer are both useless to them and a leak of who is answering. `/close-header` drops the staff-side header as well, per host community: the flag lives on `inbox_hosts.hide_header` rather than on the thread (made fresh per conversation, so a setting there would die with it) or on the bot (one team may want headers where another hosting the same bot does not). `db/inbox.py: get_inbox_host_of_community` maps a thread back onto its host through the server/group prefix they share, which is the scope the setting is defined at.
+The header is asymmetric. Staff get the ordinary `[Messenger | DM] Name:` line, with `inbox_place_name` supplying the localized DM marker exactly as the appeal system does for an appellant's DM; the writer gets `inbox_writer_header` — the name alone, since the platform and server behind an answer are both useless to them and a leak of who is answering. `/close-header` drops those names, one direction at a time. `hide user` drops the staff-side header (`inbox_hosts.hide_header`) and `hide admin` the name in front of the team's own answers (`hide_header_admin`); `hide` alone does both. The user flag is per host community — rather than on the thread, made fresh per conversation so a setting there would die with it, or on the bot, since one team may want headers where another hosting the same bot does not — and both the write and the read cover EVERY host row of that community, matched on the server/group prefix a thread shares with its host. Reading or writing one arbitrary row (a `LIMIT 1` with no ordering) is what once made the setting a coin toss in a community hosting the bot in two channels. The admin flag is answered per receiver bot instead (`inbox_staff_header_hidden`), because the chat it governs is the writer's own `<bot>:<user>` private chat and belongs to no community.
 
 A conversation closes on `/close`, when its bot is unregistered, when its writer is banned from that bot (`/inboxban`, scoped to the one bot, unlike the bot-wide `/shadow-ban`), or after 30 days of silence. Closing tells both sides, marks the title ⬛, archives the thread, closes the topic and detaches every chat.
 
@@ -162,6 +166,8 @@ The clock itself is asymmetric. Discord publishes `Guild.me.joined_at`, so the D
 | Wiki: event meaning, filters, wording | `wiki_events.py` |
 | Wiki: delivery, embeds, burst merging | `discord_bot/wiki.py` |
 | Feeds: attach/relay/avatars, `FEED_KINDS` | `discord_bot/feeds.py`, live channel posts in `telegram_bot/feeds.py` |
+| Sponsor tiers, quotas, freezing, `/atb` rules | `sponsors.py`; storage in `db/sponsors.py`; the number space in `db/ranges.py` |
+| Account links (Discord ↔ Telegram) | `db/sponsors.py: register_link_attempt`, commands in `*/commands/sponsors.py` |
 | Bundled avatars: the files, where they are hosted | `src/assets/`, `discord_bot/feeds.py: avatar_asset_url`, `db/assets.py` |
 | Feeds: polling scheduler | `main.py: feed_loop` |
 | Appeals | `discord_bot/appeals.py`, storage in `db/appeals.py` |

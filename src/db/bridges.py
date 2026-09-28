@@ -2,14 +2,15 @@
 resolution, reachability bookkeeping and whole-community cleanup.
 
 Not this module's zone: admin grants (db/admins.py), per-chat switches
-(db/settings.py), the appeal system (db/appeals.py) — though the ceiling on
-ordinary bridge numbers is its constant, imported below, because the two
-allocators divide one id space between them.
+(db/settings.py), the appeal system (db/appeals.py), sponsor ownership
+(db/sponsors.py). The ceiling on ordinary bridge numbers is not this
+module's either: all four region boundaries live in db/ranges.py, which is
+what every allocator dividing the one id space bounds itself with.
 """
 import time
 
 from db import conn, cur
-from db.appeals import APPEAL_BRIDGE_ID_FLOOR
+from db.ranges import SPONSOR_BRIDGE_ID_FLOOR
 
 def chat_exists(chat_id):
     """Whether the chat is already attached to some bridge — the check behind
@@ -107,9 +108,14 @@ def next_free_bridge_id():
       * Holes are reused. With bridges 1, 2 and 5 the answer is 3, not 6. A
         bridge disappears together with its last chat, and its number should
         come back into circulation rather than push a counter up forever.
-      * The answer is strictly below APPEAL_BRIDGE_ID_FLOOR. That line and
-        everything above it belongs to the appeal system, and an ordinary
-        bridge landing there would collide with the next appeal opened.
+      * The answer is strictly below SPONSOR_BRIDGE_ID_FLOOR. That line and
+        everything above it is spoken for — sponsor bridges first, then
+        appeals, then inbox conversations (db/ranges.py) — and an ordinary
+        bridge landing in any of them would collide with what its allocator
+        hands out next. The ceiling used to be the appeal floor; lowering it
+        to the sponsor floor is what made room for the sponsor region, and it
+        costs nothing: fifty thousand ordinary numbers is three orders of
+        magnitude more than this deployment has ever used.
 
     The query works off the observation that the lowest free number is either
     1 or one past some occupied number, so it never has to walk the range.
@@ -119,7 +125,7 @@ def next_free_bridge_id():
     take a number — it claims the row in the same statement.
     """
     row = cur.execute(
-        _NEXT_FREE_BRIDGE_ID_SQL, {"floor": APPEAL_BRIDGE_ID_FLOOR}
+        _NEXT_FREE_BRIDGE_ID_SQL, {"floor": SPONSOR_BRIDGE_ID_FLOOR}
     ).fetchone()
     return int(row["candidate"]) if row else None
 
@@ -127,8 +133,8 @@ def attach_chat_to_new_bridge(platform, chat_id):
     """Create a bridge on the lowest free number and attach `chat_id` to it.
 
     Returns the new bridge id, or None when every number below
-    APPEAL_BRIDGE_ID_FLOOR is taken — the caller is expected to say so rather
-    than fall back to the appeal range.
+    SPONSOR_BRIDGE_ID_FLOOR is taken — the caller is expected to say so
+    rather than spill into the region above.
 
     The number is claimed by a single INSERT … SELECT. SQLite evaluates one
     statement under its write lock, so two administrators running `/atb new`
@@ -141,7 +147,7 @@ def attach_chat_to_new_bridge(platform, chat_id):
     to fail, the reserved number is merely a hole, and holes are reused.
     """
     claimed = cur.execute(
-        _CLAIM_FREE_BRIDGE_ID_SQL, {"floor": APPEAL_BRIDGE_ID_FLOOR}
+        _CLAIM_FREE_BRIDGE_ID_SQL, {"floor": SPONSOR_BRIDGE_ID_FLOOR}
     )
     conn.commit()
     if not claimed.rowcount:
@@ -179,9 +185,12 @@ def remove_chat_from_bridge(chat_id):
     `/allow-files local` consent) are deleted too.
 
     The file consent has to go with the bridge for the same reason the
-    webhook scope does: bridge numbers are reused (`next_free_bridge_id`
-    fills holes), and a leftover row would hand the next bridge to take that
-    number a consent nobody in it ever gave.
+    webhook scope does: ordinary bridge numbers are reused
+    (`next_free_bridge_id` fills holes), and a leftover row would hand the
+    next bridge to take that number a consent nobody in it ever gave. The
+    ownership row of a sponsor bridge is the one thing deliberately left
+    behind here, and it is safe precisely because sponsor numbers are never
+    handed out twice (db/ranges.py) — see db/sponsors.py.
 
     Returns None when the chat was not in a bridge, otherwise
     ``{"bridge_id", "bridge_deleted"}`` so the caller can announce the removal.

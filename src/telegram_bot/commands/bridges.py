@@ -10,6 +10,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 import db
+import sponsors
 from utils import (
     get_chat_lang, is_admin, is_chat_admin, localized, localized_bot_joined,
     localized_bridge_info, localized_bridge_join, localized_bridge_leave,
@@ -25,16 +26,16 @@ async def atb(message: Message):
 
     The argument is a bridge number — created if it does not exist yet — or
     the word `new`, which opens a bridge on the lowest free number (see
-    db.attach_chat_to_new_bridge). Bot Admins only, for both forms; a chat
-    already in a bridge is refused, and that check runs before a number is
-    allocated so a refused `/atb new` does not burn one."""
+    db.attach_chat_to_new_bridge). Who may do that, and on which numbers, is
+    decided by sponsors.atb_decision, shared with the Discord twin: Bot
+    Admins, plus sponsors in their claimed communities and on their own
+    bridges, and the appeal and inbox ranges refused to everybody.
+
+    A chat already in a bridge is refused, and that check runs before a
+    number is allocated so a refused `/atb new` does not burn one."""
     thread = message.message_thread_id or 0
     chat_id = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_id)
-
-    if not is_admin("telegram", message.from_user.id):
-        await message.reply(localized("no_permission", lang))
-        return
 
     parts = message.text.split()
     if len(parts) < 2:
@@ -42,10 +43,11 @@ async def atb(message: Message):
         return
 
     raw = parts[1].strip()
-    wants_new = raw.lower() == "new"
-    if not wants_new:
+    if raw.lower() == "new":
+        target = "new"
+    else:
         try:
-            bridge_id = int(raw)
+            target = int(raw)
         except ValueError:
             await message.reply(localized("atb_invalid_id", lang))
             return
@@ -54,15 +56,31 @@ async def atb(message: Message):
         await message.reply(localized("atb_already_attached", lang))
         return
 
-    if wants_new:
+    action, value, reason = sponsors.atb_decision(
+        "telegram", message.from_user.id, chat_id, target,
+        is_admin("telegram", message.from_user.id))
+    if action == "deny":
+        await message.reply(localized(reason, lang, floor=db.SPONSOR_BRIDGE_ID_FLOOR,
+                                      ceiling=db.APPEAL_BRIDGE_ID_FLOOR))
+        return
+
+    if action == "new":
         bridge_id = db.attach_chat_to_new_bridge("telegram", chat_id)
         if bridge_id is None:
             await message.reply(
-                localized("atb_no_free_id", lang, limit=db.APPEAL_BRIDGE_ID_FLOOR)
+                localized("atb_no_free_id", lang, limit=db.SPONSOR_BRIDGE_ID_FLOOR)
             )
             return
         reply_key = "atb_attached_new"
+    elif action == "sponsor_new":
+        bridge_id = db.claim_sponsor_bridge_id(value)
+        if bridge_id is None:
+            await message.reply(localized("atb_no_free_sponsor_id", lang))
+            return
+        db.attach_chat("telegram", chat_id, bridge_id)
+        reply_key = "atb_attached_sponsor"
     else:
+        bridge_id = value
         db.attach_chat("telegram", chat_id, bridge_id)
         reply_key = "atb_attached"
 
@@ -244,6 +262,12 @@ async def bridge_cmd(message: Message):
 
     chats_str = "\n".join(chat_lines) if chat_lines else "—"
     text = localized_bridge_info("tg_template", lang, bridge_id=bridge_id, chats=chats_str)
+
+    owner_id = sponsors.sponsor_bridge_owner(bridge_id)
+    if owner_id:
+        text = (f"{text}\n\n{localized_bridge_info('field_sponsor', lang)}: "
+                + localized_bridge_info("sponsor_owner", lang, owner=owner_id,
+                                        name=owner_id))
 
     attached_feeds = db.get_bridge_feeds(bridge_id)
     if attached_feeds:

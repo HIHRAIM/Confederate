@@ -311,24 +311,41 @@ def _can_set_header(interaction: discord.Interaction, chat_key):
 @bot.tree.command(name="close-header", description="hide the relay header in this server's inbox conversations")
 @app_commands.describe(
     state="hide or show",
-    receiver_bot="the receiver bot's id or @username — optional inside a conversation thread",
+    whose="whose names to hide — both sides by default",
+    receiver_bot="the receiver bot, when this community hosts more than one",
 )
-@app_commands.choices(state=[
-    app_commands.Choice(name="hide", value="hide"),
-    app_commands.Choice(name="show", value="show"),
-])
-async def close_header(interaction: discord.Interaction, state: str, receiver_bot: str = None):
-    """Drop the ``[Telegram | DM] Name:`` line from the copies a receiver
-    bot's conversations deliver into this server.
+@app_commands.choices(
+    state=[
+        app_commands.Choice(name="hide", value="hide"),
+        app_commands.Choice(name="show", value="show"),
+    ],
+    whose=[
+        app_commands.Choice(name="both sides", value="both"),
+        app_commands.Choice(name="user — people writing to the bot", value="user"),
+        app_commands.Choice(name="admin — staff writing in the thread", value="admin"),
+    ],
+)
+async def close_header(interaction: discord.Interaction, state: str,
+                       whose: str = "both", receiver_bot: str = None):
+    """Drop the name headers from a receiver bot's conversations.
 
-    A conversation thread is one person talking to one team, so the header
-    repeats what the thread already says. Scoped to this server and this
-    receiver bot: another community hosting the same bot keeps its own
-    answer. Only the staff side is affected — the writer's own copies carry
-    just a name either way.
+    A conversation is one person talking to one team, and it has two
+    directions. `whose` says which of them this is about:
 
-    Bot Admins and Bridge Admins. Run it in a conversation thread or anywhere
-    in the host channel; it takes effect from the next message on."""
+      * `user` — what the person writing to the bot arrives as in the thread:
+        the ``[Telegram | DM] Name:`` line, which mostly repeats what the
+        thread title already says.
+      * `admin` — what the team's own answers arrive as in that person's
+        private chat: the staff member's name in front of each reply.
+      * left out, or `both` — both of them, which is what most teams mean.
+
+    `receiver_bot` needs giving only where this community hosts more than one
+    of them; inside a conversation thread, and in a host channel of a single
+    bot, the bot is worked out from where the command was run.
+
+    Bot Admins and Bridge Admins. Takes effect from the next message on, and
+    covers every channel of this community that hosts this bot rather than
+    only the one the command happened to find."""
     from inbox import inbox_bot_place_name
 
     lang = _lang(interaction)
@@ -356,10 +373,22 @@ async def close_header(interaction: discord.Interaction, state: str, receiver_bo
         return
 
     hidden = state.strip().lower() == "hide"
-    db.set_inbox_header_hidden(bot_row["bot_id"], host["chat_id"], hidden)
+    scope = (whose or "both").strip().lower()
+    if scope not in db.HEADER_SCOPES:
+        await interaction.response.send_message(
+            localized("close_header_usage", lang), ephemeral=True)
+        return
+    if not db.set_inbox_header_hidden(bot_row["bot_id"], "discord", chat_key,
+                                      hidden, scope):
+        await interaction.response.send_message(
+            localized("close_header_unchanged", lang,
+                      bot=inbox_bot_place_name(bot_row)),
+            ephemeral=True,
+        )
+        return
     await interaction.response.send_message(
         localized(
-            "close_header_hidden" if hidden else "close_header_shown", lang,
+            f"close_header_{'hidden' if hidden else 'shown'}_{scope}", lang,
             bot=inbox_bot_place_name(bot_row),
         ),
         ephemeral=True,

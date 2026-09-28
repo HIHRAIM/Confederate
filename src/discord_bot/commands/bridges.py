@@ -10,6 +10,7 @@ import discord
 from discord import app_commands
 
 import db
+import sponsors
 from utils import (
     get_chat_lang, is_admin, is_chat_admin, localized, localized_bot_joined,
     localized_bridge_info, localized_bridge_join, localized_bridge_leave,
@@ -20,7 +21,7 @@ from discord_bot.feeds import feed_module
 
 logger = logging.getLogger("bridge.discord")
 
-@bot.tree.command(name="atb", description="attach this chat to a bridge, existing or new (bot admins)")
+@bot.tree.command(name="atb", description="attach this chat to a bridge, existing or new (bot admins, sponsors)")
 @app_commands.describe(
     bridge_id="the bridge's number, or `new` to open one on the lowest free number"
 )
@@ -34,15 +35,18 @@ async def atb(interaction: discord.Interaction, bridge_id: str | None = None):
     than an int precisely so that `new` fits; `/atb 5` keeps working exactly
     as before.
 
-    Bot Admins only, for both forms. A chat already in a bridge is refused —
-    one chat belongs to at most one bridge — and that check runs before a
-    number is allocated, so a refused `/atb new` does not burn one."""
+    Who may run it, and on which numbers, is decided once for both platforms
+    by sponsors.atb_decision — read its docstring, the rules are its business
+    and not this command's. In short: Bot Admins as before, plus sponsors in
+    the communities they have claimed, on their own bridges only; and the
+    appeal and inbox number ranges are refused to everybody, which is a
+    tightening of what this command used to accept.
+
+    A chat already in a bridge is refused — one chat belongs to at most one
+    bridge — and that check runs before a number is allocated, so a refused
+    `/atb new` does not burn one."""
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     lang = get_chat_lang(chat_id) or "en"
-
-    if not is_admin("discord", interaction.user.id):
-        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
-        return
 
     raw = (bridge_id or "").strip()
     if not raw:
@@ -54,20 +58,43 @@ async def atb(interaction: discord.Interaction, bridge_id: str | None = None):
         return
 
     if raw.lower() == "new":
+        target = "new"
+    else:
+        try:
+            target = int(raw)
+        except ValueError:
+            await interaction.response.send_message(localized("atb_invalid_id", lang), ephemeral=True)
+            return
+
+    action, value, reason = sponsors.atb_decision(
+        "discord", interaction.user.id, chat_id, target,
+        is_admin("discord", interaction.user.id))
+    if action == "deny":
+        await interaction.response.send_message(
+            localized(reason, lang, floor=db.SPONSOR_BRIDGE_ID_FLOOR,
+                      ceiling=db.APPEAL_BRIDGE_ID_FLOOR),
+            ephemeral=True)
+        return
+
+    if action == "new":
         bridge_id = db.attach_chat_to_new_bridge("discord", chat_id)
         if bridge_id is None:
             await interaction.response.send_message(
-                localized("atb_no_free_id", lang, limit=db.APPEAL_BRIDGE_ID_FLOOR),
+                localized("atb_no_free_id", lang, limit=db.SPONSOR_BRIDGE_ID_FLOOR),
                 ephemeral=True,
             )
             return
         reply_key = "atb_attached_new"
-    else:
-        try:
-            bridge_id = int(raw)
-        except ValueError:
-            await interaction.response.send_message(localized("atb_invalid_id", lang), ephemeral=True)
+    elif action == "sponsor_new":
+        bridge_id = db.claim_sponsor_bridge_id(value)
+        if bridge_id is None:
+            await interaction.response.send_message(
+                localized("atb_no_free_sponsor_id", lang), ephemeral=True)
             return
+        db.attach_chat("discord", chat_id, bridge_id)
+        reply_key = "atb_attached_sponsor"
+    else:
+        bridge_id = value
         db.attach_chat("discord", chat_id, bridge_id)
         reply_key = "atb_attached"
 
@@ -262,9 +289,15 @@ async def resolve_bridge_admins(bridge_id):
 
 @bot.tree.command(name="bridge", description="info about the bridge and connected chats")
 async def bridge_command(interaction: discord.Interaction):
-    """Show the current chat's bridge: number, member chats with resolved
-    names, attached feeds (as links) and the bridge admins of both platforms.
-    Ephemeral — it is a lookup, not an announcement."""
+    """Show the current chat's bridge: number, whether it is a sponsor's and
+    whose, member chats with resolved names, attached feeds (as links) and
+    the bridge admins of both platforms. Ephemeral — it is a lookup, not an
+    announcement.
+
+    The sponsor line is shown for every number of the sponsor region that was
+    ever handed out, including one whose bridge stands empty right now: the
+    number is still its owner's, and somebody wondering why they cannot
+    attach a chat to it deserves to be told by whom it is held."""
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}")
     chat_key = f"{interaction.guild_id}:{interaction.channel_id}"
 
@@ -324,6 +357,17 @@ async def bridge_command(interaction: discord.Interaction):
         color=discord.Color.blurple()
     )
     embed.add_field(name=localized_bridge_info("field_number", lang), value=str(bridge_id), inline=False)
+
+    owner_id = sponsors.sponsor_bridge_owner(bridge_id)
+    if owner_id:
+        owner = bot.get_user(int(owner_id))
+        embed.add_field(
+            name=localized_bridge_info("field_sponsor", lang),
+            value=localized_bridge_info("sponsor_owner", lang,
+                                        owner=f"<@{owner_id}>",
+                                        name=owner.name if owner else owner_id),
+            inline=False)
+
     embed.add_field(name=localized_bridge_info("field_chats", lang), value=chats_value, inline=False)
 
     attached_feeds = db.get_bridge_feeds(bridge_id)

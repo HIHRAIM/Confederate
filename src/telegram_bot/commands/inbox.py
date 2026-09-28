@@ -279,12 +279,18 @@ def _can_set_header(message: Message, chat_key):
 
 @router.message(Command("close-header", "close_header"))
 async def close_header_cmd(message: Message):
-    """Drop the ``[Telegram | ЛС] Name:`` line from the copies a receiver
-    bot's conversations deliver into this group.
+    """Drop the name headers from a receiver bot's conversations.
 
-    Scoped to this group and this receiver bot, staff side only; the writer's
-    own copies carry just a name either way. Bot Admins and Bridge Admins.
-    Usage: /close-header hide|show [bot]."""
+    A conversation has two directions, and the optional second word says
+    which of them this is about: `user` the ``[Telegram | ЛС] Name:`` line
+    people writing to the bot arrive under, `admin` the staff name their own
+    answers arrive under in that person's private chat, and neither word (or
+    `both`) the pair of them.
+
+    A third word names the receiver bot, and is needed only where this group
+    hosts more than one. Every host topic of this bot in this group is
+    covered, not whichever one was found first. Bot Admins and Bridge Admins.
+    Usage: /close-header hide|show [user|admin|both] [bot]."""
     from inbox import inbox_bot_for_chat, inbox_bot_place_name
 
     chat_key = _chat_key(message)
@@ -299,7 +305,12 @@ async def close_header_cmd(message: Message):
         await message.reply(localized("no_permission", lang))
         return
 
-    identifier = _argument(message, 2)
+    scope = (_argument(message, 2) or "").strip().lower()
+    identifier = _argument(message, 3)
+    if scope and scope not in db.HEADER_SCOPES:
+        identifier, scope = scope, "both"
+    scope = scope or "both"
+
     if identifier and identifier.strip():
         bot_row = db.find_inbox_bot(identifier)
     else:
@@ -316,9 +327,13 @@ async def close_header_cmd(message: Message):
         return
 
     hidden = state == "hide"
-    db.set_inbox_header_hidden(bot_row["bot_id"], host["chat_id"], hidden)
+    if not db.set_inbox_header_hidden(bot_row["bot_id"], "telegram", chat_key,
+                                      hidden, scope):
+        await message.reply(localized(
+            "close_header_unchanged", lang, bot=inbox_bot_place_name(bot_row)))
+        return
     await message.reply(localized(
-        "close_header_hidden" if hidden else "close_header_shown", lang,
+        f"close_header_{'hidden' if hidden else 'shown'}_{scope}", lang,
         bot=inbox_bot_place_name(bot_row),
     ))
 

@@ -14,6 +14,7 @@ import time
 import discord
 
 import db
+import sponsors
 from config import GUARD_BOT_ID
 from utils import (
     get_chat_lang, localized, localized_consent_body, localized_consent_button,
@@ -442,3 +443,30 @@ async def on_thread_delete(thread):
     row = db.get_appeal_by_thread(str(thread.id))
     if row:
         _cleanup_appeal_records(row)
+
+@bot.event
+async def on_member_update(before, after):
+    """Notice a sponsor's Patreon role appearing or disappearing the moment
+    it happens, on the creator's server and nowhere else.
+
+    This is the fast path and not the authoritative one: gateway events are
+    lost across restarts, dropped connections and every minute the bot is
+    offline, so the hourly reconciliation in main.py: sponsor_loop is what
+    the state is actually kept true by. Handling the event as well simply
+    means somebody who has just paid does not wait up to an hour to be able
+    to use what they paid for."""
+    try:
+        if after.guild is None or int(after.guild.id) != int(sponsors.PATREON_GUILD_ID):
+            return
+    except (TypeError, ValueError):
+        return
+    if {r.id for r in before.roles} == {r.id for r in after.roles}:
+        return
+
+    tier = await sponsors.live_discord_tier(after.id)
+    if tier is None:
+        return
+    notice = sponsors.apply_tier(str(after.id), tier)
+    if notice:
+        await sponsors.deliver_notice(str(after.id), notice)
+
