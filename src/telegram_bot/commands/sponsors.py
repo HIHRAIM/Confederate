@@ -117,7 +117,8 @@ async def sponsor_claim_cmd(message: Message):
         await message.reply(localized(f"sponsor_claim_{status}", lang, **extra))
         return
 
-    db.claim_community("telegram", server_id, extra["discord_id"])
+    db.claim_community("telegram", server_id, extra["discord_id"],
+                       takeover_from=extra.get("takeover_from"))
     await message.reply(localized("sponsor_claim_ok", lang, used=extra["used"] + 1,
                                   limit=extra["limit"]))
 
@@ -163,4 +164,10 @@ async def sponsor_subscribe_cmd(message: Message):
         "sponsor_subscribe", lang, url=SPONSOR_URL,
         communities1=tier1["communities"], wikis1=tier1["wikis"],
         socials1=tier1["socials"], communities2=tier2["communities"],
-        wikis2=tier2["wikis"], socials2=tier2["socials"]))
+        wikis2=tier2["wikis"], socials2=tier2["socials"])
+        + "\n\n" + localized(
+            "sponsor_subscribe_usage", lang,
+            bridges1=tier1["bridges"], chats1=tier1["chats"],
+            minute1=tier1["relay_minute"], day1=tier1["relay_day"],
+            bridges2=tier2["bridges"], chats2=tier2["chats"],
+            minute2=tier2["relay_minute"], day2=tier2["relay_day"]))

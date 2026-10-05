@@ -1,10 +1,8 @@
 """Chat-configuration commands on Telegram: /locallang, /lang, /allow_bots,
 /allow_files and /remindrules.
 
-Two differences from the Discord twins are deliberate: chat-level settings
-also accept Telegram's own group administrators (is_telegram_native_admin),
-and /remindrules takes its content from the replied-to message rather than a
-parameter.
+Chat-level settings require an appointment in the bot. /remindrules takes
+its content from the replied-to message rather than a parameter.
 """
 import time
 
@@ -17,12 +15,12 @@ from utils import (
     set_chat_lang,
 )
 
-from telegram_bot.client import is_telegram_native_admin, logger, router
+from telegram_bot.client import logger, router
 
 @router.message(Command("locallang"))
 async def locallang_handler(message: Message):
     """Set the bot language for this chat/topic (overrides the group-wide
-    /lang). Chat admins, Telegram group admins and Bot Admins."""
+    /lang). Appointed chat admins and Bot Admins."""
     thread = message.message_thread_id or 0
     chat_key = f"{message.chat.id}:{thread}"
     lang = get_chat_lang(chat_key)
@@ -37,7 +35,6 @@ async def locallang_handler(message: Message):
     has_permission = (
         is_admin("telegram", message.from_user.id)
         or is_chat_admin("telegram", chat_key, message.from_user.id)
-        or await is_telegram_native_admin(message.chat.id, message.from_user.id)
     )
     if not has_permission:
         await message.reply(localized("no_permission", lang))
@@ -106,7 +103,6 @@ async def allow_bots_cmd(message: Message):
     has_permission = (
         is_admin("telegram", message.from_user.id)
         or is_chat_admin("telegram", chat_id, message.from_user.id)
-        or await is_telegram_native_admin(message.chat.id, message.from_user.id)
     )
     if not has_permission:
         await message.reply(localized("no_permission", lang))

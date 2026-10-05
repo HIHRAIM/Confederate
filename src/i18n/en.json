@@ -1518,7 +1518,7 @@
   },
   "sponsor_notice_expired": {
     "status": "unverified",
-    "text": "The grace period on your sponsorship has ended.\n\nYour community slots beyond what the current tier allows have been released, and the exclusive right to attach chats to your bridges has ended with them. Your bridges keep their numbers — they stay reserved for you and are given to nobody else — and every bridge, chat, source and setting is still there, untouched.\n\nSubscribing again gives the status straight back; you would only need to claim your communities once more."
+    "text": "The 30-day working period ended. Sponsor forwarding and setup are paused; community slots were released. Bridges, chats, sources and settings stay saved. Renew and claim your communities to resume."
   },
   "sponsor_notice_fallback": {
     "status": "unverified",
@@ -1526,7 +1526,7 @@
   },
   "sponsor_notice_frozen": {
     "status": "unverified",
-    "text": "Your sponsor subscription is no longer active.\n\nRelaying from followed sources on your bridges has been paused. Your rights — your community slots and your bridges — stay for {days} more days; after that the slots are released. Nothing is deleted at any point: your bridges, chats, sources and settings all stay exactly as they are, and everything starts working again by itself if you subscribe again.\n\nIf this is a mistake, check on Patreon that your subscription is active and that your Patreon account is still connected to Discord."
+    "text": "Your subscription ended. Bridges, feeds and new setup keep working for {days} more days under the same limits. After that, forwarding and sponsor actions stop and community slots are released; configuration stays saved. Renew on Patreon and keep Patreon linked to Discord to continue."
   },
   "sponsor_notice_restored": {
     "status": "unverified",
@@ -1534,11 +1534,11 @@
   },
   "sponsor_quota_socials": {
     "status": "unverified",
-    "text": "This sponsor bridge already follows {used} of {limit} social sources — Bluesky accounts, YouTube channels and Telegram channels share one limit. Remove one, or raise the tier."
+    "text": "This subscription already follows {used} of {limit} social sources across all its bridges. Remove one or raise the tier."
   },
   "sponsor_quota_wikis": {
     "status": "unverified",
-    "text": "This sponsor bridge already follows {used} of {limit} wikis. Remove one with /remwikifeed, or raise the tier."
+    "text": "This subscription already follows {used} of {limit} wikis across all its bridges. Remove one with /remwikifeed, or raise the tier."
   },
   "sponsor_release_none": {
     "status": "unverified",
@@ -1550,7 +1550,7 @@
   },
   "sponsor_status_bridge": {
     "status": "unverified",
-    "text": "* #{bridge_id} — wikis {wikis}/{wiki_limit}, social sources {socials}/{social_limit}"
+    "text": "* #{bridge_id} — wikis {wikis}, social sources {socials}"
   },
   "sponsor_status_bridge_empty": {
     "status": "unverified",
@@ -1574,7 +1574,7 @@
   },
   "sponsor_status_frozen": {
     "status": "unverified",
-    "text": "Your subscription is no longer active. Relaying from followed sources on your bridges is paused. Your rights stay for {days} more day(s); after that your community slots are released. Nothing is deleted, and everything starts working again by itself if the subscription returns."
+    "text": "Payment ended. Bridges and feeds continue for {days} more day(s), then pause. Settings remain saved."
   },
   "sponsor_status_link": {
     "status": "unverified",
@@ -1590,7 +1590,7 @@
   },
   "sponsor_subscribe": {
     "status": "unverified",
-    "text": "Sponsorship supports the bot and gives you your own space in it.\n\nTier 1: {communities1} communities, {wikis1} wikis and {socials1} social sources (Bluesky, YouTube and Telegram channels together) on each of your bridges.\nTier 2: {communities2} communities, {wikis2} wikis and {socials2} social sources.\n\nA sponsor may open bridges in the communities they have claimed, and only they can attach chats to their own bridges.\n\nSubscribe at {url} — and be sure to connect your Patreon account to Discord on Patreon's own site. Patreon then grants you the role this bot reads; without that connection there is no role and the bot cannot tell that you are a sponsor at all."
+    "text": "Sponsorship supports the bot and gives you your own space in it.\n\nTier 1: {communities1} communities, {wikis1} wikis and {socials1} social sources (Bluesky, YouTube and Telegram channels together) across all your bridges together.\nTier 2: {communities2} communities, {wikis2} wikis and {socials2} social sources.\n\nA sponsor may open bridges in the communities they have claimed, and they and Bot Admins can attach chats to their own bridges.\n\nSubscribe at {url} — and be sure to connect your Patreon account to Discord on Patreon's own site. Patreon then grants you the role this bot reads; without that connection there is no role and the bot cannot tell that you are a sponsor at all."
   },
   "status_members_forms": {
     "status": "unverified",
@@ -2303,5 +2303,49 @@
   "ytfeed_usage": {
     "status": "unverified",
     "text": "Usage: /setytfeed <YouTube channel> — an @handle, a link to the channel or a UC… channel id."
-  }
+  },
+  "appeal_choose_server": {"status": "unverified", "text": "You belong to several appeal servers. Run /appeal with server_id for your choice:\n{servers}"},
+  "appeal_server_invalid": {"status": "unverified", "text": "Choose a server from the list where you are a member."},
+  "appeal_server_frozen": {"status": "unverified", "text": "New appeals are paused here while sponsorship is inactive."},
+  "appeal_server_incomplete": {"status": "unverified", "text": "Configure the Guard protocol channels before opening appeals."},
+  "appeal_already_open_server": {"status": "unverified", "text": "You already have an open appeal on {server}."},
+  "appeal_flood_warning": {"status": "unverified", "text": "You have sent 20 messages in this appeal without a consul reply. Please wait. At 30 messages within 10 minutes, forwarding will stop and Guard may ban you from the appeal server."},
+  "appeal_register_guild": {"status": "unverified", "text": "Run this on a sponsor appeal server."},
+  "appeal_register_taken": {"status": "unverified", "text": "This server or subscription already has another appeal registration."},
+  "appeal_register_invalid": {"status": "unverified", "text": "Enter a channel ID and a Discord invitation URL."},
+  "appeal_register_channel": {"status": "unverified", "text": "The bot needs permission to create and send in public threads here."},
+  "appeal_register_done": {"status": "unverified", "text": "Appeal server registered. Configure channels and roles with /appeal-protocol."},
+  "appeal_protocol_invalid": {"status": "unverified", "text": "Register this server, then provide two distinct channels and valid consul roles."},
+  "appeal_protocol_done": {"status": "unverified", "text": "Guard channels and consul roles saved. Configure the same channels in guard_bot."},
+  "appeal_pause_done": {"status": "unverified", "text": "New appeals paused. Open appeals can still reach a verdict."},
+  "appeal_resume_done": {"status": "unverified", "text": "New appeals resumed."},
+  "appeal_settings_show": {"status": "unverified", "text": "Appeal server {guild}; threads {thread}; pardon {pardon}; ban summaries {baninfo}; consul roles {roles}; accepting: {active}."},
+  "sponsor_quota_bridges": {
+    "status": "unverified",
+    "text": "This subscription has reached its active bridge limit. Detach an unused bridge chat or raise the tier."
+  },
+  "sponsor_quota_bridge_chats": {"status": "unverified", "text": "This bridge already has two chats. Remove one before attaching another."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "This bridge has reached its sponsor message limit for today. Forwarding resumes at 00:00 UTC."},
+  "inbox_media_blocked": {"status": "unverified", "text": "For safety, this inbox accepts text only. Please describe your issue without attachments."},
+  "inbox_link_blocked": {"status": "unverified", "text": "For safety, links are not forwarded through this inbox. Please describe your issue in plain text."},
+  "inbox_text_too_long": {"status": "unverified", "text": "Please shorten your message to 4,000 characters or fewer."},
+  "inbox_daily_limit": {"status": "unverified", "text": "This inbox has reached its message limit for today. Please try again after 00:00 UTC."},
+  "sponsor_tier_community": {"status": "unverified", "text": "Community role"},
+  "sponsor_status_pending": {"status": "unverified", "text": "Community-role benefits activate in about {days} day(s) after the role was first observed."},
+  "sponsor_status_expired_retention": {"status": "unverified", "text": "The working grace period ended. Claim another eligible role or have another sponsor or Bot Admin take over this community. Its data will be removed and the bot will leave 30 days after the grace period ends."},
+  "sponsor_notice_expired_retention": {"status": "unverified", "text": "Your working grace period ended. Unless another sponsor or Bot Admin takes over, the bot will leave your communities and erase their data in 30 days."},
+  "sponsor_notice_community_lost": {"status": "unverified", "text": "Your community role ended. Your sponsor work continues for {days} more day(s). After that, another 30 days remain before the bot leaves and erases the community data, unless another sponsor or Bot Admin takes over."},
+  "sponsor_quota_chats": {
+    "status": "unverified",
+    "text": "This subscription has reached its attached chat limit. Remove a chat or raise the tier."
+  },
+  "sponsor_status_usage": {
+    "status": "unverified",
+    "text": "Active bridges {bridges}/{bridge_limit}; chats {chats}/{chat_limit}; wikis {wikis}/{wiki_limit}; social sources {socials}/{social_limit}. Today: {relay_used}/{relay_limit} outgoing messages; at most {relay_minute} per minute."
+  },
+  "sponsor_subscribe_usage": {
+    "status": "unverified",
+    "text": "Tier 1: {bridges1} active bridges, {chats1} chats and up to {minute1} outgoing copies per minute, {day1} per UTC day. Tier 2: {bridges2} bridges, {chats2} chats, {minute2} per minute and {day2} per day. Each destination message costs one unit. All sponsor work continues for 30 days after payment ends; then forwarding pauses and community slots are released. Settings remain saved."
+  },
+  "sponsor_status_expired": {"status": "unverified", "text": "The 30-day working period ended. Forwarding is paused. Your bridges and settings are saved; renew and claim communities again to resume."}
 }

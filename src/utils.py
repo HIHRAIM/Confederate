@@ -20,7 +20,7 @@ import itertools
 def is_admin(platform, user_id):
     """Whether the user is a Bot Admin — the top role, hard-coded in
     config.ADMINS rather than stored, so it survives any database mishap."""
-    return user_id in ADMINS.get(platform, set())
+    return str(user_id) in {str(admin_id) for admin_id in ADMINS.get(platform, set())}
 
 _rate_buckets = {}
 

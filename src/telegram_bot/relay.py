@@ -727,6 +727,14 @@ async def edited_message_handler(message: Message):
         if not row:
             return
 
+        copies = db.cur.execute(
+            "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
+            (row["id"],)
+        ).fetchall()
+        from sponsors import sponsor_relay_allowed
+        if not sponsor_relay_allowed(row["bridge_id"], "", "", copies):
+            return
+
         gallery_urls, gallery_changed = await _refresh_gallery_for_edit(message, row["id"])
 
         texts, relay_file_count = _build_telegram_relay_texts(
@@ -759,10 +767,6 @@ async def edited_message_handler(message: Message):
 
         header = f"[Telegram | {clean_display_name(message.chat.title or 'Private chat')}] {clean_display_name(author_name)}:"
 
-        copies = db.cur.execute(
-            "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
-            (row["id"],)
-        ).fetchall()
     except Exception as e:
         logger.warning("Telegram edit could not be rendered (chat=%s, message=%s): %s",
                        origin_chat_id, message.message_id, e)

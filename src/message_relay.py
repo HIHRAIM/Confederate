@@ -288,11 +288,17 @@ def _clip_escaped_html(escaped, limit):
     cut = re.sub(r"&[#a-zA-Z0-9]{0,9}$", "", cut)
     return cut.rstrip() + "…"
 
-def build_telegram_text(header, body_html, body_plain):
+def build_telegram_text(header, body_html, body_plain, *, spoiler=False):
     """Собирает header+body для Telegram с учётом лимита 4096 символов.
     Если форматированный body слишком длинный, откатывается на экранированный
     plain-текст, чтобы обрезка не ломала HTML-теги."""
     header_html = escape_html(header)
+    if spoiler:
+        opening, closing = "<tg-spoiler>", "</tg-spoiler>"
+        budget = max(TELEGRAM_MSG_LIMIT - len(header_html) - len(opening)
+                     - len(closing) - 1, 0)
+        body = _clip_escaped_html(escape_html(body_plain or ""), budget)
+        return f"{header_html}\n{opening}{body}{closing}".strip()
     text = f"{header_html}\n{body_html}".strip()
     if len(text) <= TELEGRAM_MSG_LIMIT:
         return text
@@ -476,6 +482,7 @@ async def relay_message(
     sender_name,
     text,
     discord_text=None,
+    discord_embeds=None,
     telegram_html=None,
     reply_to_msg_db_id=None,
     send_to_chat_func,
@@ -536,6 +543,28 @@ async def relay_message(
     place_name = clean_display_name(place_name) if place_name else None
     sender_name = clean_display_name(sender_name)
 
+    if targets is None:
+        targets = db.get_bridge_chats(bridge_id)
+    from sponsors import sponsor_relay_allowed, claim_daily_limit_notice
+    if not sponsor_relay_allowed(bridge_id, origin_platform, origin_chat_id,
+                                 targets, gallery_urls):
+        if claim_daily_limit_notice(bridge_id, origin_platform, origin_chat_id,
+                                    targets, gallery_urls):
+            from utils import localized
+            for chat in targets:
+                if chat["platform"] not in ("discord", "telegram"):
+                    continue
+                notice = localized("sponsor_relay_limit_notice", get_chat_lang(chat["chat_id"]))
+                try:
+                    await send_to_chat_func(
+                        chat, header="", body_plain=notice, body_discord=notice,
+                        body_telegram_html=escape_html(notice), reply_line=None,
+                        reply_to_platform_message_id=None,
+                    )
+                except Exception:
+                    pass
+        return None
+
     db.cur.execute(
         """
         UPDATE bridge_rules
@@ -561,9 +590,6 @@ async def relay_message(
     )
     msg_id = inserted.lastrowid
     db.conn.commit()
-
-    if targets is None:
-        targets = db.get_bridge_chats(bridge_id)
 
     for chat in targets:
         if chat["platform"] == origin_platform and chat["chat_id"] == origin_chat_id:
@@ -597,7 +623,7 @@ async def relay_message(
             )
 
         current_text = text
-        current_discord_text = discord_text or current_text
+        current_discord_text = discord_text if discord_text is not None else current_text
         current_telegram_html = telegram_html
         current_embed = None
         if rendered is not None:
@@ -684,6 +710,8 @@ async def relay_message(
         send_kwargs = {}
         if current_embed is not None:
             send_kwargs["embed"] = current_embed
+        if chat["platform"] == "discord" and discord_embeds:
+            send_kwargs["embeds"] = discord_embeds
         sent_id = await send_to_chat_func(
             chat,
             header=header,

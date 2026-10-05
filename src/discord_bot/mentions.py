@@ -177,7 +177,7 @@ def _one_embed_text(embed, keep_media_only):
         return None
     return "\n".join(parts)
 
-def _discord_embed_texts(message: discord.Message):
+def _discord_embed_texts(message: discord.Message, include_rich=True):
     """Flatten a message's embeds into text blocks the relay can carry.
 
     Author, title, description, fields, images and footer are laid out as
@@ -198,6 +198,8 @@ def _discord_embed_texts(message: discord.Message):
     texts = []
     for embed in embeds:
         if not _is_authored_embed(embed, message):
+            continue
+        if not include_rich and getattr(embed, "type", None) == "rich":
             continue
         block = _one_embed_text(embed, keep_media_only=not has_own_text)
         if block:
@@ -274,11 +276,11 @@ def _discord_component_texts(message: discord.Message):
     block = "\n".join(line for line in lines if line)
     return [block] if block.strip() else []
 
-def discord_structured_texts(message: discord.Message):
+def discord_structured_texts(message: discord.Message, include_rich=True):
     """Everything a message says outside its plain `content`: its embeds and,
     for a components-v2 message, its components. One text block per source,
     for the relay to join onto the message body."""
-    return _discord_embed_texts(message) + _discord_component_texts(message)
+    return _discord_embed_texts(message, include_rich=include_rich) + _discord_component_texts(message)
 
 def _discord_system_event_key(message: discord.Message):
     """The localization key for a system message worth relaying (boosts,

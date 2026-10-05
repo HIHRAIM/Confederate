@@ -287,8 +287,8 @@ async def _whois_lookup(interaction: discord.Interaction, target_message: discor
             if member:
                 try:
                     custom = discord.utils.find(lambda a: isinstance(a, discord.CustomActivity), member.activities or [])
-                    if custom and getattr(custom, "name", None):
-                        custom_status = custom.name
+                    if custom and getattr(custom, "state", None):
+                        custom_status = custom.state
                 except Exception:
                     custom_status = "—"
 

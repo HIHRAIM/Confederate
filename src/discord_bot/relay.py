@@ -26,7 +26,8 @@ from utils import get_chat_lang, localized, localized_discord_system_event, loca
 
 from discord_bot.client import bot
 from discord_bot.mentions import (
-    _discord_system_event_key, _split_attachment_texts, discord_structured_texts,
+    _discord_system_event_key, _is_authored_embed, _split_attachment_texts,
+    discord_structured_texts,
     extract_discord_forward_payload, replace_channel_mentions_for_telegram,
     replace_mentions,
 )
@@ -175,11 +176,16 @@ def _webhook_username(sender_name, place_name):
         name = sender_name or place or RELAY_WEBHOOK_NAME
     return clip_text(name, 80)
 
+def _untrusted_spoiler(content):
+    """Hide an inbox writer's text and links until staff chooses to reveal it."""
+    safe = str(content or "").replace("||", "|\u200b|")
+    return f"||{clip_text(safe, DISCORD_MSG_LIMIT - 4)}||"
+
 async def deliver_discord_relay(
     chat, *, header, body_discord, reply_line, reply_to_platform_message_id,
     sender_name=None, place_name=None, messenger_name=None, avatar_url=None,
     is_bot_sender=False, reply_link_line=None, embed=None, prefer_plain=False,
-    webhook_name=None,
+    webhook_name=None, embeds=None, untrusted=False,
 ):
     """Deliver a relayed message into a Discord channel.
 
@@ -196,6 +202,9 @@ async def deliver_discord_relay(
     `webhook_name` asks for a webhook of the sender's own — one per wiki — and
     falls back to the shared one when the channel has no room for another.
     """
+    outbound_embeds = list(embeds or ())
+    if embed is not None:
+        outbound_embeds.insert(0, embed)
     channel = await resolve_discord_chat_channel(chat["chat_id"])
     if channel is None:
         return None
@@ -213,13 +222,16 @@ async def deliver_discord_relay(
         if webhook is not None:
             username = _webhook_username(sender_name, place_name)
             webhook_body = f"{reply_link_line}\n{body}" if reply_link_line else body
-            content = clip_text(webhook_body, DISCORD_MSG_LIMIT) or "​"
+            content = (_untrusted_spoiler(webhook_body) if untrusted else
+                       clip_text(webhook_body, DISCORD_MSG_LIMIT)) or "​"
             for attempt in range(2):
                 try:
                     sent = await webhook.send(
                         content, username=username, avatar_url=avatar_url,
-                        allowed_mentions=RELAY_ALLOWED_MENTIONS, wait=True,
-                        **({"embeds": [embed]} if embed is not None else {}),
+                        allowed_mentions=(discord.AllowedMentions.none() if untrusted
+                                          else RELAY_ALLOWED_MENTIONS), wait=True,
+                        suppress_embeds=untrusted,
+                        **({"embeds": outbound_embeds} if outbound_embeds else {}),
                     )
                     return str(sent.id)
                 except Exception as e:
@@ -237,9 +249,11 @@ async def deliver_discord_relay(
     else:
         disc_header = header
 
-    send_kwargs = {"allowed_mentions": RELAY_ALLOWED_MENTIONS}
-    if embed is not None:
-        send_kwargs["embed"] = embed
+    send_kwargs = {"allowed_mentions": (discord.AllowedMentions.none() if untrusted
+                                        else RELAY_ALLOWED_MENTIONS),
+                   "suppress_embeds": untrusted}
+    if outbound_embeds:
+        send_kwargs["embeds"] = outbound_embeds
     if reply_to_platform_message_id:
         send_kwargs["reference"] = discord.MessageReference(
             message_id=int(reply_to_platform_message_id),
@@ -247,18 +261,32 @@ async def deliver_discord_relay(
             fail_if_not_exists=False,
         )
         send_kwargs["mention_author"] = False
-    content = clip_text(f"{disc_header}\n{body}".strip(), DISCORD_MSG_LIMIT)
-    if embed is not None and not body.strip():
-        content = None
+    full_body = f"{disc_header}\n{body}".strip()
+    content = (_untrusted_spoiler(full_body) if untrusted else
+               clip_text(full_body, DISCORD_MSG_LIMIT))
     try:
         sent = await channel.send(content, **send_kwargs)
         return str(sent.id)
     except Exception:
         return None
 
+def _discord_native_rich_embeds(message):
+    """Keep every rich embed a bot or webhook sent for Discord destinations.
+
+    An embed URL may also appear in the ordinary message text. Dropping the
+    embed on that basis loses its fields, image, author and footer. Humans
+    cannot send authored embeds; their rich link previews remain excluded.
+    Telegram rendering keeps its separate text-preview policy.
+    """
+    author = getattr(message, "author", None)
+    if not (getattr(author, "bot", False) or getattr(message, "webhook_id", None)):
+        return []
+    return [discord.Embed.from_dict(embed.to_dict())
+            for embed in (message.embeds or ()) if embed.type == "rich"][:10]
+
 async def deliver_telegram_relay(
     chat, *, header, body_plain, body_telegram_html, reply_line,
-    reply_to_platform_message_id,
+    reply_to_platform_message_id, suppress_link_previews=False, untrusted=False,
 ):
     """Deliver a relayed message into a Telegram chat/topic.
 
@@ -272,12 +300,14 @@ async def deliver_telegram_relay(
     body_plain_local = convert_discord_timestamps(body_plain, ts_lang)
     if reply_line:
         body_html = f"{escape_html(reply_line)}\n{body_html}"
-    text_html = build_telegram_text(header, body_html, body_plain_local)
+    text_html = build_telegram_text(header, body_html, body_plain_local,
+                                    spoiler=untrusted)
     send_kwargs = dict(
         chat_id=int(chat_id_str),
         message_thread_id=int(thread) or None,
         text=text_html,
         parse_mode="HTML",
+        disable_web_page_preview=suppress_link_previews,
     )
     if reply_to_platform_message_id:
         send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
@@ -291,7 +321,9 @@ async def deliver_telegram_relay(
             raise
     return str(sent.message_id)
 
-async def edit_discord_relay_copy(ch, message_id_platform, header, body, message_db_id=None, chat=None):
+async def edit_discord_relay_copy(ch, message_id_platform, header, body,
+                                  message_db_id=None, chat=None, embeds=None,
+                                  untrusted=False):
     """Edit a relayed Discord copy, handling both normal bot messages and the
     per-sender webhook messages produced when /webhooks is enabled.
 
@@ -318,8 +350,11 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body, message
             try:
                 await webhook.edit_message(
                     m.id,
-                    content=clip_text(content_body, DISCORD_MSG_LIMIT) or "​",
-                    allowed_mentions=RELAY_ALLOWED_MENTIONS,
+                    content=(_untrusted_spoiler(content_body) if untrusted else
+                             clip_text(content_body, DISCORD_MSG_LIMIT)) or "​",
+                    allowed_mentions=(discord.AllowedMentions.none() if untrusted
+                                      else RELAY_ALLOWED_MENTIONS),
+                    **({"embeds": embeds} if embeds is not None else {}),
                 )
             except Exception as e:
                 logger.warning("Relay webhook edit failed (channel=%s, message=%s): %s",
@@ -334,8 +369,12 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body, message
             body_text = "\n".join(prefix_lines + [body])
     try:
         await m.edit(
-            content=clip_text(f"{header}\n{body_text}".strip(), DISCORD_MSG_LIMIT),
-            allowed_mentions=RELAY_ALLOWED_MENTIONS,
+            content=(_untrusted_spoiler(f"{header}\n{body_text}".strip()) if untrusted
+                     else clip_text(f"{header}\n{body_text}".strip(), DISCORD_MSG_LIMIT)),
+            allowed_mentions=(discord.AllowedMentions.none() if untrusted
+                              else RELAY_ALLOWED_MENTIONS),
+            suppress=untrusted,
+            **({"embeds": embeds} if embeds is not None else {}),
         )
     except Exception as e:
         logger.warning("Relay edit failed (channel=%s, message=%s): %s",
@@ -454,6 +493,8 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
     else:
         texts = _split_attachment_texts(content, [a.url for a in message.attachments])
 
+    rich_embeds = _discord_native_rich_embeds(message)
+    discord_texts = list(texts)
     structured_texts = discord_structured_texts(message)
     if structured_texts:
         structured_block = "\n\n".join(structured_texts)
@@ -462,10 +503,16 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
         else:
             texts = [structured_block]
 
+    discord_structured = discord_structured_texts(message, include_rich=False)
+    if discord_structured:
+        block = "\n\n".join(discord_structured)
+        discord_texts[0] = ((discord_texts[0] or "").rstrip() + "\n\n" + block).strip()
+
     if forward_type and not any((t or "").strip() for t in texts):
         texts = _split_attachment_texts(forward_text or "", forward_attachments)
+        discord_texts = list(texts)
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False, embeds=None):
         """Per-target delivery callback handed to relay_message: routes to the
         Discord or Telegram deliverer by the target chat's platform."""
         if chat["platform"] == "discord":
@@ -475,7 +522,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 reply_to_platform_message_id=reply_to_platform_message_id,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
-                is_bot_sender=is_bot_sender,
+                is_bot_sender=is_bot_sender, embeds=embeds,
             )
 
         if chat["platform"] == "telegram":
@@ -519,9 +566,11 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
         )
         return
 
-    for text in texts:
+    for index, text in enumerate(texts):
         target_lang = get_chat_lang(origin_chat_id)
         localized_text = text.replace("__DC_STICKER__", localized_sticker(target_lang))
+        discord_text = (discord_texts[index] if index < len(discord_texts) else "")
+        discord_text = discord_text.replace("__DC_STICKER__", localized_sticker(target_lang))
         telegram_text = replace_channel_mentions_for_telegram(localized_text, message.guild)
         await message_relay.relay_message(
             bridge_id=bridge_id,
@@ -533,7 +582,8 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             place_name=place_name,
             sender_name=sender_name,
             text=telegram_text,
-            discord_text=localized_text,
+            discord_text=discord_text,
+            discord_embeds=rich_embeds if index == 0 else None,
             telegram_html=discord_to_telegram_html(telegram_text),
             reply_to_msg_db_id=reply_to_msg_db_id,
             send_to_chat_func=send_to_chat,
@@ -571,6 +621,20 @@ async def _relay_pending_discord_first_message(pend_row):
         return
     await _relay_verified_discord_message(first_message, row["bridge_id"], _discord_system_event_key(first_message))
 
+def discord_edit_payload(message):
+    """Render a changed Discord message for Telegram and Discord copies.
+
+    Rich authored embeds stay structured on Discord. Telegram receives their
+    readable text, while unsupported embed types keep a text fallback on both.
+    """
+    content = replace_mentions(message, message.content or "")
+    telegram_blocks = discord_structured_texts(message)
+    discord_blocks = discord_structured_texts(message, include_rich=False)
+    telegram_text = "\n\n".join([content] + telegram_blocks).strip()
+    discord_text = "\n\n".join([content] + discord_blocks).strip()
+    embeds = _discord_native_rich_embeds(message)
+    return telegram_text, discord_text, embeds
+
 def _edit_author_id_for_consul(message_db_id):
     """Original sender of a relayed message (for re-deriving the consul label
     when an appeal-thread message is edited)."""
@@ -598,7 +662,8 @@ async def process_appeal_dm_edit(author_id, message_id, author_display_name, tex
     )
 
 async def process_discord_message_edit(*, guild, channel, message_id, author_display_name, text,
-                                       origin_chat_id=None, place_name=None):
+                                       origin_chat_id=None, place_name=None,
+                                       discord_text=None, discord_embeds=None):
     """Propagate an edit of a Discord origin message into every copy.
 
     Copies on Discord go through edit_discord_relay_copy (which knows webhook
@@ -648,13 +713,19 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
         "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
         (row["id"],)
     ).fetchall()
+    from sponsors import sponsor_relay_allowed
+    if not sponsor_relay_allowed(row["bridge_id"], "", "", copies):
+        return
     for c in copies:
         try:
             if c["platform"] == "discord":
                 ch = await resolve_discord_chat_channel(c["chat_id"])
                 if ch is None:
                     continue
-                await edit_discord_relay_copy(ch, c["message_id_platform"], header, text, message_db_id=row["id"], chat=c)
+                await edit_discord_relay_copy(
+                    ch, c["message_id_platform"], header,
+                    discord_text if discord_text is not None else text,
+                    message_db_id=row["id"], chat=c, embeds=discord_embeds)
             elif c["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
                 chat_id, _ = c["chat_id"].split(":")

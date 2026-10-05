@@ -38,6 +38,7 @@ from utils import send_service_event
 
 db.init()
 db.cleanup_old_messages(days=30)
+db.cleanup_appeal_message_history(days=7)
 db.rule_since()
 
 async def pending_cleanup_loop():
@@ -55,6 +56,7 @@ async def pending_cleanup_loop():
     from telegram_bot import bot as tg
     from discord_bot import bot as dc
 
+    last_message_cleanup = time.monotonic()
     while True:
         try:
             rows = db.get_expired_pending_consents(older_than_seconds=24*3600)
@@ -107,6 +109,11 @@ async def pending_cleanup_loop():
             db.cleanup_wiki_relay_records()
             db.cleanup_departed_file_consents()
             db.cleanup_old_pending_links()
+            db.cleanup_old_inbox_ingress()
+            if time.monotonic() - last_message_cleanup >= 86400:
+                db.cleanup_old_messages(days=30)
+                db.cleanup_appeal_message_history(days=7)
+                last_message_cleanup = time.monotonic()
 
         except Exception as e:
             try:
@@ -305,9 +312,14 @@ async def sponsor_loop():
     await dc.wait_until_ready()
     while True:
         try:
-            for discord_id, notice in await sponsors.reconcile_pass():
+            notices = await sponsors.reconcile_pass()
+            if notices is None:
+                await asyncio.sleep(sponsors.SPONSOR_RECONCILE_SECONDS)
+                continue
+            for discord_id, notice in notices:
                 logger.info("sponsor %s: %s", discord_id, notice)
                 await sponsors.deliver_notice(discord_id, notice)
+            await sponsors.cleanup_due_communities()
         except Exception as e:
             try:
                 await send_service_event("daily_loop_error", error=f"sponsor_loop error: {e}")
@@ -521,6 +533,10 @@ async def main():
         asyncio.create_task(inbox_maintenance_loop(), name="inbox-maintenance"),
         asyncio.create_task(setup_deadline_loop(), name="setup-deadline"),
     ]
+    from telegram_deletions import configured as telegram_deletions_configured, listen as listen_telegram_deletions
+    if telegram_deletions_configured():
+        tasks.append(asyncio.create_task(listen_telegram_deletions(),
+                                         name="telegram-deletions"))
 
     await start_all_inbox_bots()
 

@@ -9,11 +9,12 @@ actual chat messages (discord_bot/relay.py, telegram_bot/relay.py).
 import time
 
 from db import conn, cur
+from db.ranges import bridge_range
 
 def cleanup_old_messages(days=30):
     """Retention sweep: drop relayed-message records older than `days`,
-    together with their copies and media-group mappings. Runs once at start-up
-    (main.py). Only the *records* go — the chat messages themselves stay, they
+    together with their copies and media-group mappings. Runs at start-up and
+    daily (main.py). Only the *records* go — the chat messages themselves stay, they
     just can no longer be edited/deleted through the bridge or answered by
     whois."""
     limit = int(time.time()) - days * 86400
@@ -29,10 +30,39 @@ def cleanup_old_messages(days=30):
         (limit,)
     )
     cur.execute(
+        "DELETE FROM gallery_uploads WHERE message_id IN "
+        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?)",
+        (limit,)
+    )
+    cur.execute(
         "DELETE FROM messages WHERE created_at IS NOT NULL AND created_at < ?",
         (limit,)
     )
     conn.commit()
+
+def cleanup_appeal_message_history(days=7):
+    """Keep at most seven days of appeal relay bookkeeping, even for open cases.
+
+    The Discord thread and DM messages remain available to their participants.
+    Only IDs used for cross-platform reply, edit and delete propagation leave
+    the database. This bounds DB growth without refusing an appeal or ending an
+    ongoing one. Closed appeal metadata is swept separately after seven days.
+    """
+    floor, ceiling = bridge_range("appeal")
+    cutoff = int(time.time()) - days * 86400
+    old = (floor, ceiling, cutoff)
+    predicate = ("SELECT id FROM messages WHERE bridge_id>=? AND bridge_id<?"
+                 " AND created_at IS NOT NULL AND created_at<?")
+    for table in ("message_copies", "media_group_members", "gallery_uploads"):
+        cur.execute(f"DELETE FROM {table} WHERE message_id IN ({predicate})", old)
+    removed = cur.execute(
+        "DELETE FROM messages WHERE bridge_id>=? AND bridge_id<?"
+        " AND created_at IS NOT NULL AND created_at<?", old
+    ).rowcount
+    cur.execute("DELETE FROM sponsor_appeal_usage")
+    cur.execute("DELETE FROM sponsor_appeal_reservations")
+    conn.commit()
+    return removed
 
 def record_media_group_members(chat_id, platform_message_ids, message_db_id):
     """Map every Telegram message_id of an album to the single relayed message.

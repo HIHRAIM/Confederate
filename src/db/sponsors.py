@@ -152,6 +152,25 @@ def get_sponsor_state(discord_id):
         "SELECT * FROM sponsor_state WHERE discord_id=?", (str(discord_id),)
     ).fetchone()
 
+def observe_community_role(discord_id, present):
+    """Track first observation of either qualifying role across restarts."""
+    owner = str(discord_id)
+    now = int(time.time())
+    row = get_sponsor_state(owner)
+    if row is None and not present:
+        return
+    if row is None:
+        cur.execute("INSERT INTO sponsor_state"
+                    " (discord_id,tier,community_role_since,community_role_present,updated_at)"
+                    " VALUES (?,0,?,1,?)", (owner, now, now))
+    elif present and not row["community_role_present"]:
+        cur.execute("UPDATE sponsor_state SET community_role_since=?,community_role_present=1"
+                    " WHERE discord_id=?", (now, owner))
+    elif not present and row["community_role_present"]:
+        cur.execute("UPDATE sponsor_state SET community_role_present=0 WHERE discord_id=?",
+                    (owner,))
+    conn.commit()
+
 def save_sponsor_state(discord_id, *, tier, since=None, grace_from_tier=None,
                        grace_since=None, notified_grace=0, notified_expired=0,
                        slot_changed_at=None):
@@ -210,17 +229,127 @@ def get_sponsors_in_grace():
         "SELECT * FROM sponsor_state WHERE grace_since IS NOT NULL"
     ).fetchall()
 
-def claim_community(platform, server_id, discord_id):
+def claim_community(platform, server_id, discord_id, takeover_from=None):
     """Take a community's slot for a sponsor. Returns True, or False when
     somebody else already holds it."""
-    cur.execute(
-        "INSERT OR IGNORE INTO sponsor_communities"
-        " (platform, server_id, discord_id, claimed_at) VALUES (?,?,?,?)",
-        (platform, str(server_id), str(discord_id), int(time.time()))
-    )
+    if takeover_from is None:
+        cur.execute(
+            "INSERT OR IGNORE INTO sponsor_communities"
+            " (platform, server_id, discord_id, claimed_at) VALUES (?,?,?,?)",
+            (platform, str(server_id), str(discord_id), int(time.time()))
+        )
+    else:
+        cur.execute(
+            "UPDATE sponsor_communities SET discord_id=?,claimed_at=?"
+            " WHERE platform=? AND server_id=? AND discord_id=?",
+            (str(discord_id), int(time.time()), platform, str(server_id),
+             str(takeover_from)),
+        )
     conn.commit()
     row = get_community_claim(platform, server_id)
     return bool(row and str(row["discord_id"]) == str(discord_id))
+
+def set_sponsor_retention_due(discord_id, due_at):
+    """Persist the cleanup deadline independently of the work grace clock."""
+    cur.execute("UPDATE sponsor_state SET retention_due_at=? WHERE discord_id=?",
+                (int(due_at) if due_at is not None else None, str(discord_id)))
+    conn.commit()
+
+def due_sponsor_communities(now=None):
+    """Claims still held by a fully lapsed account after retention expires."""
+    return cur.execute(
+        "SELECT sc.* FROM sponsor_communities sc JOIN sponsor_state ss"
+        " ON ss.discord_id=sc.discord_id WHERE ss.tier=0"
+        " AND ss.retention_due_at IS NOT NULL AND ss.retention_due_at<=?"
+        " ORDER BY sc.platform,sc.server_id",
+        (int(now if now is not None else time.time()),),
+    ).fetchall()
+
+def purge_sponsor_community(platform, server_id, discord_id):
+    """Erase one expired community's database footprint after the bot leaves.
+
+    Every query is bound to the exact platform and community prefix. Shared
+    bridges retain other chats and their messages; only records originating
+    here or delivered here are scrubbed. The ownership check prevents a
+    pending cleanup from deleting a server another sponsor claimed.
+    """
+    owner = str(discord_id)
+    server = str(server_id)
+    claim = get_community_claim(platform, server)
+    if claim is None or str(claim["discord_id"]) != owner:
+        return False
+    state = get_sponsor_state(owner)
+    if (state is None or int(state["tier"] or 0) != 0
+            or state["retention_due_at"] is None
+            or int(state["retention_due_at"]) > int(time.time())):
+        return False
+
+    pattern = f"{server}:%"
+    chats = cur.execute(
+        "SELECT chat_id,bridge_id FROM chats WHERE platform=? AND chat_id LIKE ?",
+        (platform, pattern),
+    ).fetchall()
+    affected_bridges = {int(row["bridge_id"]) for row in chats
+                        if row["bridge_id"] is not None}
+    origin_ids = (
+        "SELECT id FROM messages WHERE origin_platform=? AND origin_chat_id LIKE ?"
+    )
+    for table, column in (("message_copies", "message_id"),
+                          ("media_group_members", "message_id"),
+                          ("gallery_uploads", "message_id")):
+        cur.execute(f"DELETE FROM {table} WHERE {column} IN ({origin_ids})",
+                    (platform, pattern))
+    cur.execute("DELETE FROM messages WHERE origin_platform=? AND origin_chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM message_copies WHERE platform=? AND chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM media_group_members WHERE chat_id LIKE ?", (pattern,))
+    cur.execute("DELETE FROM poll_messages WHERE platform=? AND chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM wiki_feed_settings WHERE chat_id LIKE ?", (pattern,))
+    cur.execute("DELETE FROM feeds WHERE platform=? AND chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("UPDATE bridge_rules SET origin_platform=NULL,"
+                " origin_chat_id=NULL,origin_message_id=NULL"
+                " WHERE origin_platform=? AND origin_chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM inbox_hosts WHERE platform=? AND chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM inbox_topics WHERE host_chat_id LIKE ?"
+                " OR topic_chat_id LIKE ?", (pattern, pattern))
+    for row in chats:
+        from db.bridges import remove_chat_from_bridge
+        remove_chat_from_bridge(row["chat_id"])
+    for bridge_id in affected_bridges:
+        if cur.execute("SELECT 1 FROM bridges WHERE id=?", (bridge_id,)).fetchone():
+            continue
+        cur.execute("DELETE FROM poll_votes WHERE poll_id IN"
+                    " (SELECT id FROM polls WHERE bridge_id=?)", (bridge_id,))
+        cur.execute("DELETE FROM poll_messages WHERE poll_id IN"
+                    " (SELECT id FROM polls WHERE bridge_id=?)", (bridge_id,))
+        cur.execute("DELETE FROM polls WHERE bridge_id=?", (bridge_id,))
+    for table, column in (("dead_chats", "chat_id"),
+                          ("news_chats", "chat_id"),
+                          ("deadtopic_chats", "chat_id"),
+                          ("chat_settings", "chat_id"),
+                          ("chat_admins", "chat_id"),
+                          ("inaccessible_chats", "chat_id")):
+        cur.execute(f"DELETE FROM {table} WHERE {column} LIKE ?", (pattern,))
+    cur.execute("DELETE FROM chat_settings WHERE chat_id=?", (server,))
+    cur.execute("DELETE FROM verified_users WHERE platform=? AND prefix=?",
+                (platform, server))
+    cur.execute("DELETE FROM pending_consents WHERE platform=? AND prefix=?",
+                (platform, server))
+    for table in ("server_admins", "server_bridge_admins",
+                  "server_file_consents", "setup_deadlines"):
+        cur.execute(f"DELETE FROM {table} WHERE platform=? AND server_id=?",
+                    (platform, server))
+    cur.execute("DELETE FROM server_webhooks WHERE server_id=?", (server,))
+    cur.execute("DELETE FROM bridge_webhooks WHERE server_id=?", (server,))
+    cur.execute("DELETE FROM sponsor_communities WHERE platform=?"
+                " AND server_id=? AND discord_id=?", (platform, server, owner))
+    conn.commit()
+    return True
 
 def release_community(platform, server_id, discord_id=None):
     """Give a community's slot back. With `discord_id` the release only
@@ -315,15 +444,83 @@ def get_sponsor_bridges(discord_id):
         (str(discord_id),)
     ).fetchall()
 
+def get_sponsor_usage(discord_id):
+    """Active bridges, chats and sources for one owner in two indexed reads.
+
+    Historical bridge numbers never disappear, so walking each of them in
+    Python would make every quota check grow without bound over time.
+    """
+    owner = str(discord_id)
+    places = cur.execute(
+        "SELECT COUNT(DISTINCT c.bridge_id) AS bridges, COUNT(c.chat_id) AS chats"
+        " FROM sponsor_bridges sb LEFT JOIN chats c ON c.bridge_id=sb.bridge_id"
+        " WHERE sb.discord_id=?", (owner,)
+    ).fetchone()
+    sources = cur.execute(
+        "SELECT f.kind AS kind, COUNT(*) AS used FROM sponsor_bridges sb"
+        " JOIN chats c ON c.bridge_id=sb.bridge_id"
+        " JOIN feeds f ON f.chat_id=c.chat_id"
+        " WHERE sb.discord_id=? GROUP BY f.kind", (owner,)
+    ).fetchall()
+    counts = {r["kind"]: int(r["used"]) for r in sources}
+    return {"bridges": int(places["bridges"]), "chats": int(places["chats"]),
+            "wikis": counts.get("wiki", 0),
+            "socials": sum(counts.get(kind, 0) for kind in
+                           ("bluesky", "youtube", "telegram"))}
+
+def sponsor_relay_usage(discord_id, day):
+    """Delivery units spent by this subscription in the named UTC day."""
+    return cur.execute(
+        "SELECT day_units, minute_started, minute_units FROM sponsor_relay_usage"
+        " WHERE discord_id=? AND day=?", (str(discord_id), day)
+    ).fetchone()
+
+def claim_sponsor_relay_notice(bridge_id, day):
+    """Claim the one bridge-wide daily quota notice before sending it."""
+    changed = cur.execute(
+        "INSERT OR IGNORE INTO sponsor_relay_notices (bridge_id,day) VALUES (?,?)",
+        (int(bridge_id), str(day)),
+    )
+    conn.commit()
+    return bool(changed.rowcount)
+
+def spend_sponsor_relay(discord_id, day, now, units, minute_limit, day_limit):
+    """Reserve a whole fan-out before sending any copy.
+
+    One conditional SQLite statement makes the budget atomic even if two
+    processes touch the database. A refused relay spends nothing.
+    """
+    if units <= 0 or units > minute_limit or units > day_limit:
+        return False
+    changed = cur.execute(
+        """INSERT INTO sponsor_relay_usage
+           (discord_id, day, day_units, minute_started, minute_units)
+           VALUES (:owner, :day, :units, :now, :units)
+           ON CONFLICT(discord_id, day) DO UPDATE SET
+             day_units = sponsor_relay_usage.day_units + :units,
+             minute_started = CASE
+               WHEN :now - sponsor_relay_usage.minute_started >= 60 THEN :now
+               ELSE sponsor_relay_usage.minute_started END,
+             minute_units = CASE
+               WHEN :now - sponsor_relay_usage.minute_started >= 60 THEN :units
+               ELSE sponsor_relay_usage.minute_units + :units END
+           WHERE sponsor_relay_usage.day_units + :units <= :day_limit
+             AND (CASE
+               WHEN :now - sponsor_relay_usage.minute_started >= 60 THEN :units
+               ELSE sponsor_relay_usage.minute_units + :units END) <= :minute_limit""",
+        {"owner": str(discord_id), "day": day, "now": now,
+         "units": units, "minute_limit": minute_limit, "day_limit": day_limit}
+    )
+    conn.commit()
+    return bool(changed.rowcount)
+
 def frozen_sponsor_chat_ids():
     """The chats whose feeds must not be relayed right now: those of sponsor
     bridges whose owner is not currently a paying sponsor.
 
     A frozen feed keeps its row, its settings and its place -- what stops is
-    only the delivery, and it starts again by itself the moment the
-    subscription comes back. Ordinary relay between the chats of the bridge is
-    untouched: people talking to each other is not what the sponsorship paid
-    for.
+    delivery, and it starts again by itself the moment the subscription comes
+    back. Ordinary messages are also paused by message_relay.relay_message.
 
     One query per feed tick, so it is written as one query."""
     rows = cur.execute(

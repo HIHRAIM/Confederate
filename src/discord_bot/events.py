@@ -30,7 +30,7 @@ from discord_bot.mentions import (
 )
 from discord_bot.relay import (
     _relay_pending_discord_first_message, _relay_verified_discord_message,
-    is_own_relay_webhook_message, process_appeal_dm_edit,
+    discord_edit_payload, is_own_relay_webhook_message, process_appeal_dm_edit,
     process_discord_message_delete, process_discord_message_edit,
 )
 
@@ -276,12 +276,14 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
                                      after.author.display_name or str(after.author),
                                      after.content or "")
         return
+    telegram_text, discord_text, embeds = discord_edit_payload(after)
     await process_discord_message_edit(
         guild=after.guild,
         channel=after.channel,
         message_id=after.id,
         author_display_name=after.author.display_name or str(after.author),
-        text=replace_mentions(after, after.content or ""),
+        text=telegram_text, discord_text=discord_text,
+        discord_embeds=embeds,
     )
 
 @bot.event
@@ -318,16 +320,14 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
 
     author_display_name = None
     content = data.get("content")
+    discord_content = None
+    embeds = None
     try:
         msg = await channel.fetch_message(payload.message_id)
         if not _edit_from_bot_allowed(msg):
             return
         author_display_name = msg.author.display_name or str(msg.author)
-        content = replace_mentions(msg, msg.content or "")
-        structured = discord_structured_texts(msg)
-        if structured:
-            block = "\n\n".join(structured)
-            content = f"{content.rstrip()}\n\n{block}" if content.strip() else block
+        content, discord_content, embeds = discord_edit_payload(msg)
     except Exception:
         pass
 
@@ -344,6 +344,8 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
         message_id=payload.message_id,
         author_display_name=author_display_name,
         text=content,
+        discord_text=discord_content,
+        discord_embeds=embeds,
     )
 
 @bot.event

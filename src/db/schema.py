@@ -645,6 +645,8 @@ CREATE TABLE IF NOT EXISTS sponsor_state (
     notified_grace INTEGER NOT NULL DEFAULT 0,
     notified_expired INTEGER NOT NULL DEFAULT 0,
     slot_changed_at INTEGER,
+    community_role_since INTEGER,
+    community_role_present INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER
 );
 
@@ -673,6 +675,93 @@ CREATE TABLE IF NOT EXISTS sponsor_bridges (
     discord_id TEXT NOT NULL,
     created_at INTEGER
 );
+
+-- Persist ingress counts so restarting a receiver bot does not reset its
+-- private-message traffic cap. No message content is stored here.
+CREATE TABLE IF NOT EXISTS inbox_ingress_usage (
+    bot_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    messages INTEGER NOT NULL DEFAULT 0,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (bot_id, user_id, day)
+);
+
+-- Appeal flood state survives restarts. Only a confirmed Guard ban permits
+-- purging the appellant's relayed-message records.
+CREATE TABLE IF NOT EXISTS appeal_flood_state (
+    user_id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    bridge_id INTEGER NOT NULL,
+    window_started INTEGER NOT NULL,
+    unanswered INTEGER NOT NULL DEFAULT 0,
+    blocked INTEGER NOT NULL DEFAULT 0,
+    ban_confirmed INTEGER NOT NULL DEFAULT 0
+);
+
+-- sponsor_relay_usage: delivery units spent by one subscription in a UTC day.
+-- The minute window limits bursts; the day total limits sustained traffic.
+-- Written before delivery by db/sponsors.py and read by /sponsor.
+CREATE TABLE IF NOT EXISTS sponsor_relay_usage (
+    discord_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    day_units INTEGER NOT NULL DEFAULT 0,
+    minute_started INTEGER NOT NULL DEFAULT 0,
+    minute_units INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (discord_id, day)
+);
+
+-- One limit notice per bridge per UTC day prevents a full quota from making
+-- every later incoming message produce another bot message.
+CREATE TABLE IF NOT EXISTS sponsor_relay_notices (
+    bridge_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    PRIMARY KEY (bridge_id, day)
+);
+
+-- Legacy sponsor appeal quota tables. No new rows are written: appeal filing
+-- and conversation are no longer limited by a subscription. Kept in the
+-- additive schema so old installations are never destructively migrated.
+CREATE TABLE IF NOT EXISTS sponsor_appeal_usage (
+    discord_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    opened INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (discord_id, day)
+);
+CREATE TABLE IF NOT EXISTS sponsor_appeal_reservations (
+    token TEXT PRIMARY KEY,
+    discord_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- appeal_servers: one independent appeal server per sponsor. Missing operator
+-- row means the original config defaults; removal freezes new appeals only.
+CREATE TABLE IF NOT EXISTS appeal_servers (
+    guild_id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL UNIQUE,
+    thread_channel_id TEXT NOT NULL,
+    invite_url TEXT NOT NULL,
+    pardon_channel_id TEXT,
+    baninfo_channel_id TEXT,
+    consul_roles TEXT,
+    accepting INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- sponsor appeal aliases are scoped to one server; legacy consul_names remain
+-- the operator server's aliases and retain their old unique constraint.
+CREATE TABLE IF NOT EXISTS appeal_consul_aliases (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    normalized TEXT NOT NULL,
+    set_by TEXT,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, user_id),
+    UNIQUE (guild_id, normalized)
+);
 """
 
 _COLUMN_ADDITIONS = [
@@ -693,6 +782,11 @@ _COLUMN_ADDITIONS = [
     ("inbox_hosts", "hide_header", "INTEGER DEFAULT 0"),
     ("inbox_hosts", "hide_header_admin", "INTEGER DEFAULT 0"),
     ("server_file_consents", "left_at", "INTEGER"),
+    ("appeals", "guild_id", "TEXT"),
+    ("sponsor_state", "community_role_since", "INTEGER"),
+    ("sponsor_state", "community_role_present", "INTEGER NOT NULL DEFAULT 0"),
+    ("sponsor_state", "retention_due_at", "INTEGER"),
+    ("inbox_ingress_usage", "bytes", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 def create_all(cur, conn):

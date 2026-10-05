@@ -60,6 +60,7 @@ logger = logging.getLogger("bridge.inbox")
 INBOX_SILENCE_SECONDS = 30 * 86400
 INBOX_MEDIA_GROUP_DELAY = 1.0
 INBOX_DEADTOPIC_DAYS = 3
+INBOX_TEXT_LIMIT = 4000
 
 INBOX_STATUS_MARKS = {"user": "\U0001F7E9", "staff": "\U0001F7E8", "closed": "⬛"}
 
@@ -482,8 +483,27 @@ async def _on_inbox_message(message: Message):
         return
     if db.is_shadow_banned("telegram", user_id):
         return
-    if not rate_limit_ok(("inbox", bot_id, user_id), limit=20, window_seconds=60):
+    if not rate_limit_ok(("inbox", bot_id, user_id), limit=8, window_seconds=60):
         logger.warning("Rate limit: dropping inbox message from %s to bot %s", user_id, bot_id)
+        return
+
+    body = (getattr(message, "text", None) or getattr(message, "caption", None) or "")
+    from telegram_bot.files import _collect_gallery_candidates
+    media_bytes = sum(int(candidate.get("size") or 20 * 1024 * 1024)
+                      for candidate in _collect_gallery_candidates(message))
+    refusal = None
+    if len(body) > INBOX_TEXT_LIMIT:
+        refusal = "inbox_text_too_long"
+    elif not db.reserve_inbox_ingress(bot_id, user_id, media_bytes):
+        refusal = "inbox_daily_limit"
+    if refusal:
+        if rate_limit_ok(("inbox-refusal", bot_id, user_id, refusal),
+                         limit=1, window_seconds=1800):
+            try:
+                lang = _locale_to_lang(getattr(user, "language_code", None))
+                await message.answer(localized(refusal, lang), parse_mode=None)
+            except Exception:
+                pass
         return
 
     media_group_id = getattr(message, "media_group_id", None)
@@ -877,6 +897,7 @@ async def _inbox_send_to_chat(chat, *, header, body_plain, body_discord, body_te
             place_name=None if hide else place_name,
             messenger_name=None if hide else messenger_name,
             avatar_url=avatar_url, is_bot_sender=is_bot_sender,
+            untrusted=True,
         )
     if chat["platform"] == "telegram":
         from discord_bot import deliver_telegram_relay
@@ -884,6 +905,8 @@ async def _inbox_send_to_chat(chat, *, header, body_plain, body_discord, body_te
             chat, header="" if hide else header, body_plain=body_plain,
             body_telegram_html=body_telegram_html, reply_line=reply_line,
             reply_to_platform_message_id=reply_to_platform_message_id,
+            suppress_link_previews=True,
+            untrusted=True,
         )
     return None
 
@@ -903,6 +926,8 @@ async def _upload_inbox_files(bot_row, conv, messages):
     candidates = []
     for msg in messages:
         candidates.extend(_collect_gallery_candidates(msg))
+    for candidate in candidates:
+        candidate["spoiler"] = True
     if not candidates or not db.inbox_file_relay_enabled(conv["bridge_id"]):
         return None, None, 0, candidates
 
@@ -1180,7 +1205,7 @@ async def _propagate_inbox_edit(bot_id, message_db_id, header, body_plain, body_
                     continue
                 await edit_discord_relay_copy(
                     channel, copy["message_id_platform"], copy_header, discord_body,
-                    message_db_id=message_db_id, chat=copy,
+                    message_db_id=message_db_id, chat=copy, untrusted=True,
                 )
             elif copy["platform"] == "telegram":
                 from telegram_bot import bot as tg_bot
@@ -1190,8 +1215,10 @@ async def _propagate_inbox_edit(bot_id, message_db_id, header, body_plain, body_
                 await tg_bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(copy["message_id_platform"]),
-                    text=build_telegram_text(copy_header, body_html, body_plain),
+                    text=build_telegram_text(copy_header, body_html, body_plain,
+                                             spoiler=True),
                     parse_mode="HTML",
+                    disable_web_page_preview=True,
                 )
         except Exception as e:
             if "message is not modified" in str(e):

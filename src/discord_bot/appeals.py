@@ -13,6 +13,7 @@ for Confederate Guard to unban everywhere, a condemnation bans them there for go
 Storage is db/appeals.py; the inbound event routing that calls the two
 handle_appeal_* functions is discord_bot/events.py.
 """
+import asyncio
 import logging
 import re
 
@@ -20,10 +21,7 @@ import discord
 from discord import app_commands
 
 import db
-from config import (
-    PURGATORIUM_GUILD_ID, PURGATORIUM_INVITE_URL, APPEAL_CHANNEL_ID,
-    APPEAL_PARDON_CHANNELS, APPEAL_BANINFO_CHANNELS, CONSULS,
-)
+import sponsors
 from message_relay import clean_display_name
 from utils import (
     DEFAULT_LANG, SUPPORTED_LANGS, get_chat_lang, is_admin, localized,
@@ -44,14 +42,17 @@ def _locale_to_lang(locale):
     code = str(locale or "").lower()[:2]
     return code if code in SUPPORTED_LANGS else DEFAULT_LANG
 
-def _appeal_thread_chat_id(thread_id):
+def _appeal_thread_chat_id(thread_id, guild_id=None):
     """The bot-wide chat key of an appeal thread ('purgatorium_guild:thread')."""
-    return f"{PURGATORIUM_GUILD_ID}:{thread_id}"
+    settings = db.appeal_settings(guild_id)
+    return f"{settings['guild_id']}:{thread_id}"
 
 def _appeal_thread_lang(thread_id):
     """The language an appeal thread runs in (its chat-key setting, falling
     back to the default) — used for everything consuls see."""
-    return get_chat_lang(_appeal_thread_chat_id(thread_id)) or DEFAULT_LANG
+    appeal = db.get_appeal_by_thread(thread_id)
+    return get_chat_lang(_appeal_thread_chat_id(
+        thread_id, appeal["guild_id"] if appeal else None)) or DEFAULT_LANG
 
 def _consul_label(thread_id, consul_user_id):
     """How a server member writing in an appeal thread is signed in the copy the
@@ -69,7 +70,10 @@ def _consul_label(thread_id, consul_user_id):
     their alias must fall back to the same letter they would have had, instead
     of reading to the appellant as one more person joining the thread."""
     idx = db.get_consul_ord(str(thread_id), consul_user_id)
+    appeal = db.get_appeal_by_thread(thread_id)
     alias = db.get_consul_name(consul_user_id)
+    if appeal and appeal["guild_id"] is not None:
+        alias = db.get_appeal_consul_alias(consul_user_id, appeal["guild_id"])
     if alias:
         return alias
     letters = localized("appeal_consul_letters", DEFAULT_LANG)
@@ -116,14 +120,17 @@ def _clean_consul_name(raw):
         return None, "setname_reserved"
     return text, None
 
-async def _is_consul_user(user_id):
+async def _is_consul_user(user_id, guild_id=None):
     """Whether a user may hold a consul alias: a CONSULS role holder on
     Purgatorium, or a bot admin. Unlike `_can_judge_appeals`, which inspects the
     member who ran a command, this resolves an arbitrary user id against
     Purgatorium's member list."""
     if is_admin("discord", user_id):
         return True
-    guild = bot.get_guild(PURGATORIUM_GUILD_ID)
+    settings = db.appeal_settings(guild_id)
+    if settings is None:
+        return False
+    guild = bot.get_guild(int(settings["guild_id"]))
     if guild is None:
         return False
     member = guild.get_member(int(user_id))
@@ -132,17 +139,19 @@ async def _is_consul_user(user_id):
             member = await guild.fetch_member(int(user_id))
         except Exception:
             return False
-    return any(role.id in CONSULS for role in getattr(member, "roles", None) or [])
+    return any(role.id in settings["consul_roles"]
+               for role in getattr(member, "roles", None) or [])
 
 APPEAL_AUTO_KICK_SECONDS = 7 * 86400
-APPEAL_CLEANUP_SECONDS = 30 * 86400
+APPEAL_CLEANUP_SECONDS = 7 * 86400
 
 def _cleanup_appeal_records(appeal_row):
     """Drop an appeal's rows and detach its bridge chats (the bridge row itself
     disappears with its last chat via remove_chat_from_bridge)."""
     if not appeal_row:
         return
-    db.remove_chat_from_bridge(f"{PURGATORIUM_GUILD_ID}:{appeal_row['thread_id']}")
+    settings = db.appeal_settings(appeal_row["guild_id"])
+    db.remove_chat_from_bridge(f"{settings['guild_id']}:{appeal_row['thread_id']}")
     db.remove_chat_from_bridge(f"dm:{appeal_row['user_id']}")
     db.delete_appeal(appeal_row["user_id"])
 
@@ -150,7 +159,10 @@ def _can_judge_appeals(member):
     """Consuls hold one of the CONSULS roles on Purgatorium; global bot admins also count."""
     if is_admin("discord", member.id):
         return True
-    return any(role.id in CONSULS for role in getattr(member, "roles", None) or [])
+    guild = getattr(member, "guild", None)
+    settings = db.appeal_settings(guild.id) if guild else None
+    return bool(settings and any(role.id in settings["consul_roles"]
+                                 for role in getattr(member, "roles", None) or []))
 
 class AppealVerdictButton(discord.ui.Button):
     """One of the two verdict buttons ('pardon' / 'condemn') on the pinned
@@ -204,10 +216,12 @@ async def handle_appeal_verdict_click(interaction: discord.Interaction, action, 
     an ephemeral confirmation — a verdict is irreversible, so no single
     misclick may execute one."""
     thread_lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or DEFAULT_LANG
-    if not _can_judge_appeals(interaction.user):
+    if not db.appeal_settings(interaction.guild_id) or not _can_judge_appeals(interaction.user):
         await interaction.response.send_message(localized("no_permission", thread_lang), ephemeral=True)
         return
-    if not db.get_open_appeal(target_uid):
+    appeal = db.get_open_appeal(target_uid)
+    if (not appeal or str(db.appeal_settings(appeal["guild_id"])["guild_id"]) != str(interaction.guild_id)
+            or str(appeal["thread_id"]) != str(interaction.channel_id)):
         await interaction.response.send_message(localized("appeal_already_resolved", thread_lang), ephemeral=True)
         return
     key = "appeal_confirm_pardon" if action == "pardon" else "appeal_confirm_condemn"
@@ -234,14 +248,17 @@ async def execute_appeal_verdict(interaction: discord.Interaction, action, targe
 
     status = "pardoned" if action == "pardon" else "condemned"
     appeal = db.get_open_appeal(target_uid)
-    if not appeal or not db.resolve_appeal(target_uid, status, interaction.user.id):
+    if (not appeal or str(db.appeal_settings(appeal["guild_id"])["guild_id"]) != str(interaction.guild_id)
+            or str(appeal["thread_id"]) != str(interaction.channel_id)
+            or not db.resolve_appeal(target_uid, status, interaction.user.id)):
         await interaction.response.send_message(localized("appeal_already_resolved", thread_lang), ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
 
     user_lang = appeal["lang"] if appeal["lang"] in SUPPORTED_LANGS else DEFAULT_LANG
-    purg = bot.get_guild(PURGATORIUM_GUILD_ID)
+    settings = db.appeal_settings(appeal["guild_id"])
+    purg = bot.get_guild(int(settings["guild_id"]))
 
     try:
         user = bot.get_user(target_uid) or await bot.fetch_user(target_uid)
@@ -251,7 +268,7 @@ async def execute_appeal_verdict(interaction: discord.Interaction, action, targe
         pass
 
     if action == "pardon":
-        await _post_user_id_to_channels(APPEAL_PARDON_CHANNELS.get("discord", set()), target_uid)
+        await _post_user_id_to_channels(settings["pardon_channels"], target_uid)
         if purg:
             try:
                 await purg.kick(discord.Object(id=target_uid), reason="Appeal granted")
@@ -295,7 +312,8 @@ async def execute_appeal_verdict(interaction: discord.Interaction, action, targe
 @bot.tree.command(name="appeal", description="file a ban appeal (on the appeal server)")
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 @app_commands.allowed_installs(guilds=True, users=True)
-async def appeal_cmd(interaction: discord.Interaction):
+@app_commands.describe(server_id="Appeal server ID when you belong to several")
+async def appeal_cmd(interaction: discord.Interaction, server_id: str = None):
     """Open an appeal: create the thread, wire thread+DM into a fresh appeal
     bridge, post the pinned verdict message, and tell the ban-info channels
     (Confederate Guard posts the user's ban record into the thread in response).
@@ -309,24 +327,53 @@ async def appeal_cmd(interaction: discord.Interaction):
     lang = _locale_to_lang(interaction.locale)
     uid = interaction.user.id
 
-    purg = bot.get_guild(PURGATORIUM_GUILD_ID)
-    member = purg.get_member(uid) if purg else None
-    if member is None:
+    existing_appeal = db.get_open_appeal(uid)
+    if existing_appeal:
+        old = db.appeal_settings(existing_appeal["guild_id"])
+        old_guild = bot.get_guild(int(old["guild_id"]))
+        await interaction.response.send_message(localized(
+            "appeal_already_open_server", lang,
+            server=old_guild.name if old_guild else old["guild_id"]), ephemeral=True)
+        return
+
+    eligible = []
+    for settings in db.all_appeal_servers():
+        guild = bot.get_guild(int(settings["guild_id"]))
+        if guild and guild.get_member(uid):
+            eligible.append((guild, settings))
+    if not eligible:
+        requested = (db.appeal_settings(server_id) if server_id and
+                     server_id.strip().isdecimal() else None)
         await interaction.response.send_message(
-            localized("appeal_not_member", lang, invite=PURGATORIUM_INVITE_URL), ephemeral=True
+            localized("appeal_not_member", lang,
+                      invite=(requested or db.appeal_settings())["invite_url"]), ephemeral=True
         )
         return
-
-    if db.get_open_appeal(uid):
-        await interaction.response.send_message(localized("appeal_already_open", lang), ephemeral=True)
+    if len(eligible) > 1 and server_id is None:
+        choices = "\n".join(f"{guild.name} ({guild.id})" for guild, _ in eligible)
+        await interaction.response.send_message(localized(
+            "appeal_choose_server", lang, servers=choices), ephemeral=True)
         return
-
+    selected = next(((guild, settings) for guild, settings in eligible
+                     if server_id is None or str(guild.id) == server_id.strip()), None)
+    if selected is None:
+        await interaction.response.send_message(localized("appeal_server_invalid", lang), ephemeral=True)
+        return
+    purg, settings = selected
+    owner = settings["owner_id"]
+    if not settings["accepting"] or (owner is not None and
+            not is_admin("discord", owner) and sponsors.sponsor_quota_tier("discord", owner) == 0):
+        await interaction.response.send_message(localized("appeal_server_frozen", lang), ephemeral=True)
+        return
+    if not settings["pardon_channels"] or not settings["baninfo_channels"]:
+        await interaction.response.send_message(localized("appeal_server_incomplete", lang), ephemeral=True)
+        return
     await interaction.response.defer(ephemeral=True)
 
-    channel = bot.get_channel(APPEAL_CHANNEL_ID)
+    channel = bot.get_channel(int(settings["thread_channel_id"]))
     if channel is None:
         try:
-            channel = await bot.fetch_channel(APPEAL_CHANNEL_ID)
+            channel = await bot.fetch_channel(int(settings["thread_channel_id"]))
         except Exception:
             channel = None
     if channel is None:
@@ -347,11 +394,11 @@ async def appeal_cmd(interaction: discord.Interaction):
     _cleanup_appeal_records(db.get_appeal(uid))
 
     bridge_id = db.next_appeal_bridge_id()
-    db.attach_chat("discord", f"{PURGATORIUM_GUILD_ID}:{thread.id}", bridge_id)
+    db.attach_chat("discord", f"{purg.id}:{thread.id}", bridge_id)
     db.attach_chat("discord", f"dm:{uid}", bridge_id)
-    db.create_appeal(uid, thread.id, bridge_id, lang)
+    db.create_appeal(uid, thread.id, bridge_id, lang, purg.id)
 
-    db.add_verified_user("discord", uid, str(PURGATORIUM_GUILD_ID), days_valid=365)
+    db.add_verified_user("discord", uid, str(purg.id), days_valid=365)
 
     try:
         await interaction.user.send(localized("appeal_created_dm", lang))
@@ -381,7 +428,7 @@ async def appeal_cmd(interaction: discord.Interaction):
         logger.warning("appeal pinned message failed (user=%s): %s", uid, e)
 
     await _post_user_id_to_channels(
-        APPEAL_BANINFO_CHANNELS.get("discord", set()), f"{uid} {thread.id}"
+        settings["baninfo_channels"], f"{uid} {thread.id}"
     )
 
     await interaction.followup.send(localized("appeal_created", lang), ephemeral=True)
@@ -397,7 +444,7 @@ async def setname_command(interaction: discord.Interaction, name: str = None, us
     answer."""
     lang = get_chat_lang(f"{interaction.guild_id}:{interaction.channel_id}") or DEFAULT_LANG
 
-    if not _can_judge_appeals(interaction.user):
+    if not db.appeal_settings(interaction.guild_id) or not _can_judge_appeals(interaction.user):
         await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
         return
 
@@ -424,28 +471,142 @@ async def setname_command(interaction: discord.Interaction, name: str = None, us
         return
 
     if not display:
-        db.remove_consul_name(target_id)
+        if db.appeal_owner(interaction.guild_id) is None:
+            db.remove_consul_name(target_id)
+        else:
+            db.remove_appeal_consul_alias(interaction.guild_id, target_id)
         key = "setname_reset_other" if is_other else "setname_reset"
         await interaction.response.send_message(
             localized(key, lang, user=f"<@{target_id}>"), ephemeral=True
         )
         return
 
-    if not await _is_consul_user(target_id):
+    if not await _is_consul_user(target_id, interaction.guild_id):
         await interaction.response.send_message(localized("setname_target_not_consul", lang), ephemeral=True)
         return
 
     normalized = _normalize_consul_name(display)
-    owner = db.find_consul_name_owner(normalized)
+    owner = (db.find_consul_name_owner(normalized)
+             if db.appeal_owner(interaction.guild_id) is None
+             else db.find_appeal_alias_owner(interaction.guild_id, normalized))
     if owner is not None and str(owner) != str(target_id):
         await interaction.response.send_message(localized("setname_taken", lang), ephemeral=True)
         return
 
-    db.set_consul_name(target_id, display, normalized, set_by=interaction.user.id)
+    if db.appeal_owner(interaction.guild_id) is None:
+        db.set_consul_name(target_id, display, normalized, set_by=interaction.user.id)
+    else:
+        db.set_appeal_consul_alias(interaction.guild_id, target_id, display,
+                                   normalized, interaction.user.id)
     key = "setname_done_other" if is_other else "setname_done"
     await interaction.response.send_message(
         localized(key, lang, name=display, user=f"<@{target_id}>"), ephemeral=True
     )
+
+def _appeal_registry_control(user_id, guild_id):
+    """A sponsor may change only their server; Bot Admins may change any."""
+    if is_admin("discord", user_id):
+        return True
+    return db.appeal_owner(guild_id) == str(user_id)
+
+@bot.tree.command(name="appeal-register", description="register this server for sponsor appeals")
+@app_commands.describe(thread_channel="Channel ID for appeal threads", invite="Discord invitation URL")
+async def appeal_register_cmd(interaction: discord.Interaction, thread_channel: str, invite: str):
+    """Require server ownership, a paid tier and permission to create threads."""
+    lang = _locale_to_lang(interaction.locale)
+    guild = interaction.guild
+    if guild is None or db.appeal_owner(guild.id) is None:
+        await interaction.response.send_message(localized("appeal_register_guild", lang), ephemeral=True)
+        return
+    admin = is_admin("discord", interaction.user.id)
+    perms = interaction.user.guild_permissions
+    if not admin and not (perms.administrator or perms.manage_guild):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+    if not admin and sponsors.sponsor_quota_tier("discord", interaction.user.id) == 0:
+        await interaction.response.send_message(localized("sponsor_not_active", lang), ephemeral=True)
+        return
+    owner = db.appeal_owner(guild.id)
+    other = db.appeal_server_for_owner(interaction.user.id)
+    if ((owner is not False and owner != str(interaction.user.id) and not admin)
+            or (not admin and other is not None
+                and str(other["guild_id"]) != str(guild.id))):
+        await interaction.response.send_message(localized("appeal_register_taken", lang), ephemeral=True)
+        return
+    if not thread_channel.isdecimal() or not invite.startswith((
+            "https://discord.gg/", "https://discord.com/invite/",
+            "https://discordapp.com/invite/")):
+        await interaction.response.send_message(localized("appeal_register_invalid", lang), ephemeral=True)
+        return
+    channel = guild.get_channel(int(thread_channel))
+    bot_member = guild.me
+    if (not isinstance(channel, discord.TextChannel) or bot_member is None or
+            not channel.permissions_for(bot_member).create_public_threads or
+            not channel.permissions_for(bot_member).send_messages_in_threads):
+        await interaction.response.send_message(localized("appeal_register_channel", lang), ephemeral=True)
+        return
+    if not db.register_appeal_server(guild.id, interaction.user.id,
+                                     channel.id, invite.strip(), allow_existing=admin):
+        await interaction.response.send_message(localized("appeal_register_taken", lang), ephemeral=True)
+        return
+    await interaction.response.send_message(localized("appeal_register_done", lang), ephemeral=True)
+
+@bot.tree.command(name="appeal-protocol", description="set Guard sync channels and consul roles")
+@app_commands.describe(pardon="Pardon channel ID", baninfo="Ban summary channel ID",
+                       consul_roles="Comma-separated role IDs")
+async def appeal_protocol_cmd(interaction: discord.Interaction, pardon: str,
+                              baninfo: str, consul_roles: str):
+    """Keep the Guard protocol within the same appeal server."""
+    lang = _locale_to_lang(interaction.locale)
+    guild = interaction.guild
+    if guild is None or not _appeal_registry_control(interaction.user.id, guild.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+    settings = db.appeal_settings(guild.id)
+    ids = [item.strip() for item in consul_roles.split(",") if item.strip()]
+    if (settings is None or settings["owner_id"] is None or not pardon.isdecimal()
+            or not baninfo.isdecimal() or pardon == baninfo or not ids
+            or any(not item.isdecimal() or guild.get_role(int(item)) is None for item in ids)
+            or guild.get_channel(int(pardon)) is None
+            or guild.get_channel(int(baninfo)) is None):
+        await interaction.response.send_message(localized("appeal_protocol_invalid", lang), ephemeral=True)
+        return
+    db.set_appeal_channels(guild.id, pardon, baninfo, ids)
+    await interaction.response.send_message(localized("appeal_protocol_done", lang), ephemeral=True)
+
+@bot.tree.command(name="appeal-pause", description="pause or resume new appeals here")
+@app_commands.describe(paused="True pauses new appeals; open appeals continue")
+async def appeal_pause_cmd(interaction: discord.Interaction, paused: bool):
+    """Preserve existing threads and their verdict buttons across a pause."""
+    lang = _locale_to_lang(interaction.locale)
+    guild = interaction.guild
+    if guild is None or not _appeal_registry_control(interaction.user.id, guild.id):
+        await interaction.response.send_message(localized("no_permission", lang), ephemeral=True)
+        return
+    settings = db.appeal_settings(guild.id)
+    if settings is None or settings["owner_id"] is None:
+        await interaction.response.send_message(localized("appeal_register_guild", lang), ephemeral=True)
+        return
+    db.set_appeal_accepting(guild.id, not paused)
+    await interaction.response.send_message(localized(
+        "appeal_pause_done" if paused else "appeal_resume_done", lang), ephemeral=True)
+
+@bot.tree.command(name="appeal-settings", description="show this appeal server's settings")
+async def appeal_settings_cmd(interaction: discord.Interaction):
+    """Display the effective routing so both bots can be configured alike."""
+    lang = _locale_to_lang(interaction.locale)
+    guild = interaction.guild
+    settings = db.appeal_settings(guild.id) if guild else None
+    if settings is None:
+        await interaction.response.send_message(localized("appeal_register_guild", lang), ephemeral=True)
+        return
+    await interaction.response.send_message(localized(
+        "appeal_settings_show", lang, guild=settings["guild_id"],
+        thread=settings["thread_channel_id"],
+        pardon=", ".join(settings["pardon_channels"]) or "—",
+        baninfo=", ".join(settings["baninfo_channels"]) or "—",
+        roles=", ".join(str(x) for x in settings["consul_roles"]) or "—",
+        active="yes" if settings["accepting"] else "no"), ephemeral=True)
 
 async def _appeal_maintenance_pass(client):
     """Daily housekeeping of the appeal system.
@@ -453,11 +614,14 @@ async def _appeal_maintenance_pass(client):
     Silently kicks Purgatorium members who have been on the server for over
     7 days without ever filing an appeal (bots, bot admins and anyone holding
     a role — consuls/staff — are exempt; Discord's own joined_at makes this
-    restart-proof), and garbage-collects appeals resolved more than 30 days
-    ago together with their bridge attachments.
+    restart-proof), and garbage-collects appeals resolved more than 7 days
+    ago together with their bridge attachments. Message-copy bookkeeping for
+    appeals has its own seven-day rolling retention, including open cases.
     """
-    purg = client.get_guild(PURGATORIUM_GUILD_ID)
-    if purg:
+    for settings in db.all_appeal_servers():
+        purg = client.get_guild(int(settings["guild_id"]))
+        if purg is None:
+            continue
         now = discord.utils.utcnow()
         for member in list(purg.members):
             if member.bot:
@@ -470,7 +634,7 @@ async def _appeal_maintenance_pass(client):
                 continue
             if (now - member.joined_at).total_seconds() < APPEAL_AUTO_KICK_SECONDS:
                 continue
-            if db.has_any_appeal(member.id):
+            if db.has_any_appeal(member.id, purg.id):
                 continue
             try:
                 await purg.kick(member, reason="No appeal filed within 7 days")
@@ -479,6 +643,41 @@ async def _appeal_maintenance_pass(client):
 
     for row in db.get_resolved_appeals_older_than(APPEAL_CLEANUP_SECONDS):
         _cleanup_appeal_records(row)
+    await confirm_pending_appeal_flood_bans()
+
+async def confirm_pending_appeal_flood_bans():
+    """Purge appellant message records only after a live Discord ban proves
+    Guard processed the exact appeal-server request. A delayed Guard response
+    can be picked up on the next maintenance pass or by the short retry task."""
+    for row in db.pending_appeal_flood_bans():
+        guild = bot.get_guild(int(row["guild_id"]))
+        if guild is None:
+            continue
+        try:
+            await guild.fetch_ban(discord.Object(id=int(row["user_id"])))
+        except discord.NotFound:
+            continue
+        except Exception:
+            continue
+        db.confirm_appeal_flood_ban(row["user_id"], row["bridge_id"])
+
+async def _confirm_flood_ban_later():
+    """Give Guard time to consume the protocol message without holding the
+    user's DM handler. The daily pass is the restart-safe fallback."""
+    for _ in range(6):
+        await asyncio.sleep(5)
+        await confirm_pending_appeal_flood_bans()
+
+async def _request_guard_flood_ban(appeal):
+    """Send only IDs on the established, scoped ban-info sync channel."""
+    settings = db.appeal_settings(appeal["guild_id"])
+    if not settings:
+        return
+    await _post_user_id_to_channels(
+        settings["baninfo_channels"],
+        f"FLOOD {appeal['user_id']} {appeal['guild_id']}",
+    )
+    asyncio.create_task(_confirm_flood_ban_later())
 
 async def handle_appeal_dm_message(message: discord.Message):
     """DM side of an appeal bridge: relay the appellant's direct messages into
@@ -489,6 +688,17 @@ async def handle_appeal_dm_message(message: discord.Message):
     if not appeal:
         return
     if db.is_shadow_banned("discord", str(message.author.id)):
+        return
+    count = db.count_appeal_message(appeal)
+    if count == 20:
+        try:
+            await message.author.send(localized("appeal_flood_warning", appeal["lang"]))
+        except Exception:
+            pass
+    if count >= 30:
+        if rate_limit_ok(("appeal-flood-signal", str(message.author.id)),
+                             limit=1, window_seconds=3600):
+            await _request_guard_flood_ban(appeal)
         return
     if not rate_limit_ok(("relay", "discord", str(message.author.id)), limit=20, window_seconds=60):
         logger.warning("Rate limit: dropping appeal DM from %s", message.author.id)
@@ -516,6 +726,8 @@ async def handle_appeal_thread_message(message: discord.Message, appeal_row, bri
         except Exception:
             pass
         return
+    if _can_judge_appeals(message.author):
+        db.reset_appeal_flood(appeal_row["user_id"])
     if not rate_limit_ok(("relay", "discord", str(message.author.id)), limit=20, window_seconds=60):
         logger.warning("Rate limit: dropping appeal thread message from %s", message.author.id)
         return

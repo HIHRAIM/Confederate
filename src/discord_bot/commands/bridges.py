@@ -76,10 +76,12 @@ async def atb(interaction: discord.Interaction, bridge_id: str | None = None):
             ephemeral=True)
         return
 
+    await interaction.response.defer(thinking=True)
+
     if action == "new":
         bridge_id = db.attach_chat_to_new_bridge("discord", chat_id)
         if bridge_id is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 localized("atb_no_free_id", lang, limit=db.SPONSOR_BRIDGE_ID_FLOOR),
                 ephemeral=True,
             )
@@ -88,7 +90,7 @@ async def atb(interaction: discord.Interaction, bridge_id: str | None = None):
     elif action == "sponsor_new":
         bridge_id = db.claim_sponsor_bridge_id(value)
         if bridge_id is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 localized("atb_no_free_sponsor_id", lang), ephemeral=True)
             return
         db.attach_chat("discord", chat_id, bridge_id)
@@ -103,7 +105,7 @@ async def atb(interaction: discord.Interaction, bridge_id: str | None = None):
     except Exception:
         pass
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         localized(reply_key, lang, bridge_id=bridge_id),
     )
 

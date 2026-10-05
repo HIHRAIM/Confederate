@@ -11,24 +11,12 @@ price of that simplicity is one honest limitation: a patron who has not
 connected Patreon to Discord holds no role, and the bot cannot know they
 exist.
 
-Two clocks and three questions run through the module, and mixing them up is
-how this goes wrong:
-
-* **the live tier** -- what the roles say at this instant, `tier` in
-  `sponsor_state`. It is what the QUOTAS are measured against: somebody who
-  drops from tier 2 to tier 1 may not add anything more than tier 1 allows,
-  starting immediately.
-* **the tier in force** -- `rights_tier`, which during a grace period is
-  still the tier held before the drop. It is what the RIGHTS are measured
-  against: claimed communities, the right to open bridges, the exclusive
-  right to attach chats to one's own.
-* **frozen** -- the live tier is 0 while rights are still in force. Delivery
-  from followed sources on the sponsor's bridges stops; everything else,
-  including ordinary relay between the chats, carries on.
-
-Nothing in this module ever deletes a bridge, a chat, a feed or a setting. A
-lapsed subscription freezes and then releases rights; the configuration
-waits, and comes back to life by itself if the subscription does.
+The live role tier, effective tier during working grace, and subsequent
+retention deadline are separate. A paid role has thirty days of continued
+work, a community role one day; an observed new community role matures after
+seven days. Thirty days after working grace, cleanup leaves communities that
+have no replacement sponsor or Bot Admin and erases their scoped records.
+Quotas remain shared across the sponsor's linked Discord and Telegram account.
 
 The storage is db/sponsors.py; the commands are
 discord_bot/commands/sponsors.py and telegram_bot/commands/sponsors.py; the
@@ -38,7 +26,10 @@ import logging
 import time
 
 import db
-from config import PATREON_GUILD_ID, PATREON_TIER_ROLES, SPONSOR_NOTICE_CHANNEL
+from config import (
+    PATREON_GUILD_ID, PATREON_TIER_ROLES, COMMUNITY_SPONSOR_ROLE_IDS,
+    SPONSOR_NOTICE_CHANNEL,
+)
 from db.ranges import bridge_kind
 from utils import DEFAULT_LANG, get_chat_lang, localized, rate_limit_ok
 
@@ -47,11 +38,24 @@ logger = logging.getLogger("bridge.sponsors")
 SPONSOR_COMMUNITIES = 2
 SPONSOR_WIKI_FEEDS = 3
 SPONSOR_SOCIAL_FEEDS = 3
+SPONSOR_BRIDGES = 6
+SPONSOR_CHATS_PER_BRIDGE = 2
+SPONSOR_CHATS = SPONSOR_BRIDGES * SPONSOR_CHATS_PER_BRIDGE
+SPONSOR_RELAY_MINUTE = 12
+SPONSOR_RELAY_DAY = 1000
 SPONSOR_TIER2_MULTIPLIER = 3
+SPONSOR_TIER3_MULTIPLIER = 5
 
 SPONSOR_GRACE_SECONDS = 30 * 86400
+SPONSOR_RETENTION_SECONDS = 30 * 86400
 SPONSOR_SLOT_CHANGE_SECONDS = 30 * 86400
 SPONSOR_RECONCILE_SECONDS = 3600
+COMMUNITY_WAIT_SECONDS = 7 * 86400
+COMMUNITY_GRACE_SECONDS = 86400
+
+def _rank(tier):
+    """The free role ranks below the three paid tiers but above no role."""
+    return 0 if tier == -1 else -1 if tier == 0 else tier
 
 WIKI_FEED_KINDS = ("wiki",)
 SOCIAL_FEED_KINDS = ("bluesky", "youtube", "telegram")
@@ -64,13 +68,19 @@ def sponsor_limits(tier):
     change them once. `communities` counts servers and groups TOGETHER, in
     any mixture: two of the first tier means two Discord servers, or two
     Telegram groups, or one of each."""
-    if tier <= 0:
-        return {"communities": 0, "wikis": 0, "socials": 0}
-    factor = SPONSOR_TIER2_MULTIPLIER if tier >= 2 else 1
+    if tier == 0:
+        return {"communities": 0, "wikis": 0, "socials": 0,
+                "bridges": 0, "chats": 0, "relay_minute": 0, "relay_day": 0}
+    factor = (SPONSOR_TIER3_MULTIPLIER if tier == 3 else
+              SPONSOR_TIER2_MULTIPLIER if tier == 2 else 1)
     return {
         "communities": SPONSOR_COMMUNITIES * factor,
         "wikis": SPONSOR_WIKI_FEEDS * factor,
         "socials": SPONSOR_SOCIAL_FEEDS * factor,
+        "bridges": SPONSOR_BRIDGES * factor,
+        "chats": SPONSOR_CHATS * factor,
+        "relay_minute": SPONSOR_RELAY_MINUTE * factor,
+        "relay_day": SPONSOR_RELAY_DAY * factor,
     }
 
 def _complain_once(key, message, *args):
@@ -119,7 +129,9 @@ def _tier_from_roles(role_ids):
     for having paid more would be exactly backwards."""
     configured = configured_tier_roles()
     tiers = [tier for tier, role_id in configured.items() if role_id in role_ids]
-    return max(tiers) if tiers else 0
+    if tiers:
+        return max(tiers)
+    return -1 if set(role_ids).intersection(map(int, COMMUNITY_SPONSOR_ROLE_IDS)) else 0
 
 async def live_discord_tier(discord_id):
     """The tier a Discord account holds RIGHT NOW, read off its roles.
@@ -128,7 +140,7 @@ async def live_discord_tier(discord_id):
     the state this one writes, so a second source of truth (a Patreon API, a
     manual grant) would be added here and nowhere else.
 
-    Returns 0, 1 or 2 -- and None when the answer is unknown rather than
+    Returns -1, 0, 1, 2 or 3 -- and None when the answer is unknown rather than
     zero, which is a distinction the caller must respect: an unreachable
     server means "do not touch anything", never "everybody's subscription
     ended"."""
@@ -148,7 +160,10 @@ async def live_discord_tier(discord_id):
                 return 0
             logger.info("sponsor tier lookup failed for %s: %s", uid, e)
             return None
-    return _tier_from_roles({r.id for r in getattr(member, "roles", ())})
+    role_ids = {r.id for r in getattr(member, "roles", ())}
+    db.observe_community_role(discord_id,
+                              bool(role_ids.intersection(map(int, COMMUNITY_SPONSOR_ROLE_IDS))))
+    return _tier_from_roles(role_ids)
 
 async def live_tier_table():
     """`{discord_id: tier}` for everybody currently holding one of the roles,
@@ -166,11 +181,21 @@ async def live_tier_table():
         if role is None:
             _complain_once(f"role-missing-{tier}",
                            "the tier %s role %s is not on the Patreon server", tier, role_id)
-            continue
+            return None
         for member in role.members:
             uid = str(member.id)
             if tier > tiers.get(uid, 0):
                 tiers[uid] = tier
+    community_members = set()
+    for role_id in COMMUNITY_SPONSOR_ROLE_IDS:
+        role = guild.get_role(int(role_id))
+        if role is None:
+            return None
+        community_members.update(str(member.id) for member in role.members)
+    for owner in {str(row["discord_id"]) for row in db.get_known_sponsors()} | set(tiers) | community_members:
+        db.observe_community_role(owner, owner in community_members)
+        if owner in community_members and owner not in tiers:
+            tiers[owner] = -1
     return tiers
 
 def _rights_tier(row):
@@ -186,9 +211,14 @@ def _rights_tier(row):
     tier = int(row["tier"] or 0)
     grace_since = row["grace_since"]
     grace_from = row["grace_from_tier"]
-    if (grace_since and grace_from and int(grace_from) > tier
-            and time.time() - int(grace_since) < SPONSOR_GRACE_SECONDS):
+    former = int(grace_from or 0)
+    window = COMMUNITY_GRACE_SECONDS if former == -1 else SPONSOR_GRACE_SECONDS
+    if (grace_since and _rank(former) > _rank(tier)
+            and time.time() - int(grace_since) < window):
         return int(grace_from)
+    if tier == -1:
+        seen = row["community_role_since"]
+        return -1 if seen is not None and time.time() - int(seen) >= COMMUNITY_WAIT_SECONDS else 0
     return tier
 
 def sponsor_tier(platform, user_id):
@@ -203,20 +233,19 @@ def sponsor_tier(platform, user_id):
     return _rights_tier(db.get_sponsor_state(discord_id))
 
 def sponsor_quota_tier(platform, user_id):
-    """The tier this caller's QUOTAS are measured against: what the roles say
-    now, with no grace-period protection. A downgrade stops new sources at
-    once, while the sources already running stay -- see `feed_quota`."""
+    """Quota tier; a fully lapsed payment retains its tier for 30 days."""
     discord_id = db.canonical_sponsor_id(platform, user_id)
     if not discord_id:
         return 0
     row = db.get_sponsor_state(discord_id)
-    return int(row["tier"] or 0) if row else 0
+    if row is None:
+        return 0
+    return _rights_tier(row)
 
 def is_frozen(discord_id):
-    """Whether this account is inside a lapsed subscription's grace period:
-    paying nothing, still holding its rights, its feeds stopped."""
+    """Whether a lapsed account has finished its working grace period."""
     row = db.get_sponsor_state(discord_id)
-    return bool(row) and int(row["tier"] or 0) == 0 and _rights_tier(row) > 0
+    return bool(row) and int(row["tier"] or 0) == 0 and _rights_tier(row) == 0
 
 def grace_days_left(discord_id):
     """Days remaining of a grace period, or None when none is running.
@@ -227,7 +256,9 @@ def grace_days_left(discord_id):
     row = db.get_sponsor_state(discord_id)
     if not row or not row["grace_since"]:
         return None
-    left = SPONSOR_GRACE_SECONDS - (time.time() - int(row["grace_since"]))
+    window = (COMMUNITY_GRACE_SECONDS if int(row["grace_from_tier"] or 0) == -1
+              else SPONSOR_GRACE_SECONDS)
+    left = window - (time.time() - int(row["grace_since"]))
     return max(0, -int(-left // 86400))
 
 def apply_tier(discord_id, live_tier):
@@ -253,7 +284,7 @@ def apply_tier(discord_id, live_tier):
     live_tier = int(live_tier or 0)
 
     if row is None:
-        if live_tier <= 0:
+        if live_tier == 0:
             return None
         db.save_sponsor_state(discord_id, tier=live_tier, since=now)
         return None
@@ -263,21 +294,29 @@ def apply_tier(discord_id, live_tier):
     if live_tier == previous:
         return None
 
-    if live_tier > previous:
-        if live_tier >= in_force:
+    if _rank(live_tier) > _rank(previous):
+        if _rank(live_tier) >= _rank(in_force):
             db.save_sponsor_state(discord_id, tier=live_tier, since=now,
                                   slot_changed_at=row["slot_changed_at"])
+            db.set_sponsor_retention_due(discord_id, None)
             return "restored" if row["grace_since"] else None
         db.save_sponsor_state(
             discord_id, tier=live_tier, since=now,
             grace_from_tier=row["grace_from_tier"], grace_since=row["grace_since"],
             notified_grace=row["notified_grace"], notified_expired=row["notified_expired"],
             slot_changed_at=row["slot_changed_at"])
+        if live_tier != 0:
+            db.set_sponsor_retention_due(discord_id, None)
         return None
 
     db.save_sponsor_state(discord_id, tier=live_tier, since=now,
                           grace_from_tier=in_force, grace_since=now,
                           slot_changed_at=row["slot_changed_at"])
+    if live_tier == 0:
+        grace = COMMUNITY_GRACE_SECONDS if in_force == -1 else SPONSOR_GRACE_SECONDS
+        db.set_sponsor_retention_due(discord_id, now + grace + SPONSOR_RETENTION_SECONDS)
+    else:
+        db.set_sponsor_retention_due(discord_id, None)
     return "frozen" if live_tier == 0 else "downgraded"
 
 def expire_grace(row):
@@ -295,14 +334,16 @@ def expire_grace(row):
     in `sponsor_bridges`: the numbers stay the sponsor's for good, which is
     what lets them pick the same bridges up again later."""
     grace_since = row["grace_since"]
-    if not grace_since or time.time() - int(grace_since) < SPONSOR_GRACE_SECONDS:
+    window = (COMMUNITY_GRACE_SECONDS if int(row["grace_from_tier"] or 0) == -1
+              else SPONSOR_GRACE_SECONDS)
+    if not grace_since or time.time() - int(grace_since) < window:
         return None
     discord_id = str(row["discord_id"])
     tier = int(row["tier"] or 0)
     allowed = sponsor_limits(tier)["communities"]
     claimed = db.get_sponsor_communities(discord_id)
     released = []
-    for community in claimed[allowed:]:
+    for community in claimed[allowed:] if tier != 0 else ():
         if db.release_community(community["platform"], community["server_id"], discord_id):
             released.append(community)
     db.save_sponsor_state(discord_id, tier=tier, since=row["since"],
@@ -323,7 +364,7 @@ async def reconcile_pass():
     paying."""
     live = await live_tier_table()
     if live is None:
-        return []
+        return None
 
     notices = []
     known = {str(r["discord_id"]) for r in db.get_known_sponsors()}
@@ -339,6 +380,59 @@ async def reconcile_pass():
             notices.append((str(row["discord_id"]),
                             "frozen" if int(row["tier"] or 0) == 0 else "downgraded"))
     return notices
+
+async def cleanup_due_communities():
+    """Leave and erase only fully lapsed, still-owned communities.
+
+    The role is fetched again before leaving each community. An inaccessible
+    Patreon server or an uncertain member lookup stops cleanup. A replacement
+    sponsor or Bot Admin can claim the community after grace and before this
+    deadline; that changes its owner and cancels this owner's cleanup.
+    """
+    import discord
+    from discord_bot import bot as dc
+
+    for claim in db.due_sponsor_communities():
+        owner = str(claim["discord_id"])
+        live = await live_discord_tier(owner)
+        if live is None:
+            return
+        apply_tier(owner, live)
+        if sponsor_tier("discord", owner) != 0 or live != 0:
+            continue
+        platform = claim["platform"]
+        server = str(claim["server_id"])
+        current = db.get_community_claim(platform, server)
+        if current is None or str(current["discord_id"]) != owner:
+            continue
+        try:
+            if platform == "discord":
+                if server == str(PATREON_GUILD_ID):
+                    continue
+                guild = dc.get_guild(int(server))
+                if guild is None:
+                    try:
+                        guild = await dc.fetch_guild(int(server))
+                    except discord.NotFound:
+                        guild = None
+                    except discord.HTTPException as error:
+                        logger.warning("expired sponsor guild lookup failed (%s): %s",
+                                       server, error)
+                        continue
+                if guild is not None:
+                    await guild.leave()
+            elif platform == "telegram":
+                from telegram_bot import bot as tg_bot
+                if not await tg_bot.leave_chat(int(server)):
+                    continue
+            else:
+                continue
+        except Exception as error:
+            logger.warning("sponsor community leave failed (%s:%s): %s",
+                           platform, server, error)
+            continue
+        if db.purge_sponsor_community(platform, server, owner):
+            logger.info("expired sponsor community removed (%s:%s)", platform, server)
 
 def sponsor_lang(discord_id):
     """The language to write to a sponsor in: that of the first community
@@ -411,10 +505,15 @@ async def deliver_notice(discord_id, kind):
     lang = sponsor_lang(discord_id)
     limits = sponsor_limits(int(row["tier"] or 0))
     days = grace_days_left(discord_id)
+    notice_key = ("sponsor_notice_expired_retention" if kind == "expired"
+                  else "sponsor_notice_community_lost" if kind == "frozen"
+                  and int(row["grace_from_tier"] or 0) == -1
+                  else f"sponsor_notice_{kind}")
     text = localized(
-        f"sponsor_notice_{kind}", lang,
+        notice_key, lang,
         days=days if days is not None else SPONSOR_GRACE_SECONDS // 86400,
-        tier=int(row["tier"] or 0),
+        tier=(localized("sponsor_tier_community", lang)
+              if int(row["tier"] or 0) == -1 else int(row["tier"] or 0)),
         communities=limits["communities"], wikis=limits["wikis"],
         socials=limits["socials"],
     )
@@ -447,6 +546,77 @@ def sponsor_bridge_owner(bridge_id):
     row = db.get_sponsor_bridge(bridge_id)
     return str(row["discord_id"]) if row else None
 
+def sponsor_relay_owner(bridge_id):
+    """Only ordinary sponsor bridges spend delivery units.
+
+    Appeal conversations must remain usable after regular bridge traffic
+    reaches its quota. Their database bookkeeping is kept for seven days.
+    """
+    return sponsor_bridge_owner(bridge_id)
+
+def _owned_usage(discord_id):
+    """Active bridges, attached chats and sources across one subscription."""
+    return db.get_sponsor_usage(discord_id)
+
+def sponsor_relay_allowed(bridge_id, origin_platform, origin_chat_id,
+                          targets, gallery_urls=None):
+    """Reserve the cost of a sponsor bridge message before any delivery.
+
+    One unit is one outgoing message or edit. Extra Telegram gallery messages
+    cost extra units. Both the burst and UTC-day budgets belong to the Discord
+    subscription, so adding senders, bridges or a linked Telegram account
+    cannot multiply them. A lapsed subscription spends no units and relays
+    nothing while its bridge configuration remains intact.
+    """
+    owner = sponsor_relay_owner(bridge_id)
+    if owner is None or is_admin("discord", owner):
+        return True
+    row = db.get_sponsor_state(owner)
+    tier = sponsor_quota_tier("discord", owner)
+    if tier == 0:
+        return False
+    units = 0
+    for chat in targets:
+        if chat["platform"] == origin_platform and chat["chat_id"] == origin_chat_id:
+            continue
+        units += 1
+        if chat["platform"] == "telegram" and gallery_urls:
+            units += max(0, len(gallery_urls) - 1)
+    if units == 0:
+        return True
+    limits = sponsor_limits(tier)
+    now = int(time.time())
+    day = time.strftime("%Y-%m-%d", time.gmtime(now))
+    allowed = db.spend_sponsor_relay(
+        owner, day, now, units, limits["relay_minute"], limits["relay_day"])
+    if not allowed and rate_limit_ok(("sponsor-relay-limit", owner), 1, 60):
+        logger.info("sponsor relay budget reached for %s", owner)
+    return allowed
+
+def claim_daily_limit_notice(bridge_id, origin_platform, origin_chat_id,
+                             targets, gallery_urls=None):
+    """Return whether this denied fan-out exhausted the day budget and is
+    the first such notice for this bridge today. Minute throttling stays
+    quiet, because it recovers automatically and must not create more traffic."""
+    owner = sponsor_relay_owner(bridge_id)
+    if owner is None or is_admin("discord", owner):
+        return False
+    tier = sponsor_quota_tier("discord", owner)
+    if tier == 0:
+        return False
+    units = sum(
+        1 + (max(0, len(gallery_urls) - 1)
+             if chat["platform"] == "telegram" and gallery_urls else 0)
+        for chat in targets
+        if chat["platform"] != origin_platform or chat["chat_id"] != origin_chat_id
+    )
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    usage = db.sponsor_relay_usage(owner, day)
+    spent = int(usage["day_units"]) if usage else 0
+    if spent + units <= sponsor_limits(tier)["relay_day"]:
+        return False
+    return db.claim_sponsor_relay_notice(bridge_id, day)
+
 def feed_quota(chat_id, kind):
     """May another source of `kind` be attached here? Returns
     ``(allowed, reason_key, used, limit)``.
@@ -469,17 +639,17 @@ def feed_quota(chat_id, kind):
         return True, None, None, None
 
     row = db.get_sponsor_state(owner)
-    tier = int(row["tier"] or 0) if row else 0
-    if tier <= 0:
+    tier = sponsor_quota_tier("discord", owner)
+    if tier == 0:
         return False, "sponsor_feed_frozen", None, None
 
     limits = sponsor_limits(tier)
-    feeds = db.get_bridge_feeds(bridge_id)
+    usage = _owned_usage(owner)
     if kind in WIKI_FEED_KINDS:
-        used = sum(1 for f in feeds if f["kind"] in WIKI_FEED_KINDS)
+        used = usage["wikis"]
         return used < limits["wikis"], "sponsor_quota_wikis", used, limits["wikis"]
     if kind in SOCIAL_FEED_KINDS:
-        used = sum(1 for f in feeds if f["kind"] in SOCIAL_FEED_KINDS)
+        used = usage["socials"]
         return used < limits["socials"], "sponsor_quota_socials", used, limits["socials"]
     return True, None, None, None
 
@@ -488,19 +658,26 @@ def community_slot_status(platform, user_id, server_id):
     claiming it. Returns one of 'ok', 'not_a_sponsor', 'yours', 'taken',
     'no_slots', 'too_soon', paired with whatever the wording needs."""
     discord_id = db.canonical_sponsor_id(platform, user_id)
-    if not discord_id:
+    admin = is_admin(platform, user_id)
+    if not discord_id and not admin:
         return "not_a_sponsor", {}
+    discord_id = discord_id or str(user_id)
     tier = _rights_tier(db.get_sponsor_state(discord_id))
-    if tier <= 0:
+    if tier == 0 and not admin:
         return "not_a_sponsor", {}
 
     claim = db.get_community_claim(platform, server_id)
     if claim and str(claim["discord_id"]) == discord_id:
         return "yours", {}
+    takeover_from = None
     if claim:
-        return "taken", {}
+        old_owner = str(claim["discord_id"])
+        if (is_admin("discord", old_owner) or is_admin("telegram", old_owner)
+                or _rights_tier(db.get_sponsor_state(old_owner)) != 0):
+            return "taken", {}
+        takeover_from = old_owner
 
-    allowed = sponsor_limits(tier)["communities"]
+    allowed = sponsor_limits(tier)["communities"] if not admin else 999999
     used = len(db.get_sponsor_communities(discord_id))
     if used >= allowed:
         return "no_slots", {"used": used, "limit": allowed}
@@ -512,14 +689,15 @@ def community_slot_status(platform, user_id, server_id):
         if waited < SPONSOR_SLOT_CHANGE_SECONDS:
             days = max(1, int((SPONSOR_SLOT_CHANGE_SECONDS - waited) // 86400) + 1)
             return "too_soon", {"days": days}
-    return "ok", {"used": used, "limit": allowed, "discord_id": discord_id}
+    return "ok", {"used": used, "limit": allowed, "discord_id": discord_id,
+                  "takeover_from": takeover_from}
 
 def owns_community(platform, user_id, platform_of_community, server_id):
     """Whether this caller's sponsorship covers that community -- the test
     behind every sponsor-only action, and the reason a sponsor cannot open
     bridges in a community they never claimed."""
     discord_id = db.canonical_sponsor_id(platform, user_id)
-    if not discord_id or _rights_tier(db.get_sponsor_state(discord_id)) <= 0:
+    if not discord_id or _rights_tier(db.get_sponsor_state(discord_id)) == 0:
         return False
     claim = db.get_community_claim(platform_of_community, server_id)
     return bool(claim) and str(claim["discord_id"]) == discord_id
@@ -551,8 +729,15 @@ def atb_decision(platform, user_id, chat_id, raw, is_bot_admin):
             return "new", None, None
         server_id = db.chat_server_id(platform, chat_id)
         if server_id and owns_community(platform, user_id, platform, server_id):
-            return "sponsor_new", db.canonical_sponsor_id(platform, user_id), None
-        if sponsor_tier(platform, user_id) > 0:
+            owner = db.canonical_sponsor_id(platform, user_id)
+            limits = sponsor_limits(sponsor_quota_tier(platform, user_id))
+            usage = _owned_usage(owner)
+            if usage["bridges"] >= limits["bridges"]:
+                return "deny", None, "sponsor_quota_bridges"
+            if usage["chats"] >= limits["chats"]:
+                return "deny", None, "sponsor_quota_chats"
+            return "sponsor_new", owner, None
+        if sponsor_tier(platform, user_id) != 0:
             return "deny", None, "atb_sponsor_claim_first"
         return "deny", None, "no_permission"
 
@@ -564,10 +749,20 @@ def atb_decision(platform, user_id, chat_id, raw, is_bot_admin):
 
     if kind == "sponsor":
         owner = sponsor_bridge_owner(raw)
-        if is_bot_admin:
-            return "attach", raw, None
         if owner is None:
             return "deny", None, "atb_reserved_range"
+        if is_bot_admin:
+            if len(db.get_bridge_chats(raw)) >= SPONSOR_CHATS_PER_BRIDGE:
+                return "deny", None, "sponsor_quota_bridge_chats"
+            return "attach", raw, None
+        limits = sponsor_limits(sponsor_quota_tier("discord", owner))
+        usage = _owned_usage(owner)
+        if not db.get_bridge_chats(raw) and usage["bridges"] >= limits["bridges"]:
+            return "deny", None, "sponsor_quota_bridges"
+        if usage["chats"] >= limits["chats"]:
+            return "deny", None, "sponsor_quota_chats"
+        if len(db.get_bridge_chats(raw)) >= SPONSOR_CHATS_PER_BRIDGE:
+            return "deny", None, "sponsor_quota_bridge_chats"
         if db.canonical_sponsor_id(platform, user_id) != owner:
             return "deny", None, "atb_sponsor_not_owner"
         server_id = db.chat_server_id(platform, chat_id)
@@ -590,11 +785,18 @@ def sponsor_overview(platform, user_id):
     row = db.get_sponsor_state(discord_id)
     rights = _rights_tier(row)
     live = int(row["tier"] or 0) if row else 0
-    if rights <= 0 and live <= 0:
+    if row is None:
         return None
 
     limits = sponsor_limits(rights)
-    quota_limits = sponsor_limits(live)
+    quota_limits = sponsor_limits(sponsor_quota_tier("discord", discord_id))
+    wait_days = None
+    if live == -1 and rights == 0 and row["community_role_since"] is not None:
+        remaining = COMMUNITY_WAIT_SECONDS - (time.time() - int(row["community_role_since"]))
+        wait_days = max(0, int((remaining + 86399) // 86400))
+    usage = _owned_usage(discord_id)
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    relay_row = db.sponsor_relay_usage(discord_id, day)
     bridges = []
     for owned in db.get_sponsor_bridges(discord_id):
         bridge_id = int(owned["bridge_id"])
@@ -608,11 +810,14 @@ def sponsor_overview(platform, user_id):
     return {
         "discord_id": discord_id,
         "tier": rights,
+        "community_wait_days": wait_days,
         "paid_tier": live,
-        "frozen": live == 0 and rights > 0,
+        "frozen": live == 0 and rights == 0,
         "grace_days": grace_days_left(discord_id),
         "limits": limits,
         "quota_limits": quota_limits,
+        "usage": usage,
+        "relay_used": int(relay_row["day_units"]) if relay_row else 0,
         "communities": db.get_sponsor_communities(discord_id),
         "bridges": bridges,
         "link": db.get_link_by_discord(discord_id),

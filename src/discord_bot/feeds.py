@@ -310,7 +310,8 @@ async def gallery_upload(files):
         return None
     try:
         sent = await channel.send(files=[
-            discord.File(io.BytesIO(f["data"]), filename=f["name"]) for f in files
+            discord.File(io.BytesIO(f["data"]), filename=f["name"],
+                         spoiler=bool(f.get("spoiler"))) for f in files
         ])
     except Exception as e:
         logger.warning("GALLERY upload failed (channel=%s): %s", channel.id, e)

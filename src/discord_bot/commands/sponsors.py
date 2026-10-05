@@ -86,16 +86,34 @@ def sponsor_status_text(overview, lang):
     sources counted against its limits; and, while a grace period runs, how
     many days are left and what happens at the end of them."""
     limits = overview["limits"]
-    lines = [localized("sponsor_status_tier", lang, tier=overview["tier"],
+    tier_label = (localized("sponsor_tier_community", lang)
+                  if overview["tier"] == -1 else overview["tier"])
+    lines = [localized("sponsor_status_tier", lang, tier=tier_label,
                        communities=len(overview["communities"]),
                        community_limit=limits["communities"])]
-
-    if overview["frozen"]:
+    usage = overview["usage"]
+    quota = overview["quota_limits"]
+    lines.append(localized(
+        "sponsor_status_usage", lang,
+        bridges=usage["bridges"], bridge_limit=quota["bridges"],
+        chats=usage["chats"], chat_limit=quota["chats"],
+        wikis=usage["wikis"], wiki_limit=quota["wikis"],
+        socials=usage["socials"], social_limit=quota["socials"],
+        relay_used=overview["relay_used"], relay_limit=quota["relay_day"],
+        relay_minute=quota["relay_minute"]))
+    if overview["paid_tier"] == -1 and overview["tier"] == 0:
+        lines.append(localized("sponsor_status_pending", lang,
+                               days=overview["community_wait_days"] or 0))
+    elif overview["paid_tier"] == 0 and overview["tier"] != 0:
         lines.append(localized("sponsor_status_frozen", lang,
                                days=overview["grace_days"] or 0))
-    elif overview["paid_tier"] < overview["tier"]:
+    elif overview["tier"] == 0:
+        lines.append(localized("sponsor_status_expired_retention", lang))
+    elif sponsors._rank(overview["paid_tier"]) < sponsors._rank(overview["tier"]):
         lines.append(localized("sponsor_status_downgraded", lang,
-                               tier=overview["paid_tier"],
+                               tier=(localized("sponsor_tier_community", lang)
+                                     if overview["paid_tier"] == -1
+                                     else overview["paid_tier"]),
                                days=overview["grace_days"] or 0,
                                communities=overview["quota_limits"]["communities"]))
 
@@ -162,7 +180,8 @@ async def sponsor_claim_cmd(interaction: discord.Interaction):
             localized(f"sponsor_claim_{status}", lang, **extra), ephemeral=True)
         return
 
-    db.claim_community("discord", server_id, extra["discord_id"])
+    db.claim_community("discord", server_id, extra["discord_id"],
+                       takeover_from=extra.get("takeover_from"))
     await interaction.response.send_message(
         localized("sponsor_claim_ok", lang, used=extra["used"] + 1,
                   limit=extra["limit"]), ephemeral=True)
@@ -213,5 +232,11 @@ async def sponsor_subscribe_cmd(interaction: discord.Interaction):
         localized("sponsor_subscribe", lang, url=SPONSOR_URL,
                   communities1=tier1["communities"], wikis1=tier1["wikis"],
                   socials1=tier1["socials"], communities2=tier2["communities"],
-                  wikis2=tier2["wikis"], socials2=tier2["socials"]),
+                  wikis2=tier2["wikis"], socials2=tier2["socials"])
+        + "\n\n" + localized(
+            "sponsor_subscribe_usage", lang,
+            bridges1=tier1["bridges"], chats1=tier1["chats"],
+            minute1=tier1["relay_minute"], day1=tier1["relay_day"],
+            bridges2=tier2["bridges"], chats2=tier2["chats"],
+            minute2=tier2["relay_minute"], day2=tier2["relay_day"]),
         ephemeral=True)

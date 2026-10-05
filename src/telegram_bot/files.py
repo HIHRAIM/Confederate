@@ -151,7 +151,8 @@ async def _upload_telegram_files_to_gallery(candidates, source_bot=None):
         data = await _download_telegram_file(cand["file_id"], max_single, source_bot)
         if data is None or total + len(data) > max_total:
             continue
-        files.append({"name": cand["name"], "data": data})
+        files.append({"name": cand["name"], "data": data,
+                      "spoiler": bool(cand.get("spoiler"))})
         total += len(data)
 
     if not files:

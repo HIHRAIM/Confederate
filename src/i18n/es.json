@@ -1518,7 +1518,7 @@
   },
   "sponsor_notice_expired": {
     "status": "unverified",
-    "text": "El periodo de gracia de tu patrocinio ha terminado.\n\nSe han liberado las plazas de comunidad por encima de lo que permite el nivel actual, y con ellas ha terminado el derecho exclusivo a añadir chats a tus puentes. Tus puentes conservan sus números —siguen reservados para ti y no se dan a nadie más— y todos los puentes, chats, fuentes y ajustes siguen ahí, intactos.\n\nSuscribirte de nuevo devuelve el estado al instante; solo tendrías que volver a reclamar tus comunidades."
+    "text": "Terminó el período de 30 días tras el pago. Se pausaron el reenvío y la configuración de patrocinador; se liberaron las plazas de comunidad. Los puentes, chats, fuentes y ajustes se conservan. Renueva y reclama tus comunidades para reanudar."
   },
   "sponsor_notice_fallback": {
     "status": "unverified",
@@ -1526,7 +1526,7 @@
   },
   "sponsor_notice_frozen": {
     "status": "unverified",
-    "text": "Tu suscripción de patrocinador ya no está activa.\n\nEl reenvío desde las fuentes seguidas en tus puentes se ha pausado. Tus derechos —plazas de comunidad y puentes— se mantienen {days} días más; después se liberan las plazas. No se borra nada en ningún momento: puentes, chats, fuentes y ajustes siguen igual, y todo vuelve a funcionar solo si te suscribes de nuevo.\n\nSi es un error, comprueba en Patreon que la suscripción está activa y que tu cuenta de Patreon sigue conectada a Discord."
+    "text": "La suscripción terminó. Los puentes, las fuentes y la configuración nueva siguen funcionando {days} días más con los mismos límites. Después se detienen el reenvío y las acciones de patrocinador y se liberan las plazas de comunidad; la configuración se conserva. Renueva Patreon y comprueba la conexión con Discord."
   },
   "sponsor_notice_restored": {
     "status": "unverified",
@@ -1534,11 +1534,11 @@
   },
   "sponsor_quota_socials": {
     "status": "unverified",
-    "text": "Este puente de patrocinador ya sigue {used} de {limit} fuentes sociales: las cuentas de Bluesky, los canales de YouTube y los canales de Telegram comparten un mismo límite. Quita una o sube de nivel."
+    "text": "Esta suscripción ya sigue {used} de {limit} fuentes sociales entre todos sus puentes. Quita una o sube de nivel."
   },
   "sponsor_quota_wikis": {
     "status": "unverified",
-    "text": "Este puente de patrocinador ya sigue {used} de {limit} wikis. Quita una con /remwikifeed o sube de nivel."
+    "text": "Esta suscripción ya sigue {used} de {limit} wikis entre todos sus puentes. Quita una con /remwikifeed o sube de nivel."
   },
   "sponsor_release_none": {
     "status": "unverified",
@@ -1550,7 +1550,7 @@
   },
   "sponsor_status_bridge": {
     "status": "unverified",
-    "text": "* #{bridge_id} — wikis {wikis}/{wiki_limit}, fuentes sociales {socials}/{social_limit}"
+    "text": "* #{bridge_id} — wikis: {wikis}, fuentes sociales: {socials}"
   },
   "sponsor_status_bridge_empty": {
     "status": "unverified",
@@ -1574,7 +1574,7 @@
   },
   "sponsor_status_frozen": {
     "status": "unverified",
-    "text": "Tu suscripción ya no está activa. El reenvío desde las fuentes seguidas en tus puentes está en pausa. Tus derechos se mantienen {days} día(s) más; después se liberan tus plazas de comunidad. No se borra nada y todo vuelve a funcionar solo si la suscripción se reanuda."
+    "text": "El pago terminó. Los puentes y las fuentes siguen activos {days} día(s) más y luego se pausan. La configuración se conserva."
   },
   "sponsor_status_link": {
     "status": "unverified",
@@ -1590,7 +1590,7 @@
   },
   "sponsor_subscribe": {
     "status": "unverified",
-    "text": "El patrocinio apoya al bot y te da tu propio espacio dentro de él.\n\nNivel 1: {communities1} comunidades, {wikis1} wikis y {socials1} fuentes sociales (Bluesky, YouTube y canales de Telegram en conjunto) en cada uno de tus puentes.\nNivel 2: {communities2} comunidades, {wikis2} wikis y {socials2} fuentes sociales.\n\nUn patrocinador puede abrir puentes en las comunidades que ha reclamado, y solo él puede añadir chats a sus propios puentes.\n\nSuscríbete en {url} y no olvides conectar tu cuenta de Patreon con Discord en el propio sitio de Patreon. Patreon te concederá entonces el rol que este bot lee; sin esa conexión no hay rol y el bot no puede saber que eres patrocinador."
+    "text": "El patrocinio apoya al bot y te da tu propio espacio dentro de él.\n\nNivel 1: {communities1} comunidades, {wikis1} wikis y {socials1} fuentes sociales (Bluesky, YouTube y canales de Telegram en conjunto) entre todos tus puentes.\nNivel 2: {communities2} comunidades, {wikis2} wikis y {socials2} fuentes sociales.\n\nUn patrocinador puede abrir puentes en las comunidades que ha reclamado, y él y los administradores del bot pueden añadir chats a sus puentes.\n\nSuscríbete en {url} y no olvides conectar tu cuenta de Patreon con Discord en el propio sitio de Patreon. Patreon te concederá entonces el rol que este bot lee; sin esa conexión no hay rol y el bot no puede saber que eres patrocinador."
   },
   "status_members_forms": {
     "status": "unverified",
@@ -2303,5 +2303,49 @@
   "ytfeed_usage": {
     "status": "unverified",
     "text": "Uso: /setytfeed <canal de YouTube> — @handle, enlace al canal o identificador UC…"
-  }
+  },
+  "appeal_choose_server": {"status": "unverified", "text": "You belong to several appeal servers. Run /appeal with server_id for your choice:\n{servers}"},
+  "appeal_server_invalid": {"status": "unverified", "text": "Choose a server from the list where you are a member."},
+  "appeal_server_frozen": {"status": "unverified", "text": "New appeals are paused here while sponsorship is inactive."},
+  "appeal_server_incomplete": {"status": "unverified", "text": "Configure the Guard protocol channels before opening appeals."},
+  "appeal_already_open_server": {"status": "unverified", "text": "You already have an open appeal on {server}."},
+  "appeal_flood_warning": {"status": "unverified", "text": "Has enviado 20 mensajes en esta apelación sin respuesta de un cónsul. Espera. Con 30 mensajes en 10 minutos se detendrá el reenvío y Guard podría expulsarte del servidor de apelaciones."},
+  "appeal_register_guild": {"status": "unverified", "text": "Run this on a sponsor appeal server."},
+  "appeal_register_taken": {"status": "unverified", "text": "This server or subscription already has another appeal registration."},
+  "appeal_register_invalid": {"status": "unverified", "text": "Enter a channel ID and a Discord invitation URL."},
+  "appeal_register_channel": {"status": "unverified", "text": "The bot needs permission to create and send in public threads here."},
+  "appeal_register_done": {"status": "unverified", "text": "Appeal server registered. Configure channels and roles with /appeal-protocol."},
+  "appeal_protocol_invalid": {"status": "unverified", "text": "Register this server, then provide two distinct channels and valid consul roles."},
+  "appeal_protocol_done": {"status": "unverified", "text": "Guard channels and consul roles saved. Configure the same channels in guard_bot."},
+  "appeal_pause_done": {"status": "unverified", "text": "New appeals paused. Open appeals can still reach a verdict."},
+  "appeal_resume_done": {"status": "unverified", "text": "New appeals resumed."},
+  "appeal_settings_show": {"status": "unverified", "text": "Appeal server {guild}; threads {thread}; pardon {pardon}; ban summaries {baninfo}; consul roles {roles}; accepting: {active}."},
+  "sponsor_quota_bridges": {
+    "status": "unverified",
+    "text": "Esta suscripción ha alcanzado el límite de puentes activos. Desconecta un puente sin uso o sube de nivel."
+  },
+  "sponsor_quota_bridge_chats": {"status": "unverified", "text": "Este puente ya tiene dos chats. Desconecta uno antes de añadir otro."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "Este puente alcanzó el límite diario de mensajes del patrocinador. El reenvío se reanudará a las 00:00 UTC."},
+  "inbox_media_blocked": {"status": "unverified", "text": "Por seguridad, esta bandeja solo acepta texto. Describe tu consulta sin archivos adjuntos."},
+  "inbox_link_blocked": {"status": "unverified", "text": "Por seguridad, los enlaces no se reenvían desde esta bandeja. Describe tu consulta en texto."},
+  "inbox_text_too_long": {"status": "unverified", "text": "Reduce el mensaje a 4000 caracteres o menos."},
+  "inbox_daily_limit": {"status": "unverified", "text": "Esta bandeja alcanzó su límite diario de mensajes. Inténtalo después de las 00:00 UTC."},
+  "sponsor_tier_community": {"status": "unverified", "text": "Rol de comunidad"},
+  "sponsor_status_pending": {"status": "unverified", "text": "Los beneficios del rol de comunidad se activarán en unos {days} días desde que se observó por primera vez."},
+  "sponsor_status_expired_retention": {"status": "unverified", "text": "Terminó el período de gracia. Recupera un rol válido o deja que otro patrocinador o un administrador del bot asuma la comunidad. Tras 30 días se borrarán sus datos y el bot saldrá."},
+  "sponsor_notice_expired_retention": {"status": "unverified", "text": "Terminó tu período de gracia. Si otro patrocinador o un administrador del bot no asume tus comunidades, el bot saldrá y borrará sus datos en 30 días."},
+  "sponsor_notice_community_lost": {"status": "unverified", "text": "Perdiste el rol de comunidad. Tus funciones seguirán activas {days} días más. Después habrá 30 días antes de que el bot salga y borre los datos, salvo que otro patrocinador o administrador asuma la comunidad."},
+  "sponsor_quota_chats": {
+    "status": "unverified",
+    "text": "Esta suscripción ha alcanzado el límite de chats conectados. Quita un chat o sube de nivel."
+  },
+  "sponsor_status_usage": {
+    "status": "unverified",
+    "text": "Puentes activos: {bridges}/{bridge_limit}; chats: {chats}/{chat_limit}; wikis: {wikis}/{wiki_limit}; fuentes sociales: {socials}/{social_limit}. Hoy: {relay_used}/{relay_limit} mensajes salientes; máximo {relay_minute} por minuto."
+  },
+  "sponsor_subscribe_usage": {
+    "status": "unverified",
+    "text": "Nivel 1: {bridges1} puentes activos, {chats1} chats, hasta {minute1} copias salientes por minuto y {day1} por día UTC. Nivel 2: {bridges2} puentes, {chats2} chats, {minute2} copias por minuto y {day2} por día. Cada mensaje de destino consume una unidad. Las funciones de patrocinador siguen activas 30 días tras terminar el pago; después se pausa el reenvío y se liberan las plazas de comunidad. La configuración se conserva."
+  },
+  "sponsor_status_expired": {"status": "unverified", "text": "Terminó el período de 30 días tras el pago. El reenvío está pausado. Los puentes y ajustes se conservan; renueva y reclama de nuevo tus comunidades."}
 }

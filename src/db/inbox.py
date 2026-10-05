@@ -13,8 +13,49 @@ never looks inside them: it takes and returns the stored string as it is.
 """
 import time
 
-from db import conn, cur
+from db import _db_lock, conn, cur
 from db.ranges import INBOX_BRIDGE_ID_FLOOR, bridge_kind
+
+def reserve_inbox_ingress(bot_id, user_id, media_bytes=0,
+                          user_limit=100, bot_limit=1000,
+                          user_bytes_limit=50 * 1024 * 1024,
+                          bot_bytes_limit=500 * 1024 * 1024):
+    """Count accepted private messages across restarts, per user and receiver.
+
+    A sender cannot consume the entire bot allowance alone. Link and file
+    messages remain allowed; the file-size reservation bounds upload demand.
+    """
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    with _db_lock:
+        own = cur.execute(
+            "SELECT messages,bytes FROM inbox_ingress_usage"
+            " WHERE bot_id=? AND user_id=? AND day=?",
+            (str(bot_id), str(user_id), day),
+        ).fetchone()
+        total = cur.execute(
+            "SELECT COALESCE(SUM(messages),0),COALESCE(SUM(bytes),0)"
+            " FROM inbox_ingress_usage"
+            " WHERE bot_id=? AND day=?", (str(bot_id), day),
+        ).fetchone()
+        size = max(0, int(media_bytes))
+        if ((own and int(own[0]) >= user_limit) or int(total[0]) >= bot_limit
+                or (own and int(own[1]) + size > user_bytes_limit)
+                or int(total[1]) + size > bot_bytes_limit):
+            return False
+        cur.execute(
+            "INSERT INTO inbox_ingress_usage (bot_id,user_id,day,messages,bytes)"
+            " VALUES (?,?,?,1,?) ON CONFLICT(bot_id,user_id,day)"
+            " DO UPDATE SET messages=messages+1,bytes=bytes+excluded.bytes",
+            (str(bot_id), str(user_id), day, size),
+        )
+        conn.commit()
+        return True
+
+def cleanup_old_inbox_ingress(days=2):
+    """Remove quota counters older than the current and recent UTC days."""
+    cutoff = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days * 86400))
+    cur.execute("DELETE FROM inbox_ingress_usage WHERE day<?", (cutoff,))
+    conn.commit()
 
 def claim_inbox_bridge_id():
     """Take the next bridge id in the reserved inbox range, or None if the

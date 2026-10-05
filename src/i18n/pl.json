@@ -1518,7 +1518,7 @@
   },
   "sponsor_notice_expired": {
     "status": "unverified",
-    "text": "Okres karencji twojej subskrypcji dobiegł końca.\n\nSloty społeczności ponad to, co pozwala obecny poziom, zostały zwolnione, a wraz z nimi wygasło wyłączne prawo dołączania czatów do twoich mostów. Numery mostów pozostają twoje — są zarezerwowane i nikomu innemu nie zostaną przyznane — a wszystkie mosty, czaty, źródła i ustawienia nadal są na miejscu, nietknięte.\n\nPonowna subskrypcja od razu przywraca status; trzeba będzie tylko ponownie zgłosić społeczności."
+    "text": "Minęło 30 dni działania po wygaśnięciu płatności. Przekazywanie i konfiguracja sponsora zostały wstrzymane; miejsca społeczności zwolniono. Mosty, czaty, źródła i ustawienia pozostają zapisane. Odnów subskrypcję i ponownie przypisz społeczności."
   },
   "sponsor_notice_fallback": {
     "status": "unverified",
@@ -1526,7 +1526,7 @@
   },
   "sponsor_notice_frozen": {
     "status": "unverified",
-    "text": "Twoja subskrypcja sponsorska nie jest już aktywna.\n\nPrzekazywanie ze śledzonych źródeł na twoich mostach zostało wstrzymane. Twoje prawa — sloty społeczności i mosty — pozostają jeszcze przez {days} dni; potem sloty zostaną zwolnione. Nic nie jest usuwane na żadnym etapie: mosty, czaty, źródła i ustawienia zostają takie, jakie są, a po ponownej subskrypcji wszystko wraca samo.\n\nJeśli to pomyłka, sprawdź na Patreonie, czy subskrypcja jest aktywna i czy konto Patreon nadal jest połączone z Discordem."
+    "text": "Subskrypcja wygasła. Mosty, źródła i nowe ustawienia działają jeszcze przez {days} dni z tymi samymi limitami. Potem przekazywanie i działania sponsora zostaną wstrzymane, a miejsca społeczności zwolnione; ustawienia pozostaną zapisane. Odnów Patreon i sprawdź połączenie z Discordem."
   },
   "sponsor_notice_restored": {
     "status": "unverified",
@@ -1534,11 +1534,11 @@
   },
   "sponsor_quota_socials": {
     "status": "unverified",
-    "text": "Ten most sponsorski śledzi już {used} z {limit} źródeł społecznościowych — konta Bluesky, kanały YouTube i kanały Telegrama dzielą jeden limit. Usuń jedno albo podnieś poziom."
+    "text": "Ta subskrypcja śledzi już {used} z {limit} źródeł społecznościowych łącznie na wszystkich mostach. Usuń jedno albo podnieś poziom."
   },
   "sponsor_quota_wikis": {
     "status": "unverified",
-    "text": "Ten most sponsorski śledzi już {used} z {limit} wiki. Usuń jedną poleceniem /remwikifeed albo podnieś poziom."
+    "text": "Ta subskrypcja śledzi już {used} z {limit} wiki łącznie na wszystkich mostach. Usuń jedną poleceniem /remwikifeed albo podnieś poziom."
   },
   "sponsor_release_none": {
     "status": "unverified",
@@ -1550,7 +1550,7 @@
   },
   "sponsor_status_bridge": {
     "status": "unverified",
-    "text": "* #{bridge_id} — wiki {wikis}/{wiki_limit}, źródła społecznościowe {socials}/{social_limit}"
+    "text": "* #{bridge_id} — wiki: {wikis}, źródła społecznościowe: {socials}"
   },
   "sponsor_status_bridge_empty": {
     "status": "unverified",
@@ -1574,7 +1574,7 @@
   },
   "sponsor_status_frozen": {
     "status": "unverified",
-    "text": "Twoja subskrypcja nie jest już aktywna. Przekazywanie ze śledzonych źródeł na twoich mostach jest wstrzymane. Prawa pozostają jeszcze przez {days} dn.; potem sloty społeczności zostaną zwolnione. Nic nie jest usuwane, a po wznowieniu subskrypcji wszystko wraca samo."
+    "text": "Płatność wygasła. Mosty i źródła działają jeszcze przez {days} dni, a potem zostaną wstrzymane. Ustawienia pozostaną zapisane."
   },
   "sponsor_status_link": {
     "status": "unverified",
@@ -1590,7 +1590,7 @@
   },
   "sponsor_subscribe": {
     "status": "unverified",
-    "text": "Sponsoring wspiera bota i daje ci własną przestrzeń w nim.\n\nPoziom 1: {communities1} społeczności, {wikis1} wiki i {socials1} źródła społecznościowe (Bluesky, YouTube i kanały Telegrama łącznie) na każdym twoim moście.\nPoziom 2: {communities2} społeczności, {wikis2} wiki i {socials2} źródeł społecznościowych.\n\nSponsor może otwierać mosty w zgłoszonych przez siebie społecznościach, a czaty do swoich mostów może dołączać tylko on sam.\n\nSubskrypcja: {url} — i koniecznie połącz konto Patreon z Discordem na stronie Patreona. Patreon przyzna ci wtedy rolę, którą bot odczytuje; bez tego połączenia roli nie ma i bot w ogóle nie wie, że jesteś sponsorem."
+    "text": "Sponsoring wspiera bota i daje ci własną przestrzeń w nim.\n\nPoziom 1: {communities1} społeczności, {wikis1} wiki i {socials1} źródła społecznościowe (Bluesky, YouTube i kanały Telegrama łącznie) łącznie na wszystkich twoich mostach.\nPoziom 2: {communities2} społeczności, {wikis2} wiki i {socials2} źródeł społecznościowych.\n\nSponsor może otwierać mosty w zgłoszonych przez siebie społecznościach, a czaty do jego mostów mogą dołączać on i administratorzy bota.\n\nSubskrypcja: {url} — i koniecznie połącz konto Patreon z Discordem na stronie Patreona. Patreon przyzna ci wtedy rolę, którą bot odczytuje; bez tego połączenia roli nie ma i bot w ogóle nie wie, że jesteś sponsorem."
   },
   "status_members_forms": {
     "status": "unverified",
@@ -2303,5 +2303,49 @@
   "ytfeed_usage": {
     "status": "unverified",
     "text": "Użycie: /setytfeed <kanał YouTube> — @handle, link do kanału lub identyfikator UC…"
-  }
+  },
+  "appeal_choose_server": {"status": "unverified", "text": "You belong to several appeal servers. Run /appeal with server_id for your choice:\n{servers}"},
+  "appeal_server_invalid": {"status": "unverified", "text": "Choose a server from the list where you are a member."},
+  "appeal_server_frozen": {"status": "unverified", "text": "New appeals are paused here while sponsorship is inactive."},
+  "appeal_server_incomplete": {"status": "unverified", "text": "Configure the Guard protocol channels before opening appeals."},
+  "appeal_already_open_server": {"status": "unverified", "text": "You already have an open appeal on {server}."},
+  "appeal_flood_warning": {"status": "unverified", "text": "Wysłano 20 wiadomości w tej apelacji bez odpowiedzi konsula. Zaczekaj. Po 30 wiadomościach w 10 minut przekazywanie zostanie wstrzymane, a Guard może zbanować Cię na serwerze apelacyjnym."},
+  "appeal_register_guild": {"status": "unverified", "text": "Run this on a sponsor appeal server."},
+  "appeal_register_taken": {"status": "unverified", "text": "This server or subscription already has another appeal registration."},
+  "appeal_register_invalid": {"status": "unverified", "text": "Enter a channel ID and a Discord invitation URL."},
+  "appeal_register_channel": {"status": "unverified", "text": "The bot needs permission to create and send in public threads here."},
+  "appeal_register_done": {"status": "unverified", "text": "Appeal server registered. Configure channels and roles with /appeal-protocol."},
+  "appeal_protocol_invalid": {"status": "unverified", "text": "Register this server, then provide two distinct channels and valid consul roles."},
+  "appeal_protocol_done": {"status": "unverified", "text": "Guard channels and consul roles saved. Configure the same channels in guard_bot."},
+  "appeal_pause_done": {"status": "unverified", "text": "New appeals paused. Open appeals can still reach a verdict."},
+  "appeal_resume_done": {"status": "unverified", "text": "New appeals resumed."},
+  "appeal_settings_show": {"status": "unverified", "text": "Appeal server {guild}; threads {thread}; pardon {pardon}; ban summaries {baninfo}; consul roles {roles}; accepting: {active}."},
+  "sponsor_quota_bridges": {
+    "status": "unverified",
+    "text": "Ta subskrypcja osiągnęła limit aktywnych mostów. Odłącz nieużywany most albo podnieś poziom."
+  },
+  "sponsor_quota_bridge_chats": {"status": "unverified", "text": "Ten most ma już dwa czaty. Odłącz jeden, zanim dodasz kolejny."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "Ten most osiągnął dzienny limit wiadomości sponsora. Przekazywanie wznowi się o 00:00 UTC."},
+  "inbox_media_blocked": {"status": "unverified", "text": "Ze względów bezpieczeństwa ta skrzynka przyjmuje tylko tekst. Opisz sprawę bez załączników."},
+  "inbox_link_blocked": {"status": "unverified", "text": "Ze względów bezpieczeństwa linki nie są przekazywane przez tę skrzynkę. Opisz sprawę tekstem."},
+  "inbox_text_too_long": {"status": "unverified", "text": "Skróć wiadomość do 4000 znaków."},
+  "inbox_daily_limit": {"status": "unverified", "text": "Ta skrzynka osiągnęła dzienny limit wiadomości. Spróbuj po 00:00 UTC."},
+  "sponsor_tier_community": {"status": "unverified", "text": "Rola społeczności"},
+  "sponsor_status_pending": {"status": "unverified", "text": "Korzyści z roli społeczności włączą się za około {days} dni od jej pierwszego zaobserwowania."},
+  "sponsor_status_expired_retention": {"status": "unverified", "text": "Okres przejściowy dobiegł końca. Odzyskaj rolę albo przekaż społeczność innemu sponsorowi lub administratorowi bota. Po 30 dniach bot opuści ją i usunie dane."},
+  "sponsor_notice_expired_retention": {"status": "unverified", "text": "Twój okres przejściowy dobiegł końca. Jeśli inny sponsor lub administrator bota nie przejmie społeczności, bot opuści je i usunie ich dane za 30 dni."},
+  "sponsor_notice_community_lost": {"status": "unverified", "text": "Utracono rolę społeczności. Funkcje sponsora będą działać jeszcze przez {days} dni. Potem zostanie 30 dni do opuszczenia społeczności i usunięcia danych, chyba że przejmie ją inny sponsor lub administrator bota."},
+  "sponsor_quota_chats": {
+    "status": "unverified",
+    "text": "Ta subskrypcja osiągnęła limit podłączonych czatów. Usuń czat albo podnieś poziom."
+  },
+  "sponsor_status_usage": {
+    "status": "unverified",
+    "text": "Aktywne mosty: {bridges}/{bridge_limit}; czaty: {chats}/{chat_limit}; wiki: {wikis}/{wiki_limit}; źródła społecznościowe: {socials}/{social_limit}. Dziś: {relay_used}/{relay_limit} wiadomości wychodzących; najwyżej {relay_minute} na minutę."
+  },
+  "sponsor_subscribe_usage": {
+    "status": "unverified",
+    "text": "Poziom 1: {bridges1} aktywne mosty, {chats1} czaty, do {minute1} kopii wychodzących na minutę i {day1} na dobę UTC. Poziom 2: {bridges2} mostów, {chats2} czatów, {minute2} kopii na minutę i {day2} na dobę. Każda wiadomość docelowa kosztuje jedną jednostkę. Funkcje sponsora działają jeszcze przez 30 dni po wygaśnięciu płatności; potem przekazywanie zostaje wstrzymane, a miejsca społeczności zwolnione. Ustawienia pozostają zapisane."
+  },
+  "sponsor_status_expired": {"status": "unverified", "text": "Minęło 30 dni działania po wygaśnięciu płatności. Przekazywanie jest wstrzymane. Mosty i ustawienia są zapisane; odnów subskrypcję i ponownie przypisz społeczności."}
 }

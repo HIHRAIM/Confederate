@@ -14,7 +14,7 @@ One integer space cut into **four** regions by three floors, all of them declare
 
 * **1 … 49999 — ordinary bridges.** `/atb <n>` takes the number the admin names (creating the bridge if it is new); `/atb new` asks `db/bridges.py: next_free_bridge_id` for the *lowest free* number. Holes are reused deliberately — a bridge disappears with its last chat, and its number returns to circulation instead of pushing a counter up forever. The ceiling used to be the appeal floor and was lowered to the sponsor floor when that region was cut out; fifty thousand numbers is three orders of magnitude more than this deployment has used.
 * **50000 … 99999 — sponsor bridges.** `db/sponsors.py: claim_sponsor_bridge_id`, max+1 taken over `bridges` **and** over `sponsor_bridges`. Holes are deliberately **not** reused: the ownership row outlives the bridge, so an emptied number is still spoken for and its owner gets their own bridge back by attaching a chat to it. Handing it to somebody else would give them a bridge with a stranger's owner.
-* **100000 … 999999 — appeal bridges.** `db/appeals.py: next_appeal_bridge_id` hands out max+1 *within that band*; these are short-lived (one per appeal, garbage-collected 30 days after the verdict), so holes there are not worth reusing. The upper bound is what keeps the allocator from reading the newest inbox conversation as the newest appeal.
+* **100000 … 999999 — appeal bridges.** `db/appeals.py: next_appeal_bridge_id` hands out max+1 *within that band*; these are short-lived (one per appeal, garbage-collected 7 days after the verdict), so holes there are not worth reusing. The upper bound is what keeps the allocator from reading the newest inbox conversation as the newest appeal.
 * **1000000 and above — inbox conversations.** `db/inbox.py: claim_inbox_bridge_id`, same max+1 shape; a conversation closes after 30 days of silence, so holes are not worth reusing here either.
 
 The last two regions are reachable through their allocators and through **nothing else**: `/atb <n>` refuses them to everybody, Bot Admins included (`sponsors.py: atb_decision`). Before sponsors existed that was untidiness — `/atb 100000` would attach a chat into somebody's appeal — and it became a hole the moment `/atb` was opened to people who are not the operator.
@@ -57,7 +57,9 @@ Each side of a bridge answers for itself, and the relay asks twice per message:
 * **Chat Admin** — per-chat rows in `chat_admins`, written as a side effect of the grants above; checked by `utils.is_chat_admin`, which also honors the two server-wide roles.
 * **Local Admin** — `/setlocaladmin`, stored in `server_admins`. Exists for the external control panel (scoped panel login), not for bot commands.
 * **Localizer** — `/localizer-add`, stored in `localizers`. May edit this bot's localization through the control panel.
-* **Sponsor Bridge Admin** — not granted by anybody: it follows from holding a Patreon tier role on the creator's server (`sponsors.py`). Scoped to the communities the sponsor claimed with `/sponsor-claim` (`sponsor_communities`), it allows opening bridges there, and on those bridges (`sponsor_bridges`) it is the *exclusive* right to attach chats. A linked Telegram account (`account_links`) holds the status through its Discord account and never on its own.
+* **Sponsor Bridge Admin** — not granted by anybody: it follows from holding a Patreon tier role on the creator's server (`sponsors.py`). Scoped to the communities the sponsor claimed with `/sponsor-claim` (`sponsor_communities`), it allows opening bridges there and attaching chats to their own bridges (`sponsor_bridges`). Bot Admins may attach chats too. A linked Telegram account (`account_links`) holds the status through its Discord account and never on its own.
+
+The sponsor's active bridges, chats and followed sources are counted across the whole subscription, rather than separately per bridge. The shared fan-out (`message_relay.py: relay_message`) reserves one unit per outgoing copy, including Telegram gallery follow-ups, against a per-minute and persistent UTC-day budget before inserting the origin or sending anything. When the paid tier reaches zero, the previous tier remains usable for 30 days; then relay pauses. Ownership, settings and stored sources remain. Bot Admins can attach a chat to a sponsor bridge, and its traffic still uses the owner's budget.
 
 ## Background loops
 
@@ -84,7 +86,7 @@ From `discord_bot/client.py` (started in `DiscordBot.setup_hook`):
 | `bridge_rules_loop`      | every 60 s         | posts bridge rules when both the interval and the message-count threshold pass |
 | `deadtopic_loop`         | daily at 00:00 UTC | sends-and-deletes a phantom message in chats silent past their own window (`deadtopic_chats.days`: 6 from `/deadtopic`, 3 for inbox conversation threads) |
 | `backup_loop`            | every 12 h         | encrypted `bridge.db` snapshot to the Discord/Telegram backup chats |
-| `appeal_maintenance_loop`| every 24 h         | kicks Purgatorium members with no appeal after 7 days; garbage-collects appeals resolved > 30 days ago |
+| `appeal_maintenance_loop`| every 24 h         | kicks Purgatorium members with no appeal after 7 days; garbage-collects appeals resolved > 7 days ago |
 
 ## Followed sources (feeds)
 
@@ -106,9 +108,9 @@ Webhooks **cannot post into threads or forum posts** (that would need `thread=` 
 
 ## Appeals (Purgatorium)
 
-The ban-appeal system runs together with the separate **Confederate Guard**: banned users land on the Purgatorium server (`config.PURGATORIUM_GUILD_ID`), run `/appeal`, and get a thread in `APPEAL_CHANNEL_ID` bridged to their DM. The bridge for it is an ordinary bridge whose id is allocated from a reserved range **at and above `APPEAL_BRIDGE_ID_FLOOR` = 100000** (`db/appeals.py: next_appeal_bridge_id`) — normal bridges must stay below.
+The ban-appeal system runs together with **Confederate Guard**. The operator's Purgatorium is registered from `config.py`; a sponsor may register their own appeal server. `/appeal` selects the server where the appellant is a member (or asks for a server ID when several qualify), then creates a thread in that server's configured channel and bridges it to the appellant's DM. The bridge number comes from the reserved range **at and above `APPEAL_BRIDGE_ID_FLOOR` = 100000** (`db/appeals.py: next_appeal_bridge_id`). One appellant can have one open case at a time. Sponsorship limits neither opening appeals nor their relay traffic. `db/messages.py: cleanup_appeal_message_history` removes appeal copy mappings after seven days, including for open cases; verdict metadata and bridge attachments are removed seven days after resolution.
 
-Consuls (holders of the `CONSULS` roles) write in the thread; the appellant sees them anonymized as "Consul A/B/…" or under a `/setname` alias (`consul_names`, indexes per thread in `appeal_consuls`). Verdict buttons in the pinned message pardon (kick from Purgatorium + publish the user id to `APPEAL_PARDON_CHANNELS` for Confederate Guard to unban everywhere) or condemn (permanent ban). Confederate Guard also posts ban info into the thread — recognized by `GUARD_BOT_ID` and auto-pinned. Verification-state sync with Confederate Guard uses the same channel trick: `/verify`/`/unverify` publish bare user ids into the `VERIFIED`/`UNVERIFIED` channels (toggle: `/verify-list`).
+Consuls with the configured roles on that server write in the thread; the appellant sees them anonymized as "Consul A/B/…" or under a `/setname` alias (`consul_names` for the operator, `appeal_consul_aliases` per sponsor server; indexes per thread in `appeal_consuls`). Verdict buttons pardon (publish the user ID to that server's Guard pardon channels, then kick from that appeal server) or condemn (ban from that appeal server). Guard posts only the ban information for the matching network scope into the thread. Verification-state sync for the operator uses `/verify`/`/unverify` and the `VERIFIED`/`UNVERIFIED` channels (toggle: `/verify-list`).
 
 ## Inbox conversations
 
