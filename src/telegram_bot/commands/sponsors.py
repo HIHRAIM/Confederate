@@ -171,3 +171,18 @@ async def sponsor_subscribe_cmd(message: Message):
             minute1=tier1["relay_minute"], day1=tier1["relay_day"],
             bridges2=tier2["bridges"], chats2=tier2["chats"],
             minute2=tier2["relay_minute"], day2=tier2["relay_day"]))
+
+@router.message(Command("limit"))
+async def limit_cmd(message: Message):
+    """Share the Discord subscriber's usage through their authenticated link."""
+    lang = get_chat_lang(str(message.chat.id))
+    owner = db.canonical_sponsor_id("telegram", message.from_user.id) if message.from_user else None
+    if owner is None:
+        await message.answer(localized("limit_sponsors_only", lang))
+        return
+    live = await sponsors.live_discord_tier(owner)
+    if live is not None:
+        sponsors.apply_tier(owner, live)
+    text = (sponsors.limit_text(owner, lang) if sponsors.sponsor_tier("discord", owner) != 0
+            else localized("limit_sponsors_only", lang))
+    await message.answer(text)

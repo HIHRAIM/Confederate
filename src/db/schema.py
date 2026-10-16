@@ -13,6 +13,22 @@ literal survive.
 """
 
 SCHEMA_SQL = """
+-- Rendered sponsor copies wait for delivery capacity, including after restart.
+-- Written by the relay and drained by sponsor_delivery; contains no tokens.
+CREATE TABLE IF NOT EXISTS sponsor_relay_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    discord_id TEXT NOT NULL,
+    bridge_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'main',
+    created_at INTEGER NOT NULL,
+    retry_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS sponsor_relay_queue_owner ON sponsor_relay_queue(discord_id,id);
+CREATE INDEX IF NOT EXISTS sponsor_relay_queue_destination ON sponsor_relay_queue(discord_id,platform,chat_id,id);
 -- bridges: one row per bridge; nothing but the number. A bridge exists as
 -- long as at least one chat points at it (see remove_chat_from_bridge).
 -- Written by attach_chat, read everywhere. What kind of bridge a number is
@@ -46,8 +62,11 @@ CREATE TABLE IF NOT EXISTS chats (
 -- read by the edit/delete propagation, whois and reply resolution.
 -- origin_sender_name is kept so a webhook reply line can name the author
 -- after the member left; reply_to_message_id points at another messages.id;
--- forward_type/forward_name reproduce the "(forwarded from ...)" line on
--- edits. Rows older than 30 days are dropped by cleanup_old_messages.
+-- reply_external is JSON {"name","url"} for a Telegram reply to a message
+-- the bridge has no record of (another chat), so that edits and queued
+-- copies rebuild its reply line; forward_type/forward_name reproduce the
+-- "(forwarded from ...)" line on edits. Rows older than 30 days are dropped
+-- by cleanup_old_messages.
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bridge_id INTEGER,
@@ -768,6 +787,7 @@ _COLUMN_ADDITIONS = [
     ("messages", "origin_sender_id", "TEXT"),
     ("messages", "origin_sender_name", "TEXT"),
     ("messages", "reply_to_message_id", "INTEGER"),
+    ("messages", "reply_external", "TEXT"),
     ("messages", "forward_type", "TEXT"),
     ("messages", "forward_name", "TEXT"),
     ("pending_consents", "first_message_id", "TEXT"),

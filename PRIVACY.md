@@ -1,6 +1,6 @@
 # Confederate Privacy Policy
 
-_Last updated: 2026-08-07_
+_Last updated: 2026-10-16_
 
 Confederate is a self-hosted, open-source relay bot that bridges Discord channels/threads and Telegram chats/topics into shared conversation spaces. This document describes what data the software processes, why, for how long, and what choices users have.
 
@@ -8,7 +8,7 @@ Confederate is a self-hosted, open-source relay bot that bridges Discord channel
 
 ## What the bot processes
 
-To relay a message between chats, the bot receives it through the Discord and Telegram APIs, reformats it (header with the sender's name and community, mentions, attachments, forward/reply attribution) and posts copies to the other chats of the bridge. **Relaying is the product**: by design, messages written in a bridged chat become visible in every other chat of that bridge, including communities and platforms the author may not be in.
+To relay a message between chats, the bot receives it through the Discord and Telegram APIs, reformats it (header with the sender's name and community, mentions, attachments, forward/reply attribution) and posts copies to the other chats of the bridge. **Relaying is the product**: by design, messages written in a bridged chat become visible in every other chat of that bridge, including communities and platforms the author may not be in. A reply whose replied-to message has no copy in the destination chat carries that message's author name and a link to it where it is — its original, or a copy in another chat the bot serves, possibly in another bridge; a link into a private Telegram group opens only for its members. Appeals and inbox conversations never carry such links.
 
 Messages are only relayed for users who have accepted the **forwarding consent** (the prompt with the "Accept" button, also available via `/verify`). Until consent is given, a user's messages are not relayed: the first message is held back (see retention below) and later ones are deleted from the bridged chat.
 
@@ -22,8 +22,9 @@ All data lives in a local SQLite database (`bridge.db`) on the operator's machin
 
 | Data | Contents | Retention |
 |---|---|---|
-| Relay metadata | Bridge ID, origin platform/chat/message IDs, sender ID and display name, reply linkage, forward attribution (type and source name), timestamp, and the IDs of the posted copies | **30 days**, then deleted (this window powers edit/delete propagation) |
-| Message content | **Not stored**, with four exceptions listed below | — |
+| Relay metadata | Bridge ID, origin platform/chat/message IDs, sender ID and display name, reply linkage (for a Telegram reply to a message in a chat the bridge has no record of: that message's author name and link), forward attribution (type and source name), timestamp, and the IDs of the posted copies | **30 days**, then deleted (this window powers edit/delete propagation) |
+| Message content | Not stored for immediate delivery, except for the content categories below and rendered sponsor copies waiting for delivery capacity | See the corresponding rows |
+| Deferred sponsor copies | Rendered message text, formatting/embeds, attachment links, attribution, reply IDs, destination IDs and the owning Discord subscription ID; no tokens | Until delivered, origin deletion, chat detachment or community cleanup; survives restarts. Origin metadata is retained while any copy is pending |
 | Pending consent | The first message of a not-yet-verified user (serialized, so it can be relayed once they accept), consent prompt IDs | Until accepted, at most **24 hours** |
 | Verification records | Platform, user ID, chat where consent was accepted, timestamps | **365 days** from consent, then expired and deleted |
 | Bridge rules | The rules text saved with `/remindrules` | Until `/remindrules disable` |
@@ -52,7 +53,7 @@ All data lives in a local SQLite database (`bridge.db`) on the operator's machin
 | Sponsor status | Per Discord account: the Patreon tier the bot last saw on the creator's server, when it changed, and — if a subscription has lapsed — the moment that was noticed and whether the two notices have been sent. **No payment data of any kind**: the bot never talks to Patreon and never sees a name, an email address, an amount or a card | Kept indefinitely, including after a subscription ends — the row is what stops the same lapse being announced twice |
 | Sponsor communities and bridges | Which servers/groups a sponsor has claimed and when, and which bridge numbers they own | Work continues for 30 days after a paid role disappears, or one day after a community role disappears. Unsupported communities and their scoped data are erased 30 days later; bridge-number ownership remains reserved to its owner |
 
-The four content exceptions are: pending first messages (≤ 24 h), bridge rules, poll questions/options (≤ 7 days after close), and localization suggestions (≤ 1 year). Everything else content-wise exists only as ordinary messages inside your Discord/Telegram chats, not in the bot's database.
+The content exceptions are: pending first messages (≤ 24 h), bridge rules, poll questions/options (≤ 7 days after close), localization suggestions (≤ 1 year), and rendered sponsor copies waiting for delivery capacity. The waiting-copy queue is local to the operator; after a successful delivery its content is removed and the ordinary relay metadata remains.
 
 ## Where data goes
 
@@ -93,7 +94,7 @@ The software contains **no analytics, tracking, advertising or data-sale pipelin
 - **Revoking consent.** Send `/unverify` at any time; your future messages will no longer be relayed until you verify again.
 - **Privacy switches.** `/privacy` opens a personal menu — on either platform — with three switches you control yourself: hide yourself from `/whois` (it may then show no more than your nickname and avatar), hide your avatar in webhook copies (a neutral picture is used instead), and refuse `/mention` pings from other communities. Each switch holds in every chat of every bridge and stays on until you turn it off. Your display name in relayed copies is not covered: it is what makes a bridged conversation readable.
 - **Linked accounts.** Linking your Discord and Telegram accounts is entirely your choice, needs an explicit command on **both** sides within thirty minutes, and can be undone at any moment with `/unlink-accounts` from either side — which deletes the pairing itself, not merely a flag. Nobody can link your account to theirs without you: each side has to name the other, and a one-sided claim expires unanswered after thirty minutes. Until you link them, the bot has no idea the two accounts belong to one person.
-- **Editing and deleting.** Edits within 30 days update relayed copies. Deleting a Discord original within 30 days deletes its copies. Deleting a Telegram supergroup original does so only when the optional MTProto listener receives a confirmed event with that exact source chat and message ID; Telegram may omit such events or send them while the listener is offline. The bot does not infer deletion from a failed lookup. After 30 days the linkage metadata is gone and copies must be removed manually by chat moderators.
+- **Editing and deleting.** Edits within 30 days update relayed copies. Deleting a Discord original within 30 days deletes its copies. Deleting a Telegram supergroup original does so too when the operator has enabled the optional MTProto check: the bot then asks Telegram by ID whether the originals it relayed in the last 30 days still exist, and removes the copies only when Telegram answers that the ID holds no message (an error or a missing answer never counts). It finds a deletion within minutes for recent messages and within hours for older ones. Basic groups and private chats cannot be checked. After 30 days the linkage metadata is gone and copies must be removed manually by chat moderators.
 - **Questions and erasure requests** (e.g. removal of verification records or relayed copies older than 30 days) should go to the operator of your instance — they hold the database. For questions about the software itself, open an issue in the repository.
 
 ## Security

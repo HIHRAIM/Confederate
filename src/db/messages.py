@@ -14,28 +14,33 @@ from db.ranges import bridge_range
 def cleanup_old_messages(days=30):
     """Retention sweep: drop relayed-message records older than `days`,
     together with their copies and media-group mappings. Runs at start-up and
-    daily (main.py). Only the *records* go — the chat messages themselves stay, they
+    daily (main.py). Origins with queued sponsor copies remain until those copies
+    are sent or cancelled. Only the *records* go — the chat messages themselves stay, they
     just can no longer be edited/deleted through the bridge or answered by
     whois."""
     limit = int(time.time()) - days * 86400
 
     cur.execute(
         "DELETE FROM message_copies WHERE message_id IN "
-        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?)",
+        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?"
+        " AND id NOT IN (SELECT message_id FROM sponsor_relay_queue))",
         (limit,)
     )
     cur.execute(
         "DELETE FROM media_group_members WHERE message_id IN "
-        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?)",
+        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?"
+        " AND id NOT IN (SELECT message_id FROM sponsor_relay_queue))",
         (limit,)
     )
     cur.execute(
         "DELETE FROM gallery_uploads WHERE message_id IN "
-        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?)",
+        "(SELECT id FROM messages WHERE created_at IS NOT NULL AND created_at < ?"
+        " AND id NOT IN (SELECT message_id FROM sponsor_relay_queue))",
         (limit,)
     )
     cur.execute(
-        "DELETE FROM messages WHERE created_at IS NOT NULL AND created_at < ?",
+        "DELETE FROM messages WHERE created_at IS NOT NULL AND created_at < ?"
+        " AND id NOT IN (SELECT message_id FROM sponsor_relay_queue)",
         (limit,)
     )
     conn.commit()
@@ -87,6 +92,87 @@ def find_message_db_id_by_media_member(chat_id, platform_message_id):
         (chat_id, str(platform_message_id))
     ).fetchone()
     return row["message_id"] if row else None
+
+def _telegram_group_pattern(group_id):
+    """``<group>:%`` — every topic of one Telegram group. A supergroup numbers
+    its messages once for all its topics, so the group and a message id are
+    enough to find a message whichever topic it was written in."""
+    return f"{int(group_id)}:%"
+
+def find_telegram_message_db_id(group_id, platform_message_id):
+    """The relayed message one Telegram message of a group stands for, or None.
+
+    The id may be the original itself, any part of an album, or one of the
+    bridge's own copies in that group — which is what a Telegram reply to a
+    message of another chat points at, and the other chat may hold either."""
+    pattern = _telegram_group_pattern(group_id)
+    message_id = str(int(platform_message_id))
+    row = cur.execute(
+        "SELECT id FROM messages WHERE origin_platform='telegram' AND origin_chat_id LIKE ?"
+        " AND origin_message_id=? ORDER BY id DESC LIMIT 1",
+        (pattern, message_id)
+    ).fetchone()
+    if row:
+        return row["id"]
+    row = cur.execute(
+        "SELECT message_id FROM media_group_members WHERE chat_id LIKE ? AND message_id_platform=?"
+        " LIMIT 1",
+        (pattern, message_id)
+    ).fetchone()
+    if row:
+        return row["message_id"]
+    row = cur.execute(
+        "SELECT message_id FROM message_copies WHERE platform='telegram' AND chat_id LIKE ?"
+        " AND message_id_platform=? ORDER BY id DESC LIMIT 1",
+        (pattern, message_id)
+    ).fetchone()
+    return row["message_id"] if row else None
+
+def telegram_origins_created_between(since, until, after_id=0, limit=300):
+    """Telegram originals from supergroups relayed in ``[since, until)``, in id
+    order after `after_id`, at most `limit` of them — the slices
+    telegram_deletions.py checks against Telegram.
+
+    Each comes as ``(message_db_id, group_id, [telegram ids])``: an album is
+    one relayed message standing for several Telegram messages, listed from
+    `media_group_members`; any other message stands for its own id. Basic
+    groups are left out — their ids are not the group's own and cannot be
+    asked about."""
+    rows = cur.execute(
+        "SELECT id, origin_chat_id, origin_message_id FROM messages"
+        " WHERE origin_platform='telegram' AND origin_chat_id LIKE '-100%'"
+        " AND created_at>=? AND created_at<? AND id>? ORDER BY id LIMIT ?",
+        (int(since), int(until), int(after_id), int(limit))
+    ).fetchall()
+    if not rows:
+        return []
+    members = {}
+    marks = ",".join("?" for _ in rows)
+    for member in cur.execute(
+            f"SELECT message_id, message_id_platform FROM media_group_members"
+            f" WHERE message_id IN ({marks})",
+            [row["id"] for row in rows]).fetchall():
+        members.setdefault(member["message_id"], []).append(member["message_id_platform"])
+    result = []
+    for row in rows:
+        ids = [int(i) for i in members.get(row["id"], [row["origin_message_id"]])
+               if str(i).isdigit()]
+        if ids:
+            result.append((row["id"], int(row["origin_chat_id"].split(":", 1)[0]), ids))
+    return result
+
+def latest_telegram_copy_ids(group_id, limit=3):
+    """The ids of the newest copies the bridge posted into a Telegram group —
+    messages the bot wrote itself and can always read back, which is what
+    lets telegram_deletions.py tell an answer it may trust from one it may
+    not."""
+    rows = cur.execute(
+        "SELECT message_id_platform FROM message_copies WHERE platform='telegram'"
+        " AND chat_id LIKE ? ORDER BY id DESC LIMIT ?",
+        (_telegram_group_pattern(group_id), int(limit))
+    ).fetchall()
+    return [int(row["message_id_platform"]) for row in rows
+            if str(row["message_id_platform"]).isdigit()]
 
 def is_relay_copy(platform: str, chat_id: str, message_id_platform: str) -> bool:
     """Return True if the given message was sent by the bridge bot as a relay
@@ -142,7 +228,13 @@ def cleanup_wiki_relay_records(keep_per_chat=100, days=30):
     the link between the copies of one change in different chats: deleting a
     relayed wiki message in one chat stops taking the others with it once the
     row is gone. That is the deliberate trade for not letting the table grow
-    without bound."""
+    without bound.
+
+    The per-chat cut is one ranking pass over the wiki copies, newest first,
+    and everything past `keep_per_chat` goes. It used to count the newer
+    copies again for every row, which on a real database held the event loop
+    for twenty seconds on each run — this function is called on the loop, so
+    that was twenty seconds of no commands answered and no heartbeat sent."""
     cutoff = int(time.time()) - days * 86400
     cur.execute(
         "DELETE FROM message_copies WHERE message_id IN ("
@@ -153,18 +245,20 @@ def cleanup_wiki_relay_records(keep_per_chat=100, days=30):
     )
     cur.execute(
         "DELETE FROM message_copies WHERE id IN ("
-        "  SELECT c.id FROM message_copies c"
-        "  JOIN messages m ON m.id = c.message_id"
-        "  WHERE m.origin_platform LIKE 'feed:wiki%'"
-        "    AND (SELECT COUNT(*) FROM message_copies c2"
-        "         JOIN messages m2 ON m2.id = c2.message_id"
-        "         WHERE c2.chat_id = c.chat_id"
-        "           AND m2.origin_platform LIKE 'feed:wiki%'"
-        "           AND c2.id > c.id) >= ?)",
+        "  SELECT id FROM ("
+        "    SELECT c.id AS id,"
+        "           ROW_NUMBER() OVER (PARTITION BY c.chat_id"
+        "                              ORDER BY c.id DESC) AS newest_first"
+        "    FROM message_copies c"
+        "    JOIN messages m ON m.id = c.message_id"
+        "    WHERE m.origin_platform LIKE 'feed:wiki%'"
+        "      AND c.chat_id IS NOT NULL)"
+        "  WHERE newest_first > ?)",
         (keep_per_chat,)
     )
     cur.execute(
         "DELETE FROM messages WHERE origin_platform LIKE 'feed:wiki%'"
         " AND id NOT IN (SELECT message_id FROM message_copies)"
+        " AND id NOT IN (SELECT message_id FROM sponsor_relay_queue)"
     )
     conn.commit()

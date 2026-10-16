@@ -292,14 +292,18 @@ async def deliver_telegram_relay(
 
     Discord-only markup that Telegram can't render (timestamps) is localized
     first; a reply is sent as a native reply where the replied-to copy still
-    exists, and retried without the reference when it doesn't."""
+    exists, and retried without the reference when it doesn't. A reply line
+    that links to the message elsewhere (`message_relay.ReplyLine`) is
+    rendered as a link, and the copy's preview stays on the body's own links."""
     from telegram_bot import bot as tg_bot
     chat_id_str, thread = chat["chat_id"].split(":")
     ts_lang = get_chat_lang(chat["chat_id"])
     body_html = convert_discord_timestamps(body_telegram_html or escape_html(body_plain), ts_lang)
     body_plain_local = convert_discord_timestamps(body_plain, ts_lang)
+    preview_kwargs = ({} if suppress_link_previews else
+                      message_relay.telegram_link_preview_kwargs(reply_line, body_html))
     if reply_line:
-        body_html = f"{escape_html(reply_line)}\n{body_html}"
+        body_html = f"{message_relay.reply_line_html(reply_line)}\n{body_html}"
     text_html = build_telegram_text(header, body_html, body_plain_local,
                                     spoiler=untrusted)
     send_kwargs = dict(
@@ -307,7 +311,7 @@ async def deliver_telegram_relay(
         message_thread_id=int(thread) or None,
         text=text_html,
         parse_mode="HTML",
-        disable_web_page_preview=suppress_link_previews,
+        **(preview_kwargs or {"disable_web_page_preview": suppress_link_previews}),
     )
     if reply_to_platform_message_id:
         send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
@@ -709,6 +713,12 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
     telegram_text = replace_channel_mentions_for_telegram(text, guild)
     text_html = discord_to_telegram_html(telegram_text)
 
+    from sponsor_delivery import update_pending_bodies
+    update_pending_bodies(row["id"], lambda chat: {
+        "header": header, "body_plain": telegram_text,
+        "body_discord": discord_text if discord_text is not None else text,
+        "body_telegram_html": text_html, "embeds": discord_embeds or [],
+    })
     copies = db.cur.execute(
         "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
         (row["id"],)
@@ -739,7 +749,9 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                     chat_id=int(chat_id),
                     message_id=int(c["message_id_platform"]),
                     text=build_telegram_text(header, body_html, body_plain),
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    **message_relay.relay_edit_link_preview_kwargs(
+                        row["id"], c, ts_lang, body_html),
                 )
             elif c["platform"] == "inbox":
                 from inbox import edit_inbox_relay_copy
@@ -884,6 +896,7 @@ async def delete_all_copies_and_origin(msg_id):
     from discord_bot.feeds import drop_gallery_upload
     await drop_gallery_upload(msg_id)
 
+    db.cur.execute("DELETE FROM sponsor_relay_queue WHERE message_id=?", (msg_id,))
     db.cur.execute("DELETE FROM message_copies WHERE message_id=?", (msg_id,))
     db.cur.execute("DELETE FROM media_group_members WHERE message_id=?", (msg_id,))
     db.cur.execute("DELETE FROM messages WHERE id=?", (msg_id,))

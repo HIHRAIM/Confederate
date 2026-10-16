@@ -537,6 +537,7 @@ async def help_command(interaction: discord.Interaction):
         localized_help("cmd_add_telegram", lang),
         localized_help("cmd_unlink_accounts", lang),
         localized_help("cmd_sponsor", lang),
+        localized("cmd_limit", lang),
         localized_help("cmd_sponsor_claim", lang),
         localized_help("cmd_sponsor_release", lang),
         localized_help("cmd_sponsor_subscribe", lang),

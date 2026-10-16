@@ -773,7 +773,7 @@
   },
   "inbox_closed_chat": {
     "status": "unverified",
-    "text": "Ta rozmowa została zamknięta."
+    "text": "Ten temat został zamknięty."
   },
   "inbox_closed_user": {
     "status": "unverified",
@@ -1267,6 +1267,10 @@
   "reply_external": {
     "status": "unverified",
     "text": "(odpowiadając na wiadomość z innego czatu)"
+  },
+  "reply_external_named": {
+    "status": "unverified",
+    "text": "(odpowiadając na wiadomość {name} z innego czatu)"
   },
   "reply_unknown": {
     "status": "unverified",
@@ -2325,7 +2329,7 @@
     "text": "Ta subskrypcja osiągnęła limit aktywnych mostów. Odłącz nieużywany most albo podnieś poziom."
   },
   "sponsor_quota_bridge_chats": {"status": "unverified", "text": "Ten most ma już dwa czaty. Odłącz jeden, zanim dodasz kolejny."},
-  "sponsor_relay_limit_notice": {"status": "unverified", "text": "Ten most osiągnął dzienny limit wiadomości sponsora. Przekazywanie wznowi się o 00:00 UTC."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "The sponsor delivery budget is exhausted for today. Copies are queued and resume after 00:00 UTC, subject to the minute limit. Queued copies use the budget on the day they are sent."},
   "inbox_media_blocked": {"status": "unverified", "text": "Ze względów bezpieczeństwa ta skrzynka przyjmuje tylko tekst. Opisz sprawę bez załączników."},
   "inbox_link_blocked": {"status": "unverified", "text": "Ze względów bezpieczeństwa linki nie są przekazywane przez tę skrzynkę. Opisz sprawę tekstem."},
   "inbox_text_too_long": {"status": "unverified", "text": "Skróć wiadomość do 4000 znaków."},
@@ -2347,5 +2351,9 @@
     "status": "unverified",
     "text": "Poziom 1: {bridges1} aktywne mosty, {chats1} czaty, do {minute1} kopii wychodzących na minutę i {day1} na dobę UTC. Poziom 2: {bridges2} mostów, {chats2} czatów, {minute2} kopii na minutę i {day2} na dobę. Każda wiadomość docelowa kosztuje jedną jednostkę. Funkcje sponsora działają jeszcze przez 30 dni po wygaśnięciu płatności; potem przekazywanie zostaje wstrzymane, a miejsca społeczności zwolnione. Ustawienia pozostają zapisane."
   },
-  "sponsor_status_expired": {"status": "unverified", "text": "Minęło 30 dni działania po wygaśnięciu płatności. Przekazywanie jest wstrzymane. Mosty i ustawienia są zapisane; odnów subskrypcję i ponownie przypisz społeczności."}
+  "sponsor_status_expired": {"status": "unverified", "text": "Minęło 30 dni działania po wygaśnięciu płatności. Przekazywanie jest wstrzymane. Mosty i ustawienia są zapisane; odnów subskrypcję i ponownie przypisz społeczności."},
+  "slash_limit": {"status": "unverified", "text": "Show your current subscription usage"},
+  "cmd_limit": {"status": "unverified", "text": "/limit — your current subscription usage (sponsors only)."},
+  "limit_sponsors_only": {"status": "unverified", "text": "This command is available only to active sponsors, including working grace. Link Telegram to the subscribing Discord account first."},
+  "limit_status": {"status": "unverified", "text": "Communities: {communities}/{community_limit}. Bridges: {bridges}/{bridge_limit}; chats: {chats}/{chat_limit} (up to 2 per bridge). Wiki feeds: {wikis}/{wiki_limit}; social feeds: {socials}/{social_limit}.\nOutgoing copies today UTC: {day}/{day_limit}; current 60-second window: {minute}/{minute_limit}. Waiting copies: {queued}. Daily budget resets at 00:00 UTC. Limits are shared by linked accounts."}
 }

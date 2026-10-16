@@ -165,6 +165,10 @@ def _sender_for(settings, webhook_name):
             is_bot_sender=is_bot_sender,
         )
 
+    wiki_send_to_chat.relay_options = {
+        "prefer_plain": settings.get("delivery") == "message",
+        "webhook_name": webhook_name if settings.get("webhook", "own") == "own" else None,
+    }
     return wiki_send_to_chat
 
 def _renderer_for(item_kind, payload, settings):

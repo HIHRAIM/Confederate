@@ -29,8 +29,8 @@ from aiogram.types import Message
 import db
 import message_relay
 from message_relay import (
-    build_telegram_text, clean_display_name, escape_html,
-    telegram_entities_to_discord,
+    build_telegram_text, clean_display_name, escape_html, reply_line_html,
+    telegram_entities_to_discord, telegram_message_html, telegram_link_preview_kwargs,
 )
 from utils import (
     get_chat_lang, localized_consent_body, localized_consent_button,
@@ -64,6 +64,57 @@ def _telegram_source_link(message: Message):
     if fwd_username and fwd_msg_id:
         return f"https://t.me/{fwd_username}/{fwd_msg_id}"
     return None
+
+def _external_reply_origin(info):
+    """``(name, link)`` of the author of a message replied to from another
+    chat, as far as Telegram tells: a person, a hidden person (name only),
+    a group writing as itself, or a channel — whose post gets a link of its
+    own, used when the reply does not say which chat the message is in."""
+    origin = getattr(info, "origin", None)
+    kind = getattr(origin, "type", None)
+    if kind == "user":
+        user = getattr(origin, "sender_user", None)
+        return (getattr(user, "full_name", None) if user else None), None
+    if kind == "hidden_user":
+        return getattr(origin, "sender_user_name", None), None
+    if kind == "chat":
+        chat = getattr(origin, "sender_chat", None)
+        return (getattr(chat, "title", None) if chat else None), None
+    if kind == "channel":
+        chat = getattr(origin, "chat", None)
+        if chat is None:
+            return None, None
+        message_relay.note_telegram_chat(chat)
+        return chat.title, message_relay.telegram_message_link(
+            chat.id, getattr(origin, "message_id", "") or "")
+    return None, None
+
+def _external_reply(message: Message):
+    """What a reply to a message of another chat (or another topic) points at,
+    as ``(message_db_id, external)`` — at most one of them set.
+
+    Telegram names the chat and the message only when that chat is a
+    supergroup or a channel. When the pair is one the bridge knows — an
+    original relayed from there, a part of an album, or one of its own
+    copies — the reply is an ordinary reply to that relayed message, and
+    every chat holding a copy gets a native reply. Otherwise `external`
+    keeps the author's name and a link to the message for the reply line
+    (`message_relay.normalize_external_reply`)."""
+    info = getattr(message, "external_reply", None)
+    if info is None or getattr(message, "reply_to_message", None):
+        return None, None
+    chat = getattr(info, "chat", None)
+    message_id = getattr(info, "message_id", None)
+    if chat is not None:
+        message_relay.note_telegram_chat(chat)
+        if message_id:
+            db_id = db.find_telegram_message_db_id(chat.id, message_id)
+            if db_id is not None:
+                return db_id, None
+    name, url = _external_reply_origin(info)
+    if chat is not None and message_id:
+        url = message_relay.telegram_message_link(chat.id, message_id) or url
+    return None, {"name": name, "url": url}
 
 def _compose_relay_texts(base_text, remaining_files, source_link):
     """Relay body: the message's own text/caption, plus the footer standing in
@@ -157,10 +208,10 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
     source_caption = getattr(message, "caption", None)
     tg_html_source = None
     if source_text is not None:
-        tg_html_source = getattr(message, "html_text", None)
+        tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
     elif source_caption is not None:
-        tg_html_source = getattr(message, "html_text", None)
+        tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
     else:
         discord_text = texts[0] if texts else ""
@@ -204,14 +255,16 @@ async def _relay_serialized_telegram_payload(payload_json: str):
         if chat["platform"] == "telegram":
             chat_id_str, thread = chat["chat_id"].split(":")
             body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
+            preview_kwargs = telegram_link_preview_kwargs(reply_line, body_html)
             if reply_line:
-                body_html = f"{escape_html(reply_line)}\n{body_html}"
+                body_html = f"{reply_line_html(reply_line)}\n{body_html}"
             html_text = build_telegram_text(header, body_html, body_plain)
             send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
                 text=html_text,
                 parse_mode="HTML",
+                **preview_kwargs,
             )
             if reply_to_platform_message_id:
                 send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
@@ -395,11 +448,6 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
 
     is_forward = forward_type is not None
 
-    is_external_reply = (
-        getattr(message, "external_reply", None) is not None
-        and not getattr(message, "reply_to_message", None)
-    )
-
     pending_reply_to_msg_db_id = None
     if (
         not is_forward
@@ -433,6 +481,13 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     ).fetchone()
     if not row:
         return
+
+    message_relay.note_telegram_chat(message.chat)
+    external_reply_info = None
+    if not is_forward:
+        external_db_id, external_reply_info = _external_reply(message)
+        if external_db_id is not None:
+            pending_reply_to_msg_db_id = external_db_id
 
     bridge_id = row["bridge_id"]
 
@@ -502,7 +557,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
-                        external_reply=is_external_reply,
+                        external_reply=external_reply_info,
                     )
                 )
             except Exception:
@@ -521,7 +576,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                         reply_to_msg_db_id=pending_reply_to_msg_db_id,
                         forward_type=forward_type,
                         forward_name=forward_name,
-                        external_reply=is_external_reply,
+                        external_reply=external_reply_info,
                     )
                 )
             return
@@ -561,14 +616,16 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
                 body_html = body_telegram_html
             else:
                 body_html = escape_html(body_plain)
+            preview_kwargs = telegram_link_preview_kwargs(reply_line, body_html)
             if reply_line:
-                body_html = f"{escape_html(reply_line)}\n{body_html}"
+                body_html = f"{reply_line_html(reply_line)}\n{body_html}"
             html_text = build_telegram_text(header, body_html, body_plain)
             send_kwargs = dict(
                 chat_id=int(chat_id_str),
                 message_thread_id=int(thread) or None,
                 text=html_text,
                 parse_mode="HTML",
+                **preview_kwargs,
             )
             if reply_to_platform_message_id:
                 send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
@@ -606,10 +663,10 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     source_caption = getattr(message, "caption", None)
     tg_html_source = None
     if source_text is not None:
-        tg_html_source = getattr(message, "html_text", None)
+        tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_text, getattr(message, "entities", None))
     elif source_caption is not None:
-        tg_html_source = getattr(message, "html_text", None)
+        tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
     else:
         discord_text = texts[0] if texts else ""
@@ -653,7 +710,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             telegram_file_count=relay_file_count,
             forward_type=forward_type,
             forward_name=forward_name,
-            external_reply=is_external_reply,
+            external_reply=external_reply_info,
             is_bot_sender=is_bot_sender,
             avatar_url=avatar_url,
             gallery_urls=gallery_urls,
@@ -731,10 +788,6 @@ async def edited_message_handler(message: Message):
             "SELECT * FROM message_copies WHERE message_id=? AND COALESCE(kind,'main')='main'",
             (row["id"],)
         ).fetchall()
-        from sponsors import sponsor_relay_allowed
-        if not sponsor_relay_allowed(row["bridge_id"], "", "", copies):
-            return
-
         gallery_urls, gallery_changed = await _refresh_gallery_for_edit(message, row["id"])
 
         texts, relay_file_count = _build_telegram_relay_texts(
@@ -750,10 +803,10 @@ async def edited_message_handler(message: Message):
         base_text = source_text or source_caption or ""
         if source_text is not None:
             discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
-            telegram_html = getattr(message, "html_text", None)
+            telegram_html = telegram_message_html(message)
         elif source_caption is not None:
             discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
-            telegram_html = getattr(message, "html_text", None)
+            telegram_html = telegram_message_html(message)
         else:
             discord_text = rendered_text
             telegram_html = None
@@ -772,7 +825,7 @@ async def edited_message_handler(message: Message):
                        origin_chat_id, message.message_id, e)
         return
 
-    def _rendered_for(chat_row, platform):
+    def _rendered_for(chat_row, platform, prefix=True, allow_gallery=True):
         """The edited body for one target: markers localized, GALLERY links
         attached, reply/forward lines back on top. Returns (plain, html).
 
@@ -782,7 +835,7 @@ async def edited_message_handler(message: Message):
         because it happens to sit in the same bridge as a chat that did
         consent."""
         target_lang = get_chat_lang(chat_row["chat_id"])
-        linked = bool(gallery_urls) and db.chat_file_consent(
+        linked = allow_gallery and bool(gallery_urls) and db.chat_file_consent(
             platform, chat_row["chat_id"], row["bridge_id"])
         item_text = rendered_text if linked else fallback_text
         item_count = relay_file_count if linked else fallback_file_count
@@ -795,24 +848,44 @@ async def edited_message_handler(message: Message):
             if edit_html is not None:
                 edit_html = edit_html.replace(f"__TG_FILES_{item_count}__", escape_html(marker))
         edit_plain, _, edit_html = message_relay.apply_gallery_links(
-            platform, edit_plain, edit_plain, edit_html, gallery_urls if linked else None
+            platform, edit_plain, edit_plain, edit_html, gallery_urls if linked else None,
+            lang=target_lang,
         )
-        if platform == "discord":
+        if platform == "discord" or not prefix:
             return edit_plain, edit_html
         edit_html, edit_plain = message_relay.prefix_relay_edit_body(
             row["id"], chat_row, target_lang, edit_html, edit_plain)
         return edit_plain, edit_html
+
+    from sponsor_delivery import update_pending_bodies
+
+    def pending_body(chat):
+        """Use the same attachment consent and body rendering before delivery."""
+        plain, html = _rendered_for(chat, chat["platform"], prefix=False)
+        fallback_plain, fallback_html = _rendered_for(chat, chat["platform"], prefix=False, allow_gallery=False)
+        return {"header": header, "body_plain": plain, "body_discord": plain,
+                "body_telegram_html": html, "_file_fallback": {
+                    "body_plain": fallback_plain, "body_discord": fallback_plain,
+                    "body_telegram_html": fallback_html}}
+
+    update_pending_bodies(row["id"], pending_body)
+    from sponsors import sponsor_relay_allowed
+    if not sponsor_relay_allowed(row["bridge_id"], "", "", copies):
+        return
 
     for c in copies:
         try:
             if c["platform"] == "telegram":
                 chat_id_str = c["chat_id"].split(":")[0]
                 edit_plain, edit_html = _rendered_for(c, "telegram")
+                edit_html = edit_html or escape_html(edit_plain)
                 await bot.edit_message_text(
                     chat_id=int(chat_id_str),
                     message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(header, edit_html or escape_html(edit_plain), edit_plain),
-                    parse_mode="HTML"
+                    text=build_telegram_text(header, edit_html, edit_plain),
+                    parse_mode="HTML",
+                    **message_relay.relay_edit_link_preview_kwargs(
+                        row["id"], c, get_chat_lang(c["chat_id"]), edit_html),
                 )
             elif c["platform"] == "discord":
                 from discord_bot import bot as dc_bot, edit_discord_relay_copy
@@ -835,8 +908,9 @@ async def edited_message_handler(message: Message):
             logger.warning("Telegram edit did not reach a copy (%s %s, message %s): %s",
                            c["platform"], c["chat_id"], c["message_id_platform"], e)
 
-    if gallery_changed:
-        await _resync_gallery_followups(row["id"], gallery_urls, row["bridge_id"])
+    if gallery_urls or gallery_changed:
+        await _resync_gallery_followups(
+            row["id"], gallery_urls, row["bridge_id"], force=gallery_changed)
 
 async def _refresh_gallery_for_edit(message: Message, message_db_id):
     """Bring a relayed message's GALLERY upload in line with an edit.
@@ -881,7 +955,7 @@ async def _refresh_gallery_for_edit(message: Message, message_db_id):
     )
     return upload["urls"], upload["urls"] != stored_urls
 
-async def _resync_gallery_followups(message_db_id, gallery_urls, bridge_id):
+async def _resync_gallery_followups(message_db_id, gallery_urls, bridge_id, *, force=True):
     """Rebuild the per-file follow-up messages of a Telegram copy after a
     re-upload handed out new links: the old ones point at a deleted GALLERY
     message, and their number may have changed.
@@ -889,36 +963,39 @@ async def _resync_gallery_followups(message_db_id, gallery_urls, bridge_id):
     The old ones are deleted in every chat that has them, the new ones go
     only to the chats still covered by an `/allow-files` consent — a
     community that withdrew it since the message was sent gets its follow-ups
-    taken down and nothing put back."""
+    taken down and nothing put back. A caption-only edit also repairs older
+    copies whose first attachment used to be embedded in the main text.
+    """
     rows = db.cur.execute(
         "SELECT * FROM message_copies WHERE message_id=? AND kind='file'",
         (message_db_id,)
     ).fetchall()
-    if not rows:
-        return
-
-    chat_ids = []
-    for r in rows:
-        if r["platform"] != "telegram":
-            continue
-        if r["chat_id"] not in chat_ids:
-            chat_ids.append(r["chat_id"])
-        try:
-            await bot.delete_message(int(r["chat_id"].split(":")[0]), int(r["message_id_platform"]))
-        except Exception:
-            pass
-
-    db.cur.execute(
-        "DELETE FROM message_copies WHERE message_id=? AND kind='file'",
+    main_rows = db.cur.execute(
+        "SELECT DISTINCT chat_id FROM message_copies WHERE message_id=? "
+        "AND platform='telegram' AND COALESCE(kind,'main')='main'",
         (message_db_id,)
-    )
-    db.conn.commit()
-
+    ).fetchall()
+    chat_ids = {r["chat_id"] for r in main_rows} | {
+        r["chat_id"] for r in rows if r["platform"] == "telegram"}
     for chat_id in chat_ids:
-        if not db.chat_file_consent("telegram", chat_id, bridge_id):
+        old = [r for r in rows if r["platform"] == "telegram" and r["chat_id"] == chat_id]
+        urls = (gallery_urls or []) if db.chat_file_consent("telegram", chat_id, bridge_id) else []
+        if not force and len(old) == len(urls):
             continue
+        from sponsors import sponsor_relay_allowed
+        if urls and not sponsor_relay_allowed(
+                bridge_id, "", "", [{"platform": "telegram", "chat_id": chat_id}] * len(urls)):
+            continue
+        for r in old:
+            try:
+                await bot.delete_message(int(chat_id.split(":")[0]), int(r["message_id_platform"]))
+            except Exception:
+                pass
+        db.cur.execute(
+            "DELETE FROM message_copies WHERE message_id=? AND platform='telegram' "
+            "AND chat_id=? AND kind='file'", (message_db_id, chat_id))
         chat_id_str, thread = chat_id.split(":")
-        for url in (gallery_urls or [])[1:]:
+        for url in urls:
             try:
                 sent = await bot.send_message(
                     chat_id=int(chat_id_str),

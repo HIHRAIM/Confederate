@@ -295,6 +295,7 @@ def purge_sponsor_community(platform, server_id, discord_id):
         "SELECT id FROM messages WHERE origin_platform=? AND origin_chat_id LIKE ?"
     )
     for table, column in (("message_copies", "message_id"),
+                          ("sponsor_relay_queue", "message_id"),
                           ("media_group_members", "message_id"),
                           ("gallery_uploads", "message_id")):
         cur.execute(f"DELETE FROM {table} WHERE {column} IN ({origin_ids})",
@@ -302,6 +303,8 @@ def purge_sponsor_community(platform, server_id, discord_id):
     cur.execute("DELETE FROM messages WHERE origin_platform=? AND origin_chat_id LIKE ?",
                 (platform, pattern))
     cur.execute("DELETE FROM message_copies WHERE platform=? AND chat_id LIKE ?",
+                (platform, pattern))
+    cur.execute("DELETE FROM sponsor_relay_queue WHERE platform=? AND chat_id LIKE ?",
                 (platform, pattern))
     cur.execute("DELETE FROM media_group_members WHERE chat_id LIKE ?", (pattern,))
     cur.execute("DELETE FROM poll_messages WHERE platform=? AND chat_id LIKE ?",

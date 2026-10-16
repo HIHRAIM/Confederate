@@ -773,7 +773,7 @@
   },
   "inbox_closed_chat": {
     "status": "unverified",
-    "text": "Діалог закрито."
+    "text": "Тему закрито."
   },
   "inbox_closed_user": {
     "status": "unverified",
@@ -1267,6 +1267,10 @@
   "reply_external": {
     "status": "unverified",
     "text": "(відповідаючи на повідомлення з іншого чату)"
+  },
+  "reply_external_named": {
+    "status": "unverified",
+    "text": "(відповідаючи на повідомлення {name} з іншого чату)"
   },
   "reply_unknown": {
     "status": "unverified",
@@ -2325,7 +2329,7 @@
     "text": "Досягнуто ліміту активних мостів цієї підписки. Звільніть міст або підвищте рівень."
   },
   "sponsor_quota_bridge_chats": {"status": "unverified", "text": "У цьому мосту вже два чати. Спочатку від’єднайте один із них."},
-  "sponsor_relay_limit_notice": {"status": "unverified", "text": "Міст досяг денного ліміту повідомлень спонсора. Пересилання відновиться о 00:00 UTC."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "The sponsor delivery budget is exhausted for today. Copies are queued and resume after 00:00 UTC, subject to the minute limit. Queued copies use the budget on the day they are sent."},
   "inbox_media_blocked": {"status": "unverified", "text": "Для безпеки цей inbox приймає лише текст. Опишіть питання без вкладень."},
   "inbox_link_blocked": {"status": "unverified", "text": "Для безпеки посилання через цей inbox не пересилаються. Опишіть питання звичайним текстом."},
   "inbox_text_too_long": {"status": "unverified", "text": "Скоротіть повідомлення до 4000 символів."},
@@ -2347,5 +2351,9 @@
     "status": "unverified",
     "text": "Рівень 1: {bridges1} активні мости, {chats1} чати, до {minute1} вихідних копій за хвилину і {day1} за добу UTC. Рівень 2: {bridges2} мостів, {chats2} чатів, {minute2} копій за хвилину і {day2} за добу. Кожне повідомлення в чаті отримувача витрачає одну одиницю. Після завершення оплати всі спонсорські функції працюють ще 30 днів; потім пересилання зупиняється, а місця спільнот звільняються. Налаштування зберігаються."
   },
-  "sponsor_status_expired": {"status": "unverified", "text": "30 днів роботи після завершення оплати минули. Пересилання зупинено. Мости й налаштування збережено; поновіть підписку й знову закріпіть спільноти."}
+  "sponsor_status_expired": {"status": "unverified", "text": "30 днів роботи після завершення оплати минули. Пересилання зупинено. Мости й налаштування збережено; поновіть підписку й знову закріпіть спільноти."},
+  "slash_limit": {"status": "unverified", "text": "Поточне використання лімітів підписки"},
+  "cmd_limit": {"status": "unverified", "text": "/limit — поточне використання лімітів підписки (лише спонсори)."},
+  "limit_sponsors_only": {"status": "unverified", "text": "Команда доступна лише чинним спонсорам, включно з періодом продовження роботи. Для Telegram спочатку зв’яжіть акаунт із Discord-акаунтом підписника."},
+  "limit_status": {"status": "unverified", "text": "Communities: {communities}/{community_limit}. Bridges: {bridges}/{bridge_limit}; chats: {chats}/{chat_limit} (up to 2 per bridge). Wiki feeds: {wikis}/{wiki_limit}; social feeds: {socials}/{social_limit}.\nOutgoing copies today UTC: {day}/{day_limit}; current 60-second window: {minute}/{minute_limit}. Waiting copies: {queued}. Daily budget resets at 00:00 UTC. Limits are shared by linked accounts."}
 }

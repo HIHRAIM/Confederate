@@ -98,9 +98,12 @@ from db.messages import (
     cleanup_wiki_relay_records,
     delete_gallery_upload,
     find_message_db_id_by_media_member,
+    find_telegram_message_db_id,
     get_gallery_upload,
     is_relay_copy,
+    latest_telegram_copy_ids,
     record_media_group_members,
+    telegram_origins_created_between,
 )
 from db.admins import (
     add_bridge_admin,
@@ -322,3 +325,4 @@ from db.appeal_servers import (
     set_appeal_accepting,
     set_appeal_channels,
 )
+from db.relay_queue import enqueue_sponsor_copy, queued_sponsor_copies

@@ -773,7 +773,7 @@
   },
   "inbox_closed_chat": {
     "status": "unverified",
-    "text": "This conversation has been closed."
+    "text": "This topic has been closed."
   },
   "inbox_closed_user": {
     "status": "unverified",
@@ -1267,6 +1267,10 @@
   "reply_external": {
     "status": "unverified",
     "text": "(replying to a message from another chat)"
+  },
+  "reply_external_named": {
+    "status": "unverified",
+    "text": "(replying to a message by {name} from another chat)"
   },
   "reply_unknown": {
     "status": "unverified",
@@ -2325,7 +2329,7 @@
     "text": "This subscription has reached its active bridge limit. Detach an unused bridge chat or raise the tier."
   },
   "sponsor_quota_bridge_chats": {"status": "unverified", "text": "This bridge already has two chats. Remove one before attaching another."},
-  "sponsor_relay_limit_notice": {"status": "unverified", "text": "This bridge has reached its sponsor message limit for today. Forwarding resumes at 00:00 UTC."},
+  "sponsor_relay_limit_notice": {"status": "unverified", "text": "The sponsor delivery budget is exhausted for today. Copies are queued and resume after 00:00 UTC, subject to the minute limit. Queued copies use the budget on the day they are sent."},
   "inbox_media_blocked": {"status": "unverified", "text": "For safety, this inbox accepts text only. Please describe your issue without attachments."},
   "inbox_link_blocked": {"status": "unverified", "text": "For safety, links are not forwarded through this inbox. Please describe your issue in plain text."},
   "inbox_text_too_long": {"status": "unverified", "text": "Please shorten your message to 4,000 characters or fewer."},
@@ -2347,5 +2351,9 @@
     "status": "unverified",
     "text": "Tier 1: {bridges1} active bridges, {chats1} chats and up to {minute1} outgoing copies per minute, {day1} per UTC day. Tier 2: {bridges2} bridges, {chats2} chats, {minute2} per minute and {day2} per day. Each destination message costs one unit. All sponsor work continues for 30 days after payment ends; then forwarding pauses and community slots are released. Settings remain saved."
   },
-  "sponsor_status_expired": {"status": "unverified", "text": "The 30-day working period ended. Forwarding is paused. Your bridges and settings are saved; renew and claim communities again to resume."}
+  "sponsor_status_expired": {"status": "unverified", "text": "The 30-day working period ended. Forwarding is paused. Your bridges and settings are saved; renew and claim communities again to resume."},
+  "slash_limit": {"status": "unverified", "text": "Show your current subscription usage"},
+  "cmd_limit": {"status": "unverified", "text": "/limit — your current subscription usage (sponsors only)."},
+  "limit_sponsors_only": {"status": "unverified", "text": "This command is available only to active sponsors, including working grace. Link Telegram to the subscribing Discord account first."},
+  "limit_status": {"status": "unverified", "text": "Communities: {communities}/{community_limit}. Bridges: {bridges}/{bridge_limit}; chats: {chats}/{chat_limit} (up to 2 per bridge). Wiki feeds: {wikis}/{wiki_limit}; social feeds: {socials}/{social_limit}.\nOutgoing copies today UTC: {day}/{day_limit}; current 60-second window: {minute}/{minute_limit}. Waiting copies: {queued}. Daily budget resets at 00:00 UTC. Limits are shared by linked accounts."}
 }

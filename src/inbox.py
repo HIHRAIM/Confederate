@@ -48,7 +48,7 @@ import message_relay
 from backup_crypto import decrypt_secret
 from message_relay import (
     build_telegram_text, clean_display_name, convert_discord_timestamps,
-    escape_html, telegram_entities_to_discord,
+    escape_html, telegram_entities_to_discord, telegram_message_html,
 )
 from utils import (
     DEFAULT_LANG, SUPPORTED_LANGS, get_chat_lang, is_admin, localized,
@@ -838,10 +838,10 @@ def _inbox_message_variants(message: Message):
     source_caption = getattr(message, "caption", None)
     if source_text is not None:
         return (telegram_entities_to_discord(source_text, getattr(message, "entities", None)),
-                getattr(message, "html_text", None))
+                telegram_message_html(message))
     if source_caption is not None:
         return (telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None)),
-                getattr(message, "html_text", None))
+                telegram_message_html(message))
     return None, None
 
 def _inbox_reply_target(chat_key, message: Message):

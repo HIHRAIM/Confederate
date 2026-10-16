@@ -201,6 +201,8 @@ def remove_chat_from_bridge(chat_id):
 
     bridge_id = row["bridge_id"]
     cur.execute("DELETE FROM chats WHERE chat_id=?", (chat_id,))
+    cur.execute("DELETE FROM sponsor_relay_queue WHERE chat_id=? OR message_id IN"
+                " (SELECT id FROM messages WHERE origin_chat_id=?)", (str(chat_id), str(chat_id)))
     cur.execute("DELETE FROM chat_settings WHERE chat_id=?", (chat_id,))
     cur.execute("DELETE FROM chat_admins WHERE chat_id=?", (chat_id,))
     cur.execute("DELETE FROM inaccessible_chats WHERE chat_id=?", (chat_id,))

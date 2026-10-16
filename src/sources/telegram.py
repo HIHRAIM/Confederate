@@ -27,6 +27,7 @@ not worth parsing, so channel feeds rely on the default staleness window.
 import asyncio
 import html as html_module
 import re
+from html.parser import HTMLParser
 
 import aiohttp
 
@@ -44,7 +45,6 @@ CHANNEL_NAME_RE = re.compile(r"^[A-Za-z0-9_]{4,32}$")
 _MESSAGE_RE = re.compile(r'<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"/]+)/(\d+)"')
 _PHOTO_RE = re.compile(r'tgme_widget_message_photo_wrap[^>]*background-image:url\(\'([^\']+)\'\)')
 _VIDEO_RE = re.compile(r'<video[^>]+src="([^"]+)"')
-_TEXT_RE = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.DOTALL)
 _UNSUPPORTED_RE = re.compile(r'message_media_not_supported_wrap')
 _FORWARD_RE = re.compile(
     r'<a class="tgme_widget_message_forwarded_from_name"(?:\s+href="([^"]*)")?[^>]*>(.*?)</a>',
@@ -55,7 +55,62 @@ _FORWARD_PLAIN_RE = re.compile(
 )
 _TITLE_RE = re.compile(r'<meta property="og:title" content="([^"]*)"')
 _SERVICE_RE = re.compile(r'class="[^"]*\bservice_message\b')
-_TAG_RE = re.compile(r"<[^>]+>")
+
+class _PreviewTextParser(HTMLParser):
+    """Read visible text, including emoji fallbacks and nested text blocks.
+
+    With message_only, capture the whole message-text div rather than stopping
+    at its first nested closing div. Attribute values are decoded by HTMLParser;
+    decoding them a second time would corrupt literal entity spellings.
+    """
+
+    BLOCK_TAGS = {"p", "div", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+    def __init__(self, *, message_only=False):
+        super().__init__(convert_charrefs=True)
+        self.message_only = message_only
+        self.depth = 0
+        self.finished = False
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if self.message_only:
+            if self.finished:
+                return
+            if not self.depth:
+                classes = (attrs.get("class") or "").split()
+                if tag == "div" and "tgme_widget_message_text" in classes:
+                    self.depth = 1
+                return
+            if tag == "div":
+                self.depth += 1
+        if tag == "br":
+            self.parts.append("\n")
+        elif tag == "img":
+            self.parts.append(attrs.get("alt") or "")
+        elif tag in self.BLOCK_TAGS and self.parts and not self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if self.message_only:
+            if not self.depth or self.finished:
+                return
+            if tag == "div":
+                self.depth -= 1
+                if not self.depth:
+                    self.finished = True
+                    return
+        if tag in self.BLOCK_TAGS and self.parts and not self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.message_only or (self.depth and not self.finished):
+            self.parts.append(data)
+
+    def text(self):
+        """Return the captured text without outer layout whitespace."""
+        return "".join(self.parts).strip()
 
 def normalize_source(raw):
     """Accept `name`, `@name`, `t.me/name`, `t.me/s/name` or a link to a post and
@@ -79,15 +134,13 @@ def post_url(channel, post_id):
     return f"https://t.me/{channel}/{post_id}"
 
 def preview_html_to_text(fragment):
-    """The readable text of a preview fragment: line breaks kept, tags dropped,
-    entities decoded. Custom emoji are rendered as an image wrapping the emoji
-    character itself, so dropping the tags leaves the character behind."""
+    """Readable preview text, with line breaks and custom emoji alt text."""
     if not fragment:
         return ""
-    text = re.sub(r"<br\s*/?>", "\n", fragment)
-    text = re.sub(r"</p>", "\n", text)
-    text = _TAG_RE.sub("", text)
-    return html_module.unescape(text).strip()
+    parser = _PreviewTextParser()
+    parser.feed(fragment)
+    parser.close()
+    return parser.text()
 
 def _collect_preview_media(block):
     """Attachments of one preview block, as the media items `relay_feed_post`
@@ -154,12 +207,14 @@ def parse_preview(html, channel):
             continue
 
         post_id = match.group(2)
-        text_match = _TEXT_RE.search(block)
+        text_parser = _PreviewTextParser(message_only=True)
+        text_parser.feed(block)
+        text_parser.close()
         media = _collect_preview_media(block)
         forward_type, forward_name = _parse_preview_forward(block)
         posts.append({
             "id": post_id,
-            "text": preview_html_to_text(text_match.group(1)) if text_match else "",
+            "text": text_parser.text(),
             "media": media,
             "unavailable_media": 1 if not media and _UNSUPPORTED_RE.search(block) else 0,
             "link": post_url(channel, post_id),

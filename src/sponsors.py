@@ -31,7 +31,7 @@ from config import (
     SPONSOR_NOTICE_CHANNEL,
 )
 from db.ranges import bridge_kind
-from utils import DEFAULT_LANG, get_chat_lang, localized, rate_limit_ok
+from utils import DEFAULT_LANG, get_chat_lang, is_admin, localized, rate_limit_ok
 
 logger = logging.getLogger("bridge.sponsors")
 
@@ -560,7 +560,9 @@ def _owned_usage(discord_id):
 
 def sponsor_relay_allowed(bridge_id, origin_platform, origin_chat_id,
                           targets, gallery_urls=None):
-    """Reserve the cost of a sponsor bridge message before any delivery.
+    """Reserve the cost of an immediate sponsor edit fan-out.
+
+    New messages use sponsor_delivery's persistent per-copy queue instead.
 
     One unit is one outgoing message or edit. Extra Telegram gallery messages
     cost extra units. Both the burst and UTC-day budgets belong to the Discord
@@ -581,7 +583,7 @@ def sponsor_relay_allowed(bridge_id, origin_platform, origin_chat_id,
             continue
         units += 1
         if chat["platform"] == "telegram" and gallery_urls:
-            units += max(0, len(gallery_urls) - 1)
+            units += len(gallery_urls)
     if units == 0:
         return True
     limits = sponsor_limits(tier)
@@ -605,7 +607,7 @@ def claim_daily_limit_notice(bridge_id, origin_platform, origin_chat_id,
     if tier == 0:
         return False
     units = sum(
-        1 + (max(0, len(gallery_urls) - 1)
+        1 + (len(gallery_urls)
              if chat["platform"] == "telegram" and gallery_urls else 0)
         for chat in targets
         if chat["platform"] != origin_platform or chat["chat_id"] != origin_chat_id
@@ -822,3 +824,16 @@ def sponsor_overview(platform, user_id):
         "bridges": bridges,
         "link": db.get_link_by_discord(discord_id),
     }
+
+def limit_text(owner, lang):
+    """Current account-wide slots, UTC delivery usage and persistent backlog."""
+    caps = sponsor_limits(sponsor_quota_tier("discord", owner))
+    used = db.get_sponsor_usage(owner)
+    row = db.sponsor_relay_usage(owner, time.strftime("%Y-%m-%d", time.gmtime()))
+    minute = int(row["minute_units"]) if row and time.time() - row["minute_started"] < 60 else 0
+    return localized("limit_status", lang, communities=len(db.get_sponsor_communities(owner)),
+        community_limit=caps["communities"], bridges=used["bridges"], bridge_limit=caps["bridges"],
+        chats=used["chats"], chat_limit=caps["chats"], wikis=used["wikis"], wiki_limit=caps["wikis"],
+        socials=used["socials"], social_limit=caps["socials"],
+        day=int(row["day_units"]) if row else 0, day_limit=caps["relay_day"],
+        minute=minute, minute_limit=caps["relay_minute"], queued=db.queued_sponsor_copies(owner))

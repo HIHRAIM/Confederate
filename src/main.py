@@ -519,6 +519,7 @@ async def main():
     same breath — each keeps its own, so one of them being taken offline for
     a new token leaves the others polling — and are stopped together at the
     end."""
+    from sponsor_delivery import sponsor_delivery_loop
     from inbox import start_all_inbox_bots, stop_all_inbox_bots
     from telegram_bot import bot as tg
 
@@ -530,12 +531,13 @@ async def main():
         asyncio.create_task(poll_loop(), name="polls"),
         asyncio.create_task(feed_loop(), name="feeds"),
         asyncio.create_task(sponsor_loop(), name="sponsors"),
+        asyncio.create_task(sponsor_delivery_loop(), name="sponsor-delivery"),
         asyncio.create_task(inbox_maintenance_loop(), name="inbox-maintenance"),
         asyncio.create_task(setup_deadline_loop(), name="setup-deadline"),
     ]
-    from telegram_deletions import configured as telegram_deletions_configured, listen as listen_telegram_deletions
+    from telegram_deletions import configured as telegram_deletions_configured, watch as watch_telegram_deletions
     if telegram_deletions_configured():
-        tasks.append(asyncio.create_task(listen_telegram_deletions(),
+        tasks.append(asyncio.create_task(watch_telegram_deletions(),
                                          name="telegram-deletions"))
 
     await start_all_inbox_bots()

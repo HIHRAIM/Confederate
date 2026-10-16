@@ -240,3 +240,16 @@ async def sponsor_subscribe_cmd(interaction: discord.Interaction):
             bridges2=tier2["bridges"], chats2=tier2["chats"],
             minute2=tier2["relay_minute"], day2=tier2["relay_day"]),
         ephemeral=True)
+
+@bot.tree.command(name="limit", description=localized("slash_limit", "en"))
+async def limit_cmd(interaction: discord.Interaction):
+    """Show only the caller's active subscription usage; admins get no bypass."""
+    lang = get_chat_lang(_chat_key(interaction)) or "en"
+    owner = str(interaction.user.id)
+    await interaction.response.defer(ephemeral=True)
+    live = await sponsors.live_discord_tier(owner)
+    if live is not None:
+        sponsors.apply_tier(owner, live)
+    text = (sponsors.limit_text(owner, lang) if sponsors.sponsor_tier("discord", owner) != 0
+            else localized("limit_sponsors_only", lang))
+    await interaction.followup.send(text, ephemeral=True)
