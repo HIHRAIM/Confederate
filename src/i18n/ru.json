@@ -520,8 +520,8 @@
     "text": "/deadchat <роль> <часы> | disable — пинговать роль при неактивности (только Discord)"
   },
   "help.cmd_deadtopic": {
-    "status": "verified",
-    "text": "/deadtopic enable|disable — раз в 6 дней без активности отправлять фантомное сообщение для сохранения темы"
+    "status": "unverified",
+    "text": "/deadtopic enable|disable — раз в 6 дней без активности отправлять фантомное сообщение для сохранения темы. Ветки и публикации форумов в мостах сохраняются и восстанавливаются и без команды; disable отключает это для текущей"
   },
   "help.cmd_force_leave": {
     "status": "verified",
@@ -1619,6 +1619,86 @@
   "sticker": {
     "status": "verified",
     "text": "[Стикер]"
+  },
+  "tg_event_added": {
+    "status": "unverified",
+    "text": "{name} добавил(-а) {members}"
+  },
+  "tg_event_boosted": {
+    "status": "unverified",
+    "text": "{name} дал(-а) буст группе"
+  },
+  "tg_event_joined": {
+    "status": "unverified",
+    "text": "{name} присоединился(-лась) к группе"
+  },
+  "tg_event_left": {
+    "status": "unverified",
+    "text": "{name} покинул(-а) группу"
+  },
+  "tg_event_photo": {
+    "status": "unverified",
+    "text": "{name} изменил(-а) фото группы"
+  },
+  "tg_event_photo_removed": {
+    "status": "unverified",
+    "text": "{name} удалил(-а) фото группы"
+  },
+  "tg_event_pinned": {
+    "status": "unverified",
+    "text": "{name} закрепил(-а) сообщение"
+  },
+  "tg_event_removed": {
+    "status": "unverified",
+    "text": "{name} удалил(-а) {member}"
+  },
+  "tg_event_title": {
+    "status": "unverified",
+    "text": "{name} переименовал(-а) группу в «{title}»"
+  },
+  "tg_event_topic_closed": {
+    "status": "unverified",
+    "text": "{name} закрыл(-а) тему"
+  },
+  "tg_event_topic_created": {
+    "status": "unverified",
+    "text": "{name} создал(-а) тему «{topic}»"
+  },
+  "tg_event_topic_icon": {
+    "status": "unverified",
+    "text": "{name} изменил(-а) значок темы"
+  },
+  "tg_event_topic_icon_removed": {
+    "status": "unverified",
+    "text": "{name} убрал(-а) значок темы"
+  },
+  "tg_event_topic_icon_to": {
+    "status": "unverified",
+    "text": "{name} изменил(-а) значок темы на {icon}"
+  },
+  "tg_event_topic_renamed": {
+    "status": "unverified",
+    "text": "{name} переименовал(-а) тему в «{topic}»"
+  },
+  "tg_event_topic_reopened": {
+    "status": "unverified",
+    "text": "{name} снова открыл(-а) тему"
+  },
+  "tg_event_video_chat_ended": {
+    "status": "unverified",
+    "text": "{name} завершил(-а) видеочат"
+  },
+  "tg_event_video_chat_started": {
+    "status": "unverified",
+    "text": "{name} начал(-а) видеочат"
+  },
+  "tg_poll": {
+    "status": "unverified",
+    "text": "📊 Опрос:"
+  },
+  "tg_quiz": {
+    "status": "unverified",
+    "text": "📊 Викторина:"
   },
   "tgfeed_already_attached": {
     "status": "verified",

@@ -95,6 +95,72 @@ async def resolve_telegram_user(identifier: str):
     except Exception:
         return None
 
+async def send_relay_texts(chat_key, texts, *, reply_to_message_id=None, **options):
+    """Send a relayed copy that `message_relay.build_telegram_texts` made
+    into one or more Telegram messages, in order, into one chat or topic.
+
+    Only the first carries the reply reference and `options` (the link
+    preview); a reply whose target is gone is sent again without it, as a
+    single copy always was. Returns the first message's id — a
+    `message_relay.SentCopy` with the others when there were more. A part
+    that fails ends the sending, and what was sent is kept."""
+    from message_relay import SentCopy
+
+    chat_id_str, thread = chat_key.split(":")
+    base = dict(chat_id=int(chat_id_str), message_thread_id=int(thread) or None, parse_mode="HTML")
+    first = dict(base, text=texts[0], **options)
+    if reply_to_message_id:
+        first["reply_to_message_id"] = int(reply_to_message_id)
+    try:
+        sent = await bot.send_message(**first)
+    except Exception:
+        if not reply_to_message_id:
+            raise
+        first.pop("reply_to_message_id", None)
+        sent = await bot.send_message(**first)
+    parts = []
+    quiet = {"disable_web_page_preview": True} if options.get("disable_web_page_preview") else {}
+    for text in texts[1:]:
+        try:
+            part = await bot.send_message(**base, text=text, **quiet)
+        except Exception as e:
+            logger.warning("A continuation of a relayed copy failed (%s): %s", chat_key, e)
+            break
+        parts.append(part.message_id)
+    return SentCopy(sent.message_id, parts) if parts else str(sent.message_id)
+
+async def edit_relay_texts(chat_key, message_db_id, chat, message_id_platform, texts, **options):
+    """Rewrite a relayed Telegram copy after an edit: its first message with
+    the first text (and `options`, the link preview), its continuations
+    with the rest — sending new ones or deleting the ones no longer needed
+    (`message_relay.sync_copy_parts`)."""
+    from message_relay import sync_copy_parts
+
+    chat_id = int(chat_key.split(":")[0])
+    try:
+        await bot.edit_message_text(chat_id=chat_id, message_id=int(message_id_platform),
+                                    text=texts[0], parse_mode="HTML", **options)
+    except Exception as e:
+        if "not modified" not in str(e):
+            raise
+
+    async def edit_part(part_id, text):
+        """Rewrite one continuation."""
+        await bot.edit_message_text(chat_id=chat_id, message_id=int(part_id), text=text, parse_mode="HTML")
+
+    async def send_part(text):
+        """Send a continuation the longer edit needs."""
+        thread = int(chat_key.split(":")[1]) or None
+        sent = await bot.send_message(chat_id=chat_id, message_thread_id=thread, text=text, parse_mode="HTML")
+        return sent.message_id
+
+    async def delete_part(part_id):
+        """Delete a continuation the shorter edit no longer needs."""
+        await bot.delete_message(chat_id, int(part_id))
+
+    await sync_copy_parts(message_db_id, chat, texts[1:], edit_part=edit_part,
+                          send_part=send_part, delete_part=delete_part)
+
 async def is_telegram_native_admin(chat_id: int, user_id: int):
     """Whether the user is a Telegram-side administrator (or owner) of the
     group — a right the bridge honors alongside its own roles for chat-level

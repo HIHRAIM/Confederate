@@ -29,11 +29,12 @@ from aiogram.types import Message
 import db
 import message_relay
 from message_relay import (
-    build_telegram_text, clean_display_name, escape_html, reply_line_html,
-    telegram_entities_to_discord, telegram_message_html, telegram_link_preview_kwargs,
+    build_telegram_texts, clean_display_name, escape_html,
+    reply_line_html, telegram_entities_to_discord, telegram_message_html,
+    telegram_link_preview_kwargs,
 )
 from utils import (
-    get_chat_lang, localized_consent_body, localized_consent_button,
+    get_chat_lang, localized, localized_consent_body, localized_consent_button,
     localized_consent_title, localized_file_count_text, rate_limit_ok,
 )
 
@@ -139,7 +140,7 @@ def _build_telegram_relay_texts(message: Message, grouped_file_count: int | None
     a link it cannot render. Everything else goes through
     `_compose_relay_texts` with the files GALLERY could not take."""
     is_sticker = getattr(message, "sticker", None) is not None
-    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    base_text = message_relay.telegram_message_text(message)
     total_files = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
 
     if is_sticker:
@@ -213,6 +214,9 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
     elif source_caption is not None:
         tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
+    elif message_relay.telegram_rich_message(message) is not None:
+        _, discord_text, tg_html_source = message_relay.render_telegram_rich_message(
+            message_relay.telegram_rich_message(message))
     else:
         discord_text = texts[0] if texts else ""
 
@@ -229,7 +233,7 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         "external_reply": external_reply,
         "texts": texts,
         "relay_file_count": relay_file_count,
-        "base_text": (getattr(message, "text", "") or getattr(message, "caption", "") or ""),
+        "base_text": message_relay.telegram_message_text(message),
         "discord_text": discord_text,
         "telegram_html": tg_html_source,
         "gallery_candidates": _collect_gallery_candidates(message),
@@ -237,6 +241,43 @@ def _serialize_first_telegram_message(message: Message, *, chat_id: str, bridge_
         "total_files": _count_telegram_files(message),
     }
     return json.dumps(payload, ensure_ascii=False)
+
+async def _send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False, prefer_plain=False):
+    """Per-target delivery callback of every Telegram-origin relay: Telegram
+    inline here, Discord and receiver-bot chats through their own deliverers.
+    A copy longer than one message goes out in several
+    (`message_relay.build_telegram_texts`, `send_relay_texts`)."""
+    if chat["platform"] == "telegram":
+        from telegram_bot.client import send_relay_texts
+
+        body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
+        preview_kwargs = telegram_link_preview_kwargs(reply_line, body_html)
+        if reply_line:
+            body_html = f"{reply_line_html(reply_line)}\n{body_html}"
+        return await send_relay_texts(
+            chat["chat_id"], build_telegram_texts(header, body_html, body_plain),
+            reply_to_message_id=reply_to_platform_message_id, **preview_kwargs,
+        )
+
+    if chat["platform"] == "discord":
+        from discord_bot import deliver_discord_relay
+        return await deliver_discord_relay(
+            chat, header=header, body_discord=body_discord, reply_line=reply_line,
+            reply_link_line=reply_link_line,
+            reply_to_platform_message_id=reply_to_platform_message_id,
+            sender_name=sender_name, place_name=place_name,
+            messenger_name=messenger_name, avatar_url=avatar_url,
+            is_bot_sender=is_bot_sender, prefer_plain=prefer_plain,
+        )
+
+    if chat["platform"] == "inbox":
+        from inbox import deliver_inbox_relay
+        return await deliver_inbox_relay(
+            chat, header=header, body_plain=body_plain,
+            body_telegram_html=body_telegram_html, reply_line=reply_line,
+            reply_to_platform_message_id=reply_to_platform_message_id,
+            sender_name=sender_name,
+        )
 
 async def _relay_serialized_telegram_payload(payload_json: str):
     """Relay a message frozen by `_serialize_first_telegram_message`.
@@ -248,55 +289,6 @@ async def _relay_serialized_telegram_payload(payload_json: str):
         payload = json.loads(payload_json)
     except Exception:
         return
-
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
-        """Per-target delivery callback: Telegram inline here, Discord through
-        the other half's deliverer."""
-        if chat["platform"] == "telegram":
-            chat_id_str, thread = chat["chat_id"].split(":")
-            body_html = body_telegram_html if body_telegram_html else escape_html(body_plain)
-            preview_kwargs = telegram_link_preview_kwargs(reply_line, body_html)
-            if reply_line:
-                body_html = f"{reply_line_html(reply_line)}\n{body_html}"
-            html_text = build_telegram_text(header, body_html, body_plain)
-            send_kwargs = dict(
-                chat_id=int(chat_id_str),
-                message_thread_id=int(thread) or None,
-                text=html_text,
-                parse_mode="HTML",
-                **preview_kwargs,
-            )
-            if reply_to_platform_message_id:
-                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
-            try:
-                sent = await bot.send_message(**send_kwargs)
-            except Exception:
-                if reply_to_platform_message_id:
-                    send_kwargs.pop("reply_to_message_id", None)
-                    sent = await bot.send_message(**send_kwargs)
-                else:
-                    raise
-            return str(sent.message_id)
-
-        if chat["platform"] == "discord":
-            from discord_bot import deliver_discord_relay
-            return await deliver_discord_relay(
-                chat, header=header, body_discord=body_discord, reply_line=reply_line,
-                reply_link_line=reply_link_line,
-                reply_to_platform_message_id=reply_to_platform_message_id,
-                sender_name=sender_name, place_name=place_name,
-                messenger_name=messenger_name, avatar_url=avatar_url,
-                is_bot_sender=is_bot_sender,
-            )
-
-        if chat["platform"] == "inbox":
-            from inbox import deliver_inbox_relay
-            return await deliver_inbox_relay(
-                chat, header=header, body_plain=body_plain,
-                body_telegram_html=body_telegram_html, reply_line=reply_line,
-                reply_to_platform_message_id=reply_to_platform_message_id,
-                sender_name=sender_name,
-            )
 
     base_text = payload.get("base_text", "")
     avatar_url = await _telegram_relay_avatar_url(payload["bridge_id"], payload.get("origin_sender_id"))
@@ -337,7 +329,7 @@ async def _relay_serialized_telegram_payload(payload_json: str):
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
             reply_to_msg_db_id=payload.get("reply_to_msg_db_id"),
-            send_to_chat_func=send_to_chat,
+            send_to_chat_func=_send_to_chat,
             telegram_file_count=relay_file_count,
             forward_type=payload.get("forward_type"),
             forward_name=payload.get("forward_name"),
@@ -374,13 +366,190 @@ async def _flush_media_group(buffer_key):
         grouped_messages=payload.get("messages"),
     )
 
+_MEMBER_NAMES_SHOWN = 5
+
+def _actor_name(message: Message):
+    """Who did what a service message reports: the person, or the group
+    itself for an administrator acting anonymously."""
+    sender_chat = getattr(message, "sender_chat", None)
+    if sender_chat is not None:
+        return clean_display_name(getattr(sender_chat, "title", None))
+    user = message.from_user
+    return clean_display_name(user.full_name if user else None)
+
+def _member_names(users):
+    """The members a service message names, at most `_MEMBER_NAMES_SHOWN`
+    of them, the rest summed up as "+N"."""
+    names = [clean_display_name(user.full_name) for user in users]
+    if len(names) > _MEMBER_NAMES_SHOWN:
+        names = names[:_MEMBER_NAMES_SHOWN] + [f"+{len(names) - _MEMBER_NAMES_SHOWN}"]
+    return ", ".join(names)
+
+def _service_event(message: Message):
+    """``(i18n key, values)`` of a Telegram service message worth telling
+    the other chats about, or None.
+
+    The counterpart of the Discord system messages the bridge relays
+    (discord_bot/mentions.py: _discord_system_event_key): people joining,
+    being added, leaving or being removed, a message pinned, the group's
+    name or photo changed, a topic created, renamed, closed or reopened, a
+    video chat started or ended, a boost. Everything else Telegram reports
+    in a service message (auto-delete timers, migrations, payments, gifts,
+    giveaways, backgrounds and the like) stays in its chat. Each key is a
+    whole sentence beginning with the actor's `{name}`."""
+    user = message.from_user
+    joined = getattr(message, "new_chat_members", None)
+    if joined:
+        others = [member for member in joined if not user or member.id != user.id]
+        if not others:
+            return "tg_event_joined", {}
+        return "tg_event_added", {"members": _member_names(others)}
+    left = getattr(message, "left_chat_member", None)
+    if left is not None:
+        if user and left.id == user.id:
+            return "tg_event_left", {}
+        return "tg_event_removed", {"member": _member_names([left])}
+    if getattr(message, "pinned_message", None) is not None:
+        return "tg_event_pinned", {}
+    if getattr(message, "new_chat_title", None):
+        return "tg_event_title", {"title": clean_display_name(message.new_chat_title, max_len=128)}
+    if getattr(message, "new_chat_photo", None):
+        return "tg_event_photo", {}
+    if getattr(message, "delete_chat_photo", None):
+        return "tg_event_photo_removed", {}
+    created = getattr(message, "forum_topic_created", None)
+    if created is not None:
+        return "tg_event_topic_created", {"topic": clean_display_name(created.name, max_len=128)}
+    edited = getattr(message, "forum_topic_edited", None)
+    if edited is not None:
+        if getattr(edited, "name", None):
+            return "tg_event_topic_renamed", {"topic": clean_display_name(edited.name, max_len=128)}
+        icon = getattr(edited, "icon_custom_emoji_id", None)
+        if icon == "":
+            return "tg_event_topic_icon_removed", {}
+        return "tg_event_topic_icon", {"icon_id": icon} if icon else {}
+    if getattr(message, "forum_topic_closed", None) is not None:
+        return "tg_event_topic_closed", {}
+    if getattr(message, "forum_topic_reopened", None) is not None:
+        return "tg_event_topic_reopened", {}
+    if getattr(message, "video_chat_started", None) is not None:
+        return "tg_event_video_chat_started", {}
+    if getattr(message, "video_chat_ended", None) is not None:
+        return "tg_event_video_chat_ended", {}
+    if getattr(message, "boost_added", None) is not None:
+        return "tg_event_boosted", {}
+    return None
+
+async def _custom_emoji_alt(custom_emoji_id):
+    """The ordinary emoji a custom emoji stands for — what a topic's new icon
+    is told as, since neither Discord nor a reader of another group can see
+    the custom one. None when Telegram does not say."""
+    try:
+        stickers = await bot.get_custom_emoji_stickers(custom_emoji_ids=[str(custom_emoji_id)])
+    except Exception:
+        return None
+    return getattr(stickers[0], "emoji", None) if stickers else None
+
+async def _relay_service_event(message: Message):
+    """Relay a Telegram service message as a sentence about its actor — the
+    way the bridge relays Discord's system messages: one line without the
+    sender header, ``[Telegram | Group] Name pinned a message``, worded in
+    each target chat's own language (relay_message's `system_event`). A new
+    topic icon is told as the emoji it stands for (`_custom_emoji_alt`).
+
+    Like a Discord system event it needs no consent, since it carries no
+    words of anybody's; a shadow-banned actor still stays silent, and the
+    bot's own actions are never reported back. A pin is relayed as a reply to
+    the copy of the pinned message, so every chat sees which one it was.
+    Appeal and inbox bridges get none of it: a conversation is no place for
+    the staff group's housekeeping, and the Discord side does the same."""
+    event = _service_event(message)
+    if event is None:
+        return
+    key, values = event
+    icon_id = values.pop("icon_id", None)
+    if icon_id:
+        icon = await _custom_emoji_alt(icon_id)
+        if icon:
+            key, values = "tg_event_topic_icon_to", {"icon": icon}
+    user = message.from_user
+    if user is not None and user.id == bot.id:
+        return
+    origin_chat_id = f"{message.chat.id}:{message.message_thread_id or 0}"
+    row = db.cur.execute("SELECT bridge_id FROM chats WHERE chat_id=?", (origin_chat_id,)).fetchone()
+    if not row or db.is_reserved_bridge_id(row["bridge_id"]):
+        return
+    user_id = str(user.id) if user else ""
+    if user_id and db.is_shadow_banned("telegram", user_id):
+        return
+
+    name = _actor_name(message)
+    reply_to_msg_db_id = None
+    pinned = getattr(message, "pinned_message", None)
+    if pinned is not None:
+        reply_to_msg_db_id = db.find_telegram_message_db_id(message.chat.id, pinned.message_id)
+
+    def render(chat, lang):
+        """The sentence in one target's language."""
+        sentence = localized(key, lang, name=name, **values)
+        return {"text": sentence, "discord": sentence, "telegram_html": escape_html(sentence)}
+
+    avatar_url = await _telegram_relay_avatar_url(row["bridge_id"], user.id if user else None)
+    await message_relay.relay_message(
+        bridge_id=row["bridge_id"],
+        origin_platform="telegram",
+        origin_chat_id=origin_chat_id,
+        origin_message_id=str(message.message_id),
+        origin_sender_id=user_id,
+        messenger_name="Telegram",
+        place_name=message.chat.title or "Private chat",
+        sender_name=name,
+        text=localized(key, get_chat_lang(origin_chat_id), name=name, **values),
+        reply_to_msg_db_id=reply_to_msg_db_id,
+        send_to_chat_func=_send_to_chat,
+        avatar_url=avatar_url,
+        body_renderer=render,
+        system_event=True,
+    )
+
+async def _service_message(message: Message):
+    """Handle a message no copy is made of: relay it as a sentence when it
+    is a service message worth telling (`_relay_service_event`), and close an
+    inbox conversation whose topic a person closed by hand.
+
+    Closing the topic is what `/close` does, so it is treated as `/close` —
+    otherwise the conversation would stay open and the bot, which may post
+    into a closed topic, would carry on writing into it. The bot's own
+    closing passes through here too and is ignored: the conversation is
+    marked closed before that happens."""
+    try:
+        await _relay_service_event(message)
+    except Exception as e:
+        logger.warning("A Telegram service message could not be relayed (%s): %s",
+                       message.chat.id, e)
+    if getattr(message, "forum_topic_closed", None) is None:
+        return
+    from inbox import close_inbox_conversation_by_hand
+
+    try:
+        await close_inbox_conversation_by_hand(f"{message.chat.id}:{message.message_thread_id or 0}")
+    except Exception as e:
+        logger.warning("A topic closed by hand could not close its inbox conversation (%s): %s",
+                       message.chat.id, e)
+
 @router.message(lambda message: not ((getattr(message, "text", "") or "").startswith("/")))
 async def relay_from_telegram(message: Message):
     """Front door of the Telegram relay: everything that is not a command.
 
-    An album is buffered (its parts arrive as separate updates) and relayed as
-    one message; the part carrying the caption — or failing that the earliest
-    part — is the one whose text and sender the copy will use."""
+    Only content a copy can carry goes on (`message_relay.RELAYED_TELEGRAM_
+    CONTENT`); a service message is handed to `_service_message`, which
+    relays the ones worth telling as a sentence. An album is buffered
+    (its parts arrive as separate updates) and relayed as one message; the
+    part carrying the caption — or failing that the earliest part — is the
+    one whose text and sender the copy will use."""
+    if not message_relay.telegram_message_relayable(message):
+        await _service_message(message)
+        return
     media_group_id = getattr(message, "media_group_id", None)
     if media_group_id:
         files_count = _count_telegram_files(message)
@@ -607,58 +776,6 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
         message, grouped_file_count=grouped_file_count, gallery_uploaded=0
     )
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False):
-        """Per-target delivery callback: Telegram inline here, Discord through
-        the other half's deliverer."""
-        if chat["platform"] == "telegram":
-            chat_id_str, thread = chat["chat_id"].split(":")
-            if body_telegram_html:
-                body_html = body_telegram_html
-            else:
-                body_html = escape_html(body_plain)
-            preview_kwargs = telegram_link_preview_kwargs(reply_line, body_html)
-            if reply_line:
-                body_html = f"{reply_line_html(reply_line)}\n{body_html}"
-            html_text = build_telegram_text(header, body_html, body_plain)
-            send_kwargs = dict(
-                chat_id=int(chat_id_str),
-                message_thread_id=int(thread) or None,
-                text=html_text,
-                parse_mode="HTML",
-                **preview_kwargs,
-            )
-            if reply_to_platform_message_id:
-                send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
-            try:
-                sent = await bot.send_message(**send_kwargs)
-            except Exception:
-                if reply_to_platform_message_id:
-                    send_kwargs.pop("reply_to_message_id", None)
-                    sent = await bot.send_message(**send_kwargs)
-                else:
-                    raise
-            return str(sent.message_id)
-
-        if chat["platform"] == "discord":
-            from discord_bot import deliver_discord_relay
-            return await deliver_discord_relay(
-                chat, header=header, body_discord=body_discord, reply_line=reply_line,
-                reply_link_line=reply_link_line,
-                reply_to_platform_message_id=reply_to_platform_message_id,
-                sender_name=sender_name, place_name=place_name,
-                messenger_name=messenger_name, avatar_url=avatar_url,
-                is_bot_sender=is_bot_sender,
-            )
-
-        if chat["platform"] == "inbox":
-            from inbox import deliver_inbox_relay
-            return await deliver_inbox_relay(
-                chat, header=header, body_plain=body_plain,
-                body_telegram_html=body_telegram_html, reply_line=reply_line,
-                reply_to_platform_message_id=reply_to_platform_message_id,
-                sender_name=sender_name,
-            )
-
     source_text = getattr(message, "text", None)
     source_caption = getattr(message, "caption", None)
     tg_html_source = None
@@ -668,11 +785,14 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
     elif source_caption is not None:
         tg_html_source = telegram_message_html(message)
         discord_text = telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None))
+    elif message_relay.telegram_rich_message(message) is not None:
+        _, discord_text, tg_html_source = message_relay.render_telegram_rich_message(
+            message_relay.telegram_rich_message(message))
     else:
         discord_text = texts[0] if texts else ""
 
     telegram_html = tg_html_source
-    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    base_text = message_relay.telegram_message_text(message)
 
     avatar_url = await _telegram_relay_avatar_url(
         bridge_id, message.from_user.id if message.from_user else None
@@ -706,7 +826,7 @@ async def _relay_from_telegram_impl(message: Message, grouped_file_count: int | 
             discord_text=current_discord_text,
             telegram_html=current_telegram_html,
             reply_to_msg_db_id=reply_to_msg_db_id,
-            send_to_chat_func=send_to_chat,
+            send_to_chat_func=_send_to_chat,
             telegram_file_count=relay_file_count,
             forward_type=forward_type,
             forward_name=forward_name,
@@ -800,13 +920,16 @@ async def edited_message_handler(message: Message):
         fallback_text = fallback_texts[0] if fallback_texts else rendered_text
         source_text = getattr(message, "text", None)
         source_caption = getattr(message, "caption", None)
-        base_text = source_text or source_caption or ""
+        base_text = message_relay.telegram_message_text(message)
+        rich = message_relay.telegram_rich_message(message)
         if source_text is not None:
             discord_text = telegram_entities_to_discord(base_text, getattr(message, "entities", None))
             telegram_html = telegram_message_html(message)
         elif source_caption is not None:
             discord_text = telegram_entities_to_discord(base_text, getattr(message, "caption_entities", None))
             telegram_html = telegram_message_html(message)
+        elif rich is not None:
+            _, discord_text, telegram_html = message_relay.render_telegram_rich_message(rich)
         else:
             discord_text = rendered_text
             telegram_html = None
@@ -876,14 +999,13 @@ async def edited_message_handler(message: Message):
     for c in copies:
         try:
             if c["platform"] == "telegram":
-                chat_id_str = c["chat_id"].split(":")[0]
+                from telegram_bot.client import edit_relay_texts
+
                 edit_plain, edit_html = _rendered_for(c, "telegram")
                 edit_html = edit_html or escape_html(edit_plain)
-                await bot.edit_message_text(
-                    chat_id=int(chat_id_str),
-                    message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(header, edit_html, edit_plain),
-                    parse_mode="HTML",
+                await edit_relay_texts(
+                    c["chat_id"], row["id"], c, c["message_id_platform"],
+                    build_telegram_texts(header, edit_html, edit_plain),
                     **message_relay.relay_edit_link_preview_kwargs(
                         row["id"], c, get_chat_lang(c["chat_id"]), edit_html),
                 )

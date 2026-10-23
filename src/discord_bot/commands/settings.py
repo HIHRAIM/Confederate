@@ -181,7 +181,12 @@ async def deadtopic(
 ):
     """/deadtopic enable|disable — keep this chat from being archived for
     inactivity by send-and-deleting a phantom message every 6 quiet days
-    (the loop in client.py). Bridge Admins and Bot Admins only."""
+    (the loop in client.py). Bridge Admins and Bot Admins only.
+
+    A bridged thread or forum post is kept alive without the command
+    (client.py: deadtopic_pass), so `disable` writes the opt-out down
+    (`disabled=1`) instead of deleting the row — a missing row would mean
+    the default again."""
     chat_id = f"{interaction.guild_id}:{interaction.channel_id}"
     user_id = interaction.user.id
 
@@ -203,7 +208,14 @@ async def deadtopic(
     action = action.strip().lower()
 
     if action == "disable":
-        db.cur.execute("DELETE FROM deadtopic_chats WHERE chat_id=?", (chat_id,))
+        db.cur.execute(
+            """
+            INSERT INTO deadtopic_chats (chat_id, last_message_ts, bot_last_sent_ts, disabled)
+            VALUES (?, ?, NULL, 1)
+            ON CONFLICT(chat_id) DO UPDATE SET disabled=1
+            """,
+            (chat_id, int(time.time()))
+        )
         db.conn.commit()
         await interaction.response.send_message(
             localized_deadtopic("disabled", lang), ephemeral=True
@@ -214,11 +226,12 @@ async def deadtopic(
         now_ts = int(time.time())
         db.cur.execute(
             """
-            INSERT INTO deadtopic_chats (chat_id, last_message_ts, bot_last_sent_ts)
-            VALUES (?, ?, NULL)
+            INSERT INTO deadtopic_chats (chat_id, last_message_ts, bot_last_sent_ts, disabled)
+            VALUES (?, ?, NULL, 0)
             ON CONFLICT(chat_id) DO UPDATE SET
                 last_message_ts=excluded.last_message_ts,
-                bot_last_sent_ts=NULL
+                bot_last_sent_ts=NULL,
+                disabled=0
             """,
             (chat_id, now_ts)
         )

@@ -521,7 +521,7 @@
   },
   "help.cmd_deadtopic": {
     "status": "unverified",
-    "text": "/deadtopic enable|disable — co 6 dni bez aktywności wysyłaj wiadomość-widmo podtrzymującą temat"
+    "text": "/deadtopic enable|disable — co 6 dni bez aktywności wysyłaj wiadomość-widmo podtrzymującą temat. Wątki i posty forum połączone mostem są podtrzymywane i przywracane bez polecenia; disable wyłącza to dla tego wątku"
   },
   "help.cmd_force_leave": {
     "status": "unverified",
@@ -1619,6 +1619,86 @@
   "sticker": {
     "status": "unverified",
     "text": "[Naklejka]"
+  },
+  "tg_event_added": {
+    "status": "unverified",
+    "text": "{name} dodał(-a) {members}"
+  },
+  "tg_event_boosted": {
+    "status": "unverified",
+    "text": "{name} podbił(-a) grupę boostem"
+  },
+  "tg_event_joined": {
+    "status": "unverified",
+    "text": "{name} dołączył(-a) do grupy"
+  },
+  "tg_event_left": {
+    "status": "unverified",
+    "text": "{name} opuścił(-a) grupę"
+  },
+  "tg_event_photo": {
+    "status": "unverified",
+    "text": "{name} zmienił(-a) zdjęcie grupy"
+  },
+  "tg_event_photo_removed": {
+    "status": "unverified",
+    "text": "{name} usunął(-ęła) zdjęcie grupy"
+  },
+  "tg_event_pinned": {
+    "status": "unverified",
+    "text": "{name} przypiął(-ęła) wiadomość"
+  },
+  "tg_event_removed": {
+    "status": "unverified",
+    "text": "{name} usunął(-ęła) {member}"
+  },
+  "tg_event_title": {
+    "status": "unverified",
+    "text": "{name} zmienił(-a) nazwę grupy na „{title}”"
+  },
+  "tg_event_topic_closed": {
+    "status": "unverified",
+    "text": "{name} zamknął(-ęła) temat"
+  },
+  "tg_event_topic_created": {
+    "status": "unverified",
+    "text": "{name} utworzył(-a) temat „{topic}”"
+  },
+  "tg_event_topic_icon": {
+    "status": "unverified",
+    "text": "{name} zmienił(-a) ikonę tematu"
+  },
+  "tg_event_topic_icon_removed": {
+    "status": "unverified",
+    "text": "{name} usunął(-ęła) ikonę tematu"
+  },
+  "tg_event_topic_icon_to": {
+    "status": "unverified",
+    "text": "{name} zmienił(-a) ikonę tematu na {icon}"
+  },
+  "tg_event_topic_renamed": {
+    "status": "unverified",
+    "text": "{name} zmienił(-a) nazwę tematu na „{topic}”"
+  },
+  "tg_event_topic_reopened": {
+    "status": "unverified",
+    "text": "{name} ponownie otworzył(-a) temat"
+  },
+  "tg_event_video_chat_ended": {
+    "status": "unverified",
+    "text": "{name} zakończył(-a) czat wideo"
+  },
+  "tg_event_video_chat_started": {
+    "status": "unverified",
+    "text": "{name} rozpoczął(-ęła) czat wideo"
+  },
+  "tg_poll": {
+    "status": "unverified",
+    "text": "📊 Ankieta:"
+  },
+  "tg_quiz": {
+    "status": "unverified",
+    "text": "📊 Quiz:"
   },
   "tgfeed_already_attached": {
     "status": "unverified",

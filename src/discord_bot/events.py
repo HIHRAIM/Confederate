@@ -447,6 +447,20 @@ async def on_thread_delete(thread):
         _cleanup_appeal_records(row)
 
 @bot.event
+async def on_raw_thread_update(payload: discord.RawThreadUpdateEvent):
+    """A person closing an inbox conversation's thread by hand — archiving
+    or locking it — closes the conversation, as `/close` does
+    (inbox.py: handle_inbox_thread_update). The raw event is the one used
+    because an archived thread drops out of discord.py's cache, and the
+    cached `on_thread_update` would miss a thread archived earlier."""
+    from inbox import handle_inbox_thread_update
+
+    try:
+        await handle_inbox_thread_update(payload.guild_id, payload.thread_id, payload.data)
+    except Exception as e:
+        logger.warning("thread update could not be handled (%s): %s", payload.thread_id, e)
+
+@bot.event
 async def on_member_update(before, after):
     """Notice a sponsor's Patreon role appearing or disappearing the moment
     it happens, on the creator's server and nowhere else.

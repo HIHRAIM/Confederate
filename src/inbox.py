@@ -458,8 +458,10 @@ async def _on_inbox_message(message: Message):
 
     The ladder is short by design: only private chats (a receiver bot added
     to a group is not this feature), never other bots, `/start` answered with
-    the greeting that states what forwarding means, then the bot's own ban
-    list, the bot-wide shadow bans and the per-user rate limit. Everything
+    the greeting that states what forwarding means, only content a copy can
+    carry (`message_relay.RELAYED_TELEGRAM_CONTENT` — no service messages),
+    then the bot's own ban list, the bot-wide shadow bans and the per-user
+    rate limit. Everything
     surviving that opens or continues a conversation. An album is buffered
     the way the main relay buffers one, so its parts arrive as a single
     message rather than as one copy per file."""
@@ -477,6 +479,8 @@ async def _on_inbox_message(message: Message):
     user_id = str(user.id)
     if _is_start_command(getattr(message, "text", "") or ""):
         await _send_inbox_greeting(message, bot_row)
+        return
+    if not message_relay.telegram_message_relayable(message):
         return
 
     if db.is_inbox_banned(bot_id, user_id):
@@ -562,10 +566,18 @@ async def _flush_inbox_media_group(key):
 
 async def _open_and_relay(bot_row, message: Message, grouped_messages=None, grouped_file_count=None):
     """Make sure the writer has an open conversation, then relay into it and
-    move the mark to 🟩 — they have the floor until somebody answers."""
+    move the mark to 🟩 — they have the floor until somebody answers.
+
+    A conversation whose thread a person closed while the bot was not
+    listening is closed now, before anything is written into that thread,
+    and the message opens a new one. The writer is not told it closed: their
+    message goes on in the new conversation."""
     bot_id = str(bot_row["bot_id"])
     user = message.from_user
     conv = db.get_inbox_conversation(bot_id, str(user.id))
+    if conv is not None and await _closed_by_hand_meanwhile(conv):
+        await close_inbox_conversation(conv, notify_user=False)
+        conv = None
     if conv is None:
         conv, error_key = await open_inbox_conversation(bot_row, user)
         if conv is None:
@@ -784,13 +796,13 @@ def _inbox_relay_texts(message: Message, grouped_file_count=None, gallery_upload
     GALLERY took are represented by their links (the caller attaches them);
     whatever it could not take falls back to the localized "[N files from
     Telegram]" marker. Stickers, voice messages and video notes keep their
-    own markers, exactly as everywhere else."""
+    own markers, and a poll is written out, exactly as everywhere else."""
     from telegram_bot.files import _count_telegram_files
 
     if getattr(message, "sticker", None) is not None:
         return ["__TG_STICKER__"], None
 
-    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    base_text = message_relay.telegram_message_text(message)
     total = grouped_file_count if grouped_file_count is not None else _count_telegram_files(message)
 
     if not base_text and total == 1 and not gallery_uploaded:
@@ -820,7 +832,7 @@ def _inbox_gallery_fallback(index, fallback_texts, fallback_file_count,
     from telegram_bot.relay import _relay_variants_for_text
 
     text = fallback_texts[index] if index < len(fallback_texts) else fallback_texts[-1]
-    base_text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    base_text = message_relay.telegram_message_text(message)
     fallback_discord, fallback_html = _relay_variants_for_text(
         text, base_text, discord_text, telegram_html
     )
@@ -842,6 +854,10 @@ def _inbox_message_variants(message: Message):
     if source_caption is not None:
         return (telegram_entities_to_discord(source_caption, getattr(message, "caption_entities", None)),
                 telegram_message_html(message))
+    rich = message_relay.telegram_rich_message(message)
+    if rich is not None:
+        _, discord_text, telegram_html = message_relay.render_telegram_rich_message(rich)
+        return discord_text, telegram_html
     return None, None
 
 def _inbox_reply_target(chat_key, message: Message):
@@ -1334,6 +1350,83 @@ async def _close_telegram_topic(chat_id):
     except Exception:
         pass
 
+async def close_inbox_conversation_by_hand(chat_key, *, notify_user=True):
+    """Close the conversation of a thread or topic a person closed by hand.
+
+    Closing a thread in Discord or a topic in Telegram is how staff end a
+    conversation without `/close`, and left at that it ended nothing: the
+    conversation stayed open, the writer's next message went into the closed
+    thread or topic — the bot may post there — and the dead-topic keep-alive
+    reopened the thread every three days. So it closes the conversation the
+    way `/close` would. A conversation already being closed is left alone:
+    `close_inbox_conversation` marks it closed before it archives and locks
+    anything itself, so its own closing never comes back through here."""
+    conv = inbox_conversation_of_chat(chat_key)
+    if conv is None or conv["status"] == "closed":
+        return False
+    logger.info("inbox conversation %s closed by hand in %s", conv["bridge_id"], chat_key)
+    await close_inbox_conversation(conv, notify_user=notify_user)
+    return True
+
+def _thread_data_closed_by_hand(data):
+    """`discord_bot/client.py: thread_closed_by_hand` for the raw payload of
+    a THREAD_UPDATE."""
+    import datetime
+    import discord
+    from discord_bot.client import thread_closed_by_hand
+
+    meta = data.get("thread_metadata") or {}
+    try:
+        archived_at = (datetime.datetime.fromisoformat(meta["archive_timestamp"])
+                       if meta.get("archive_timestamp") else None)
+        last_activity = discord.utils.snowflake_time(int(data.get("last_message_id") or data["id"]))
+    except (KeyError, TypeError, ValueError):
+        archived_at = last_activity = None
+    return thread_closed_by_hand(
+        locked=bool(meta.get("locked")), archived=bool(meta.get("archived")),
+        archived_at=archived_at, window_minutes=meta.get("auto_archive_duration"),
+        last_activity=last_activity,
+    )
+
+async def handle_inbox_thread_update(guild_id, thread_id, data):
+    """A Discord thread changed: when it is a conversation thread that a
+    person has just closed, the conversation closes with it."""
+    if not _thread_data_closed_by_hand(data):
+        return
+    await close_inbox_conversation_by_hand(f"{guild_id}:{thread_id}")
+
+async def _closed_by_hand_meanwhile(conv):
+    """Whether a Discord thread of an open conversation was closed by a
+    person while the bot was not listening — a restart misses the thread
+    event. Only threads gone from the cache of active threads are asked
+    about, so an open conversation costs nothing; a thread somebody deleted
+    counts as closed too."""
+    import discord
+    from discord_bot import bot as dc_bot
+    from discord_bot.client import discord_thread_closed_by_hand
+
+    for chat in db.get_bridge_chats(conv["bridge_id"]):
+        if chat["platform"] != "discord":
+            continue
+        try:
+            thread_id = int(chat["chat_id"].split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        cached = dc_bot.get_channel(thread_id)
+        if isinstance(cached, discord.Thread) and not cached.archived:
+            if cached.locked:
+                return True
+            continue
+        try:
+            thread = await dc_bot.fetch_channel(thread_id)
+        except discord.NotFound:
+            return True
+        except Exception:
+            continue
+        if isinstance(thread, discord.Thread) and discord_thread_closed_by_hand(thread):
+            return True
+    return False
+
 async def close_inbox_conversations_of_bot(bot_id, *, notify_user=True):
     """Close every open conversation of one receiver bot — what unregistering
     it and banning through it both end in."""
@@ -1344,7 +1437,8 @@ async def close_inbox_conversations_of_bot(bot_id, *, notify_user=True):
             logger.warning("inbox conversation %s could not be closed: %s", conv["bridge_id"], e)
 
 async def inbox_maintenance_pass():
-    """Close conversations nobody has written in for 30 days.
+    """Close conversations nobody has written in for 30 days, and those whose
+    Discord thread a person closed while the bot was not listening.
 
     The window matches how long a relayed message is kept (cleanup_old_messages):
     past it the thread can no longer edit or delete what it holds anyway, so
@@ -1355,3 +1449,10 @@ async def inbox_maintenance_pass():
             await close_inbox_conversation(conv)
         except Exception as e:
             logger.warning("inbox maintenance could not close %s: %s", conv["bridge_id"], e)
+    for bot_row in db.get_inbox_bots():
+        for conv in db.get_inbox_conversations_of_bot(bot_row["bot_id"]):
+            try:
+                if await _closed_by_hand_meanwhile(conv):
+                    await close_inbox_conversation(conv)
+            except Exception as e:
+                logger.warning("inbox maintenance could not check %s: %s", conv["bridge_id"], e)

@@ -16,6 +16,7 @@ import db
 import time
 import html
 import json
+import logging
 import random
 import re
 
@@ -331,6 +332,149 @@ def build_telegram_text(header, body_html, body_plain, *, spoiler=False):
     budget = max(TELEGRAM_MSG_LIMIT - len(header_html) - 1, 0)
     body = _clip_escaped_html(escape_html(body_plain or ""), budget)
     return f"{header_html}\n{body}".strip()
+
+def _split_point(text, cap):
+    """Where to cut `text` so the first piece fits in `cap`: ``(end of the
+    piece, start of the rest)`` at the last paragraph break, failing that the
+    last line break, then the last space, and only then mid-word. A break in
+    the first third is not taken — it would leave a stub of a first piece."""
+    window = text[:cap + 1]
+    for separator in ("\n\n", "\n", " "):
+        at = window.rfind(separator, 0, cap)
+        if at > cap // 3:
+            return at, at + len(separator)
+    return cap, cap
+
+def split_text(text, limit, first_limit=None):
+    """Cut a text into pieces of at most `limit` characters — the first at
+    most `first_limit`, room having been kept for a header — at paragraph
+    breaks wherever it can (`_split_point`). A text that fits comes back as
+    the one piece it is."""
+    text = text or ""
+    pieces, cap = [], first_limit if first_limit is not None else limit
+    while len(text) > cap:
+        end, start = _split_point(text, max(cap, 1))
+        pieces.append(text[:end].rstrip())
+        text = text[start:].lstrip("\n")
+        cap = limit
+    pieces.append(text)
+    return [piece for piece in pieces if piece.strip()] or [""]
+
+_HTML_TAG_RE = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^<>]*)?>")
+
+def _html_piece_valid(piece):
+    """Whether a cut piece of Telegram HTML stands on its own: no tag cut in
+    half, every tag closed inside it, no entity cut in half."""
+    if re.search(r"&[#a-zA-Z0-9]{0,9}$", piece):
+        return False
+    stripped = _HTML_TAG_RE.sub("", piece)
+    if "<" in stripped or ">" in stripped:
+        return False
+    stack = []
+    for closing, name in _HTML_TAG_RE.findall(piece):
+        name = name.lower()
+        if not closing:
+            stack.append(name)
+        elif not stack or stack.pop() != name:
+            return False
+    return not stack
+
+def build_telegram_texts(header, body_html, body_plain):
+    """`build_telegram_text` for a message of any length: the copy as one or
+    more Telegram messages, the header on the first.
+
+    The formatted body is cut at paragraph breaks when every piece still
+    stands as valid HTML on its own; when a cut would split a tag or a
+    formatted span, the body is cut as escaped plain text instead, so a long
+    message loses its formatting rather than its end."""
+    whole = build_telegram_text(header, body_html, body_plain)
+    if len(f"{escape_html(header)}\n{body_html}".strip()) <= TELEGRAM_MSG_LIMIT:
+        return [whole]
+    header_html = escape_html(header)
+    first = TELEGRAM_MSG_LIMIT - len(header_html) - 1 if header_html else TELEGRAM_MSG_LIMIT
+    pieces = split_text(body_html or "", TELEGRAM_MSG_LIMIT, first)
+    if not all(_html_piece_valid(piece) for piece in pieces):
+        pieces = split_text(escape_html(body_plain or ""), TELEGRAM_MSG_LIMIT, first)
+    texts = [f"{header_html}\n{pieces[0]}".strip()] + pieces[1:]
+    return [text for text in texts if text]
+
+def split_discord_content(header, body, limit=None):
+    """A Discord copy as one or more messages: ``header`` (may be empty) and
+    the body on the first, the rest of the body after it, each within the
+    2000-character limit and cut at paragraph breaks where it can."""
+    limit = limit or DISCORD_MSG_LIMIT
+    header = header or ""
+    first = limit - len(header) - 1 if header else limit
+    pieces = split_text(body or "", limit, max(first, 1))
+    first_text = f"{header}\n{pieces[0]}".strip() if header else pieces[0]
+    return [text for text in [first_text] + pieces[1:] if text.strip()] or [header]
+
+class SentCopy(str):
+    """What a deliverer returns for a copy that took more than one message:
+    the id of the first, as before, with the ids of the continuation
+    messages in `parts`. A plain str is a copy that fit in one message —
+    every caller that only wants an id keeps working; relay_message and the
+    sponsor queue record the parts as ``kind='part'`` copies, which is what
+    deletes them with their message and lets an edit rewrite them."""
+
+    def __new__(cls, message_id, parts=()):
+        copy = super().__new__(cls, str(message_id))
+        copy.parts = [str(part) for part in parts]
+        return copy
+
+def record_copy(message_db_id, chat, sent):
+    """Write the ``message_copies`` rows of one delivered copy: the first
+    message as ``kind='main'``, a `SentCopy`'s continuation messages as
+    ``kind='part'`` in their order."""
+    db.cur.execute(
+        "INSERT INTO message_copies (message_id, platform, chat_id, message_id_platform, kind)"
+        " VALUES (?,?,?,?,'main')",
+        (message_db_id, chat["platform"], chat["chat_id"], str(sent))
+    )
+    for part in getattr(sent, "parts", ()):
+        db.cur.execute(
+            "INSERT INTO message_copies (message_id, platform, chat_id, message_id_platform, kind)"
+            " VALUES (?,?,?,?,'part')",
+            (message_db_id, chat["platform"], chat["chat_id"], part)
+        )
+
+async def sync_copy_parts(message_db_id, chat, pieces, *, edit_part, send_part, delete_part):
+    """Bring the continuation messages of an edited copy in line with its new
+    `pieces` (everything after the first message): rewrite the ones there
+    are, send the ones that are new, delete the ones no longer needed.
+
+    The three callbacks are the platform's: ``edit_part(message_id, text)``,
+    ``send_part(text)`` returning the new id, ``delete_part(message_id)``.
+    A failed step is logged and left — a stale continuation is better than
+    an edit that stops halfway through a chat."""
+    rows = db.cur.execute(
+        "SELECT id, message_id_platform FROM message_copies WHERE message_id=? AND platform=?"
+        " AND chat_id=? AND kind='part' ORDER BY id",
+        (message_db_id, chat["platform"], chat["chat_id"])
+    ).fetchall()
+    for index, piece in enumerate(pieces):
+        try:
+            if index < len(rows):
+                await edit_part(rows[index]["message_id_platform"], piece)
+                continue
+            new_id = await send_part(piece)
+            if new_id:
+                db.cur.execute(
+                    "INSERT INTO message_copies (message_id, platform, chat_id, message_id_platform, kind)"
+                    " VALUES (?,?,?,?,'part')",
+                    (message_db_id, chat["platform"], chat["chat_id"], str(new_id))
+                )
+        except Exception as e:
+            if "not modified" not in str(e):
+                logging.getLogger("bridge.relay").warning(
+                    "A continuation of an edited copy failed (%s): %s", chat["chat_id"], e)
+    for row in rows[len(pieces):]:
+        try:
+            await delete_part(row["message_id_platform"])
+        except Exception:
+            pass
+        db.cur.execute("DELETE FROM message_copies WHERE id=?", (row["id"],))
+    db.conn.commit()
 
 def relay_header_prefix(messenger_name, place_name):
     """``[Messenger | Community]`` — or just ``[Messenger]`` for a source with no
@@ -648,6 +792,291 @@ def _webhook_reply_link_line(chat, lang, reply_to_msg_db_id, reply_to_platform_m
     link = f"https://discord.com/channels/{guild_id}/{channel_id}/{reply_to_platform_message_id}"
     return localized_reply_webhook(replied_name, link, lang)
 
+RELAYED_TELEGRAM_CONTENT = frozenset({
+    "text", "photo", "video", "animation", "audio", "document",
+    "sticker", "voice", "video_note", "poll",
+})
+"""The Telegram content types a copy can carry, as aiogram's
+`Message.content_type` names them. Nothing else is copied. Service messages
+(a topic renamed, closed or reopened, a message pinned, members joining and
+leaving, a new title or photo, video chats and the like) take their own road
+and are told as a sentence about their actor, the way Discord's system
+messages are (telegram_bot/relay.py: _relay_service_event); content no copy
+can render (a location, a contact, a dice roll, a game, a story) stays where
+it was posted. Before this list existed each of them reached the other chats
+as a header with nothing under it."""
+
+def telegram_message_relayable(message):
+    """Whether a Telegram message is one a bridge copy can carry
+    (`RELAYED_TELEGRAM_CONTENT`, or a rich message)."""
+    if telegram_rich_message(message) is not None:
+        return True
+    return getattr(message, "content_type", None) in RELAYED_TELEGRAM_CONTENT
+
+def telegram_rich_message(message):
+    """A message's Bot API `rich_message` as the plain JSON it arrived in, or
+    None.
+
+    Rich messages (Bot API 10.1) carry everything in blocks — paragraphs,
+    headings, lists, quotations, tables, collages of photos — and have no
+    text, caption or media fields of their own. aiogram 3.25 predates them,
+    so the field reaches the code only as an extra the model keeps unparsed."""
+    rich = getattr(message, "rich_message", None)
+    if rich is None:
+        extra = getattr(message, "__pydantic_extra__", None) or {}
+        rich = extra.get("rich_message")
+    if hasattr(rich, "model_dump"):
+        rich = rich.model_dump()
+    return rich if isinstance(rich, dict) and rich.get("blocks") else None
+
+_RICH_WRAP = {
+    "bold": ("**", "**", "<b>", "</b>"),
+    "italic": ("*", "*", "<i>", "</i>"),
+    "underline": ("__", "__", "<u>", "</u>"),
+    "strikethrough": ("~~", "~~", "<s>", "</s>"),
+    "spoiler": ("||", "||", "<tg-spoiler>", "</tg-spoiler>"),
+    "code": ("`", "`", "<code>", "</code>"),
+}
+
+def _rich_wrap(inner, md_open, md_close, html_open, html_close, form):
+    """Wrap rendered text in a span's markers, outside its own surrounding
+    spaces — `** x**` is not bold on Discord — and not again around text
+    that already carries them: bold inside bold breaks Discord's markdown."""
+    core = inner.strip()
+    if not core or form == "plain":
+        return inner
+    lead = inner[:len(inner) - len(inner.lstrip())]
+    trail = inner[len(inner.rstrip()):]
+    if form == "md":
+        return inner if md_open in core else f"{lead}{md_open}{core}{md_close}{trail}"
+    return inner if html_open in core else f"{lead}{html_open}{core}{html_close}{trail}"
+
+def _rich_link(text, url, form):
+    """A rendered text with a link: masked on Discord, an anchor on Telegram,
+    the address spelled out after the text in plain."""
+    if not url:
+        return text
+    if form == "md":
+        return f"[{text}]({url})" if text.strip() and text.strip() != url else url
+    if form == "html":
+        return f'<a href="{escape_html(url)}">{text or escape_html(url)}</a>'
+    return text if text.strip() == url or not text.strip() else f"{text} ({url})"
+
+def _rich_text(node, form):
+    """One Bot API RichText — a string, a list, or a typed object — in one
+    of three forms: ``plain``, ``md`` (Discord markdown) or ``html``
+    (Telegram HTML, plain text escaped). A type this code does not know is
+    rendered by its inner text, so new formatting degrades to words."""
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return escape_html(node) if form == "html" else node
+    if isinstance(node, list):
+        return "".join(_rich_text(item, form) for item in node)
+    if not isinstance(node, dict):
+        return ""
+    kind = node.get("type")
+    if kind in _RICH_WRAP:
+        return _rich_wrap(_rich_text(node.get("text"), form), *_RICH_WRAP[kind], form)
+    if kind == "custom_emoji":
+        alt = node.get("alternative_text") or ""
+        return escape_html(alt) if form == "html" else alt
+    if kind == "mathematical_expression":
+        expression = node.get("expression") or ""
+        return _rich_wrap(escape_html(expression) if form == "html" else expression,
+                          *_RICH_WRAP["code"], form)
+    if kind == "url":
+        return _rich_link(_rich_text(node.get("text"), form), node.get("url"), form)
+    if kind == "button":
+        button = node.get("button") or {}
+        return _rich_link(_rich_text(button.get("text"), form), button.get("url"), form)
+    if kind == "anchor":
+        return ""
+    return _rich_text(node.get("text"), form)
+
+def _rich_caption(caption, form):
+    """A RichBlockCaption — its text, and its credit after a dash."""
+    if not isinstance(caption, dict):
+        return _rich_text(caption, form)
+    text = _rich_text(caption.get("text"), form).strip()
+    credit = _rich_text(caption.get("credit"), form).strip()
+    return f"{text} — {credit}" if text and credit else text or credit
+
+def _rich_quote(content, form):
+    """A quotation: a blockquote on Telegram, `>` lines on Discord."""
+    content = content.strip()
+    if not content:
+        return ""
+    if form == "html":
+        return f"<blockquote>{content}</blockquote>"
+    if form == "md":
+        return "\n".join(f"> {line}" if line else ">" for line in content.split("\n"))
+    return content
+
+_RICH_MEDIA_BLOCKS = ("photo", "video", "animation", "audio", "document", "voice_note")
+
+def _rich_block(block, form):
+    """One Bot API RichBlock rendered as text. Media blocks give only their
+    captions — their files are collected by `telegram_rich_media` and go the
+    way any attachment goes."""
+    if not isinstance(block, dict):
+        return ""
+    kind = block.get("type")
+    inner = _rich_text(block.get("text"), form)
+    if kind in ("paragraph", None):
+        return inner
+    if kind == "heading":
+        return _rich_wrap(inner, *_RICH_WRAP["bold"], form)
+    if kind == "pre":
+        source = _rich_text(block.get("text"), "plain")
+        if form == "md":
+            return f"```{block.get('language') or ''}\n{source}\n```"
+        if form == "html":
+            return f"<pre>{escape_html(source)}</pre>"
+        return source
+    if kind == "footer":
+        return _rich_wrap(inner, *_RICH_WRAP["italic"], form)
+    if kind == "divider":
+        return "———"
+    if kind == "mathematical_expression":
+        source = block.get("expression") or ""
+        if form == "md":
+            return f"```\n{source}\n```"
+        return f"<pre>{escape_html(source)}</pre>" if form == "html" else source
+    if kind == "list":
+        lines = []
+        for item in block.get("items") or ():
+            label = item.get("label") or "•"
+            if item.get("has_checkbox"):
+                label = "☑" if item.get("is_checked") else "☐"
+            content = _rich_blocks(item.get("blocks"), form, "\n")
+            content = content.replace("\n", "\n   ")
+            lines.append(f"{escape_html(label) if form == 'html' else label} {content}".rstrip())
+        return "\n".join(lines)
+    if kind == "blockquote":
+        content = _rich_blocks(block.get("blocks"), form, "\n")
+        credit = _rich_text(block.get("credit"), form).strip()
+        return _rich_quote(f"{content}\n— {credit}" if credit else content, form)
+    if kind in ("expandable_blockquote", "pullquote"):
+        credit = _rich_text(block.get("credit"), form).strip()
+        return _rich_quote(f"{inner}\n— {credit}" if credit else inner, form)
+    if kind in ("collage", "slideshow"):
+        inner = _rich_blocks(block.get("blocks"), form)
+        caption = _rich_caption(block.get("caption"), form)
+        return "\n\n".join(part for part in (inner, caption) if part)
+    if kind == "table":
+        rows = []
+        for row in block.get("cells") or ():
+            cells = []
+            for cell in row or ():
+                value = _rich_text((cell or {}).get("text"), form).strip()
+                if (cell or {}).get("is_header"):
+                    value = _rich_wrap(value, *_RICH_WRAP["bold"], form)
+                cells.append(value)
+            if any(cells):
+                rows.append(" | ".join(cells))
+        caption = _rich_text(block.get("caption"), form).strip()
+        return "\n".join(rows + ([caption] if caption else []))
+    if kind == "details":
+        summary = _rich_wrap(_rich_text(block.get("summary"), form), *_RICH_WRAP["bold"], form)
+        return "\n".join(part for part in (summary, _rich_blocks(block.get("blocks"), form)) if part)
+    if kind == "map":
+        location = block.get("location") or {}
+        lat, lon = location.get("latitude"), location.get("longitude")
+        if lat is None or lon is None:
+            return _rich_caption(block.get("caption"), form)
+        place = _rich_link(f"📍 {lat}, {lon}", f"https://maps.google.com/?q={lat},{lon}", form)
+        caption = _rich_caption(block.get("caption"), form)
+        return f"{place}\n{caption}".strip()
+    if kind == "buttons":
+        return "  ".join(
+            _rich_link(_rich_text(button.get("text"), form), button.get("url"), form)
+            for button in block.get("buttons") or () if isinstance(button, dict))
+    if kind in _RICH_MEDIA_BLOCKS:
+        return _rich_caption(block.get("caption"), form)
+    if kind in ("anchor", "thinking"):
+        return ""
+    if block.get("blocks"):
+        return _rich_blocks(block.get("blocks"), form)
+    return inner
+
+def _rich_blocks(blocks, form, separator="\n\n"):
+    """A list of blocks, each rendered, the empty ones dropped."""
+    rendered = (_rich_block(block, form).strip("\n") for block in blocks or ())
+    return separator.join(part for part in rendered if part.strip())
+
+def render_telegram_rich_message(rich):
+    """A rich message as ``(plain, discord_markdown, telegram_html)``.
+
+    The bridge sends ordinary messages, so the blocks are flattened into
+    text a copy can carry: paragraphs apart, headings bold, lists as lines,
+    quotations as quotations, a table one row per line, a map as a link —
+    and custom emoji as the ordinary emoji they stand for. A long result is
+    split into several messages like any other long copy."""
+    blocks = (rich or {}).get("blocks")
+    return tuple(_rich_blocks(blocks, form) for form in ("plain", "md", "html"))
+
+def telegram_rich_media(message):
+    """The files inside a rich message's blocks, wherever they are nested —
+    collages, slideshows, lists, quotations, details — as ``(kind, file)``
+    pairs, `file` being the Bot API object as plain JSON. A photo is its
+    largest size."""
+    rich = telegram_rich_message(message)
+    if rich is None:
+        return []
+    found = []
+
+    def walk(blocks):
+        """Collect the media of one list of blocks and of everything in it."""
+        for block in blocks or ():
+            if not isinstance(block, dict):
+                continue
+            kind = block.get("type")
+            if kind in _RICH_MEDIA_BLOCKS:
+                media = block.get(kind)
+                if kind == "photo" and isinstance(media, list) and media:
+                    media = media[-1]
+                if isinstance(media, dict) and media.get("file_id"):
+                    found.append((kind, media))
+            walk(block.get("blocks"))
+            for item in block.get("items") or ():
+                if isinstance(item, dict):
+                    walk(item.get("blocks"))
+
+    walk(rich.get("blocks"))
+    return found
+
+def telegram_message_text(message):
+    """The text a Telegram message brings to its copy: its text or caption —
+    or, for a poll, which has neither, the poll written out, and for a rich
+    message its blocks flattened (`render_telegram_rich_message`).
+
+    A copy cannot be voted in, so a poll travels as what it asks: a localized
+    "📊 Poll" or "📊 Quiz" label in front of the question (the `__TG_POLL__` /
+    `__TG_QUIZ__` markers, put in each target's language by relay_message),
+    then one line per option. Votes stay with the original."""
+    text = getattr(message, "text", None) or getattr(message, "caption", None)
+    if text:
+        return text
+    rich = telegram_rich_message(message)
+    if rich is not None:
+        return render_telegram_rich_message(rich)[0]
+    poll = getattr(message, "poll", None)
+    if poll is None:
+        return ""
+    marker = "__TG_QUIZ__" if getattr(poll, "type", None) == "quiz" else "__TG_POLL__"
+    lines = [f"{marker} {poll.question}"]
+    lines.extend(f"• {option.text}" for option in poll.options or ())
+    return "\n".join(lines)
+
+def _poll_markers(lang):
+    """The poll labels `telegram_message_text` leaves as markers, in one
+    target's language."""
+    return {
+        "__TG_POLL__": localized("tg_poll", lang),
+        "__TG_QUIZ__": localized("tg_quiz", lang),
+    }
+
 def _forward_line(forward_type, forward_name, lang):
     """Localized "forwarded from …" line, or ``None`` when it isn't a forward."""
     if forward_type == "chat":
@@ -778,6 +1207,7 @@ async def relay_message(
     file_count=None,
     file_count_source="telegram",
     body_renderer=None,
+    system_event=False,
 ):
     """Record one origin message and deliver a copy of it to every target chat.
 
@@ -828,6 +1258,15 @@ async def relay_message(
     know (`normalize_external_reply`). It is stored with the row, so that an
     edit and a copy delivered later from the sponsor queue rebuild the same
     reply line the first copies got.
+
+    `system_event` is a platform's system message told as a sentence (a pin,
+    a join, a topic renamed): it goes out without the ``Sender:`` header, as
+    one line led by the ``[Messenger | Place]`` it happened in, and on
+    Discord as the bot's own message rather than under a webhook wearing the
+    actor's name — the copy reads like the system line it stands for.
+
+    A copy too long for one message is delivered in several by the
+    deliverer, which returns a `SentCopy`; `record_copy` keeps every part.
     """
     place_name = clean_display_name(place_name) if place_name else None
     sender_name = clean_display_name(sender_name)
@@ -887,12 +1326,15 @@ async def relay_message(
                 header = f"{prefix} {sender_name} 🤖:"
         else:
             header = f"{prefix} {sender_name}:"
+        if system_event:
+            header = ""
 
         reply_line, reply_to_platform_message_id = _resolve_reply_for_chat(
             chat, lang, reply_to_msg_db_id, external)
 
         reply_link_line = None
         if (chat["platform"] == "discord"
+                and not system_event
                 and reply_to_platform_message_id
                 and db.get_webhooks_enabled(chat["chat_id"])):
             reply_link_line = _webhook_reply_link_line(
@@ -908,6 +1350,11 @@ async def relay_message(
             current_discord_text = rendered.get("discord", current_text)
             current_telegram_html = rendered.get("telegram_html", None)
             current_embed = rendered.get("embed")
+        if system_event:
+            current_text = f"{prefix} {current_text}"
+            current_discord_text = f"{prefix} {current_discord_text}"
+            if current_telegram_html is not None:
+                current_telegram_html = f"{escape_html(prefix)} {current_telegram_html}"
 
         current_gallery_urls = gallery_urls
         eff_file_count = telegram_file_count
@@ -966,6 +1413,13 @@ async def relay_message(
             if current_telegram_html is not None:
                 current_telegram_html = current_telegram_html.replace("__TG_VIDEO_NOTE__", escape_html(video_marker))
 
+        for poll_marker, poll_label in _poll_markers(lang).items():
+            if poll_marker in current_text:
+                current_text = current_text.replace(poll_marker, poll_label)
+                current_discord_text = current_discord_text.replace(poll_marker, poll_label)
+                if current_telegram_html is not None:
+                    current_telegram_html = current_telegram_html.replace(poll_marker, escape_html(poll_label))
+
         current_text, current_discord_text, current_telegram_html = apply_gallery_links(
             chat["platform"], current_text, current_discord_text, current_telegram_html,
             current_gallery_urls, lang=lang
@@ -998,6 +1452,9 @@ async def relay_message(
             is_bot_sender=is_bot_sender,
             **send_kwargs,
         )
+        if system_event:
+            delivery_payload.update(sender_name=None, place_name=None, messenger_name=None,
+                                    avatar_url=None, prefer_plain=True)
         if queue_owner is not None:
             from sponsor_delivery import pack_payload
             options = getattr(send_to_chat_func, "relay_options", {})
@@ -1014,6 +1471,7 @@ async def relay_message(
                     "__TG_STICKER__": localized_sticker(lang),
                     "__TG_VOICE__": localized_voice_message(lang),
                     "__TG_VIDEO_NOTE__": localized_video_message(lang),
+                    **_poll_markers(lang),
                 }
                 if fallback_count is not None:
                     markers[f"__TG_FILES_{fallback_count}__"] = localized_file_count_text(fallback_count, lang)
@@ -1049,14 +1507,7 @@ async def relay_message(
         if not sent_id:
             continue
 
-        db.cur.execute(
-            """
-            INSERT INTO message_copies
-            (message_id, platform, chat_id, message_id_platform, kind)
-            VALUES (?,?,?,?,'main')
-            """,
-            (msg_id, chat["platform"], chat["chat_id"], sent_id)
-        )
+        record_copy(msg_id, chat, sent_id)
 
         if chat["platform"] == "telegram" and current_gallery_urls:
             await _send_telegram_gallery_followups(

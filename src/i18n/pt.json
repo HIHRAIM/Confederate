@@ -521,7 +521,7 @@
   },
   "help.cmd_deadtopic": {
     "status": "unverified",
-    "text": "/deadtopic enable|disable — a cada 6 dias sem atividade, enviar uma mensagem fantasma para preservar o tópico"
+    "text": "/deadtopic enable|disable — a cada 6 dias sem atividade, enviar uma mensagem fantasma para preservar o tópico. Tópicos e publicações de fórum ligados a uma ponte são preservados e restaurados sem o comando; disable desativa isso para este"
   },
   "help.cmd_force_leave": {
     "status": "unverified",
@@ -1619,6 +1619,86 @@
   "sticker": {
     "status": "unverified",
     "text": "[Figurinha]"
+  },
+  "tg_event_added": {
+    "status": "unverified",
+    "text": "{name} adicionou {members}"
+  },
+  "tg_event_boosted": {
+    "status": "unverified",
+    "text": "{name} deu um boost no grupo"
+  },
+  "tg_event_joined": {
+    "status": "unverified",
+    "text": "{name} entrou no grupo"
+  },
+  "tg_event_left": {
+    "status": "unverified",
+    "text": "{name} saiu do grupo"
+  },
+  "tg_event_photo": {
+    "status": "unverified",
+    "text": "{name} mudou a foto do grupo"
+  },
+  "tg_event_photo_removed": {
+    "status": "unverified",
+    "text": "{name} removeu a foto do grupo"
+  },
+  "tg_event_pinned": {
+    "status": "unverified",
+    "text": "{name} fixou uma mensagem"
+  },
+  "tg_event_removed": {
+    "status": "unverified",
+    "text": "{name} removeu {member}"
+  },
+  "tg_event_title": {
+    "status": "unverified",
+    "text": "{name} mudou o nome do grupo para “{title}”"
+  },
+  "tg_event_topic_closed": {
+    "status": "unverified",
+    "text": "{name} fechou o tópico"
+  },
+  "tg_event_topic_created": {
+    "status": "unverified",
+    "text": "{name} criou o tópico “{topic}”"
+  },
+  "tg_event_topic_icon": {
+    "status": "unverified",
+    "text": "{name} mudou o ícone do tópico"
+  },
+  "tg_event_topic_icon_removed": {
+    "status": "unverified",
+    "text": "{name} removeu o ícone do tópico"
+  },
+  "tg_event_topic_icon_to": {
+    "status": "unverified",
+    "text": "{name} mudou o ícone do tópico para {icon}"
+  },
+  "tg_event_topic_renamed": {
+    "status": "unverified",
+    "text": "{name} renomeou o tópico para “{topic}”"
+  },
+  "tg_event_topic_reopened": {
+    "status": "unverified",
+    "text": "{name} reabriu o tópico"
+  },
+  "tg_event_video_chat_ended": {
+    "status": "unverified",
+    "text": "{name} encerrou a videochamada"
+  },
+  "tg_event_video_chat_started": {
+    "status": "unverified",
+    "text": "{name} iniciou uma videochamada"
+  },
+  "tg_poll": {
+    "status": "unverified",
+    "text": "📊 Enquete:"
+  },
+  "tg_quiz": {
+    "status": "unverified",
+    "text": "📊 Quiz:"
   },
   "tgfeed_already_attached": {
     "status": "unverified",

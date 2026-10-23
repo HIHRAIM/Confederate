@@ -521,7 +521,7 @@
   },
   "help.cmd_deadtopic": {
     "status": "unverified",
-    "text": "/deadtopic enable|disable — раз на 6 днів без активності надсилати фантомне повідомлення для збереження теми"
+    "text": "/deadtopic enable|disable — раз на 6 днів без активності надсилати фантомне повідомлення для збереження теми. Гілки й публікації форумів у мостах зберігаються та відновлюються й без команди; disable вимикає це для поточної"
   },
   "help.cmd_force_leave": {
     "status": "unverified",
@@ -1619,6 +1619,86 @@
   "sticker": {
     "status": "unverified",
     "text": "[Стикер]"
+  },
+  "tg_event_added": {
+    "status": "unverified",
+    "text": "{name} додав(-ла) {members}"
+  },
+  "tg_event_boosted": {
+    "status": "unverified",
+    "text": "{name} дав(-ла) буст групі"
+  },
+  "tg_event_joined": {
+    "status": "unverified",
+    "text": "{name} приєднався(-лася) до групи"
+  },
+  "tg_event_left": {
+    "status": "unverified",
+    "text": "{name} покинув(-ла) групу"
+  },
+  "tg_event_photo": {
+    "status": "unverified",
+    "text": "{name} змінив(-ла) фото групи"
+  },
+  "tg_event_photo_removed": {
+    "status": "unverified",
+    "text": "{name} видалив(-ла) фото групи"
+  },
+  "tg_event_pinned": {
+    "status": "unverified",
+    "text": "{name} закріпив(-ла) повідомлення"
+  },
+  "tg_event_removed": {
+    "status": "unverified",
+    "text": "{name} видалив(-ла) {member}"
+  },
+  "tg_event_title": {
+    "status": "unverified",
+    "text": "{name} перейменував(-ла) групу на «{title}»"
+  },
+  "tg_event_topic_closed": {
+    "status": "unverified",
+    "text": "{name} закрив(-ла) тему"
+  },
+  "tg_event_topic_created": {
+    "status": "unverified",
+    "text": "{name} створив(-ла) тему «{topic}»"
+  },
+  "tg_event_topic_icon": {
+    "status": "unverified",
+    "text": "{name} змінив(-ла) значок теми"
+  },
+  "tg_event_topic_icon_removed": {
+    "status": "unverified",
+    "text": "{name} прибрав(-ла) значок теми"
+  },
+  "tg_event_topic_icon_to": {
+    "status": "unverified",
+    "text": "{name} змінив(-ла) значок теми на {icon}"
+  },
+  "tg_event_topic_renamed": {
+    "status": "unverified",
+    "text": "{name} перейменував(-ла) тему на «{topic}»"
+  },
+  "tg_event_topic_reopened": {
+    "status": "unverified",
+    "text": "{name} знову відкрив(-ла) тему"
+  },
+  "tg_event_video_chat_ended": {
+    "status": "unverified",
+    "text": "{name} завершив(-ла) відеочат"
+  },
+  "tg_event_video_chat_started": {
+    "status": "unverified",
+    "text": "{name} розпочав(-ла) відеочат"
+  },
+  "tg_poll": {
+    "status": "unverified",
+    "text": "📊 Опитування:"
+  },
+  "tg_quiz": {
+    "status": "unverified",
+    "text": "📊 Вікторина:"
   },
   "tgfeed_already_attached": {
     "status": "unverified",

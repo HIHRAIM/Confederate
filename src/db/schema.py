@@ -242,6 +242,8 @@ CREATE TABLE IF NOT EXISTS inaccessible_chats (
 -- conversation threads are registered with 3, since an unanswered one must
 -- survive a weekend without anybody touching it.
 -- bot_last_sent_ts keeps the loop from firing twice in one UTC day.
+-- disabled=1 is `/deadtopic disable`: bridged threads are kept alive without
+-- a row of their own, so opting one out has to be written down.
 CREATE TABLE IF NOT EXISTS deadtopic_chats (
     chat_id TEXT PRIMARY KEY,
     last_message_ts INTEGER,
@@ -797,6 +799,7 @@ _COLUMN_ADDITIONS = [
     ("chat_settings", "webhooks", "INTEGER DEFAULT 0"),
     ("wiki_feed_settings", "webhook", "TEXT NOT NULL DEFAULT 'own'"),
     ("deadtopic_chats", "days", "INTEGER DEFAULT 6"),
+    ("deadtopic_chats", "disabled", "INTEGER NOT NULL DEFAULT 0"),
     ("inbox_conversations", "title", "TEXT"),
     ("inbox_conversations", "status", "TEXT DEFAULT 'user'"),
     ("inbox_hosts", "hide_header", "INTEGER DEFAULT 0"),

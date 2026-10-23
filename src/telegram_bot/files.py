@@ -33,7 +33,8 @@ TELEGRAM_GETFILE_LIMIT = 20 * 1024 * 1024
 def _count_telegram_files(message: Message) -> int:
     """How many attachments a message carries, counted the way the relay
     reports them. An animation arrives with a `document` of its own, so the
-    two are counted as one file, not two."""
+    two are counted as one file, not two. The photos, videos and files
+    inside a rich message's blocks count like any other."""
     count = 0
     if getattr(message, "document", None) and not getattr(message, "animation", None):
         count += 1
@@ -49,6 +50,8 @@ def _count_telegram_files(message: Message) -> int:
         count += 1
     if getattr(message, "animation", None):
         count += 1
+    from message_relay import telegram_rich_media
+    count += len(telegram_rich_media(message))
     return count
 
 def _collect_gallery_candidates(message: Message):
@@ -56,7 +59,8 @@ def _collect_gallery_candidates(message: Message):
 
     Stickers, voice messages and video notes are left out on purpose — they keep
     their own localized markers. Mirrors `_count_telegram_files`, including its
-    treatment of animations (which arrive with a `document` of their own)."""
+    treatment of animations (which arrive with a `document` of their own) and
+    the media inside a rich message's blocks, which arrive as plain JSON."""
     candidates = []
     mid = message.message_id
 
@@ -86,6 +90,19 @@ def _collect_gallery_candidates(message: Message):
     audio = getattr(message, "audio", None)
     if audio:
         add(audio, getattr(audio, "file_name", None) or f"audio_{mid}.mp3")
+
+    from message_relay import telegram_rich_media
+    defaults = {"photo": "photo_{n}.jpg", "video": "video_{n}.mp4", "animation": "animation_{n}.mp4",
+                "audio": "audio_{n}.mp3", "document": "document_{n}"}
+    for index, (kind, media) in enumerate(telegram_rich_media(message), 1):
+        if kind not in defaults:
+            continue
+        candidates.append({
+            "file_id": media["file_id"],
+            "size": media.get("file_size"),
+            "name": clean_display_name(media.get("file_name")
+                                       or defaults[kind].format(n=f"{mid}_{index}"), max_len=96),
+        })
 
     return candidates
 

@@ -150,7 +150,7 @@ async def _check_group(client, group_id, entries):
     for db_id in deleted[:_GROUP_DELETION_CAP]:
         logger.info("Telegram original of relayed message %s (group %s) is gone; "
                     "deleting its copies", db_id, group_id)
-        await delete_all_copies_and_origin(db_id)
+        await delete_all_copies_and_origin(db_id, origin_deleted=True)
 
 async def _check_slice(client, rows):
     """Check one slice of `db.telegram_origins_created_between`, group by

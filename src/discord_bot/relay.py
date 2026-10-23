@@ -222,18 +222,23 @@ async def deliver_discord_relay(
         if webhook is not None:
             username = _webhook_username(sender_name, place_name)
             webhook_body = f"{reply_link_line}\n{body}" if reply_link_line else body
-            content = (_untrusted_spoiler(webhook_body) if untrusted else
-                       clip_text(webhook_body, DISCORD_MSG_LIMIT)) or "​"
+            pieces = ([_untrusted_spoiler(webhook_body)] if untrusted else
+                      message_relay.split_discord_content("", webhook_body))
             for attempt in range(2):
                 try:
                     sent = await webhook.send(
-                        content, username=username, avatar_url=avatar_url,
+                        pieces[0] or "​", username=username, avatar_url=avatar_url,
                         allowed_mentions=(discord.AllowedMentions.none() if untrusted
                                           else RELAY_ALLOWED_MENTIONS), wait=True,
                         suppress_embeds=untrusted,
                         **({"embeds": outbound_embeds} if outbound_embeds else {}),
                     )
-                    return str(sent.id)
+                    parts = await _send_discord_parts(
+                        pieces[1:], lambda text: webhook.send(
+                            text, username=username, avatar_url=avatar_url,
+                            allowed_mentions=RELAY_ALLOWED_MENTIONS, wait=True),
+                        channel.id)
+                    return message_relay.SentCopy(sent.id, parts) if parts else str(sent.id)
                 except Exception as e:
                     _relay_webhooks.pop((channel.id, webhook_name or RELAY_WEBHOOK_NAME), None)
                     logger.warning("Relay webhook send failed (channel=%s, try %d): %s",
@@ -262,13 +267,30 @@ async def deliver_discord_relay(
         )
         send_kwargs["mention_author"] = False
     full_body = f"{disc_header}\n{body}".strip()
-    content = (_untrusted_spoiler(full_body) if untrusted else
-               clip_text(full_body, DISCORD_MSG_LIMIT))
+    pieces = ([_untrusted_spoiler(full_body)] if untrusted else
+              message_relay.split_discord_content(disc_header, body))
     try:
-        sent = await channel.send(content, **send_kwargs)
-        return str(sent.id)
+        sent = await channel.send(pieces[0], **send_kwargs)
     except Exception:
         return None
+    parts = await _send_discord_parts(
+        pieces[1:], lambda text: channel.send(text, allowed_mentions=RELAY_ALLOWED_MENTIONS),
+        channel.id)
+    return message_relay.SentCopy(sent.id, parts) if parts else str(sent.id)
+
+async def _send_discord_parts(pieces, send, channel_id):
+    """Send the continuations of a long Discord copy, in order, through
+    `send` (the channel or the webhook the first message went through).
+    Returns their ids; a failure ends the sending and keeps what was sent."""
+    parts = []
+    for piece in pieces:
+        try:
+            sent = await send(piece)
+        except Exception as e:
+            logger.warning("A continuation of a relayed copy failed (channel=%s): %s", channel_id, e)
+            break
+        parts.append(sent.id)
+    return parts
 
 def _discord_native_rich_embeds(message):
     """Keep every rich embed a bot or webhook sent for Discord destinations.
@@ -294,9 +316,11 @@ async def deliver_telegram_relay(
     first; a reply is sent as a native reply where the replied-to copy still
     exists, and retried without the reference when it doesn't. A reply line
     that links to the message elsewhere (`message_relay.ReplyLine`) is
-    rendered as a link, and the copy's preview stays on the body's own links."""
-    from telegram_bot import bot as tg_bot
-    chat_id_str, thread = chat["chat_id"].split(":")
+    rendered as a link, and the copy's preview stays on the body's own links.
+    A copy longer than one message goes out in several; an inbox writer's
+    untrusted text stays one message under its spoiler."""
+    from telegram_bot.client import send_relay_texts
+
     ts_lang = get_chat_lang(chat["chat_id"])
     body_html = convert_discord_timestamps(body_telegram_html or escape_html(body_plain), ts_lang)
     body_plain_local = convert_discord_timestamps(body_plain, ts_lang)
@@ -304,26 +328,14 @@ async def deliver_telegram_relay(
                       message_relay.telegram_link_preview_kwargs(reply_line, body_html))
     if reply_line:
         body_html = f"{message_relay.reply_line_html(reply_line)}\n{body_html}"
-    text_html = build_telegram_text(header, body_html, body_plain_local,
-                                    spoiler=untrusted)
-    send_kwargs = dict(
-        chat_id=int(chat_id_str),
-        message_thread_id=int(thread) or None,
-        text=text_html,
-        parse_mode="HTML",
+    if untrusted:
+        texts = [build_telegram_text(header, body_html, body_plain_local, spoiler=True)]
+    else:
+        texts = message_relay.build_telegram_texts(header, body_html, body_plain_local)
+    return await send_relay_texts(
+        chat["chat_id"], texts, reply_to_message_id=reply_to_platform_message_id,
         **(preview_kwargs or {"disable_web_page_preview": suppress_link_previews}),
     )
-    if reply_to_platform_message_id:
-        send_kwargs["reply_to_message_id"] = int(reply_to_platform_message_id)
-    try:
-        sent = await tg_bot.send_message(**send_kwargs)
-    except Exception:
-        if reply_to_platform_message_id:
-            send_kwargs.pop("reply_to_message_id", None)
-            sent = await tg_bot.send_message(**send_kwargs)
-        else:
-            raise
-    return str(sent.message_id)
 
 async def edit_discord_relay_copy(ch, message_id_platform, header, body,
                                   message_db_id=None, chat=None, embeds=None,
@@ -336,7 +348,11 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body,
     rebuilt here or the edit silently strips them; ``message_db_id``/``chat``
     are what makes that possible. A webhook copy needs it most — it cannot
     carry a native reply reference and holds a markdown link instead — but a
-    plain copy carries the forward line inline just the same."""
+    plain copy carries the forward line inline just the same.
+
+    A copy that took several messages is rewritten as several: the first
+    with the start of the new text, its continuations with the rest, new
+    ones sent and unneeded ones deleted (`message_relay.sync_copy_parts`)."""
     try:
         m = await ch.fetch_message(int(message_id_platform))
     except Exception as e:
@@ -351,11 +367,12 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body,
                 content_body = message_relay.build_discord_webhook_relay_body(
                     message_db_id, chat, get_chat_lang(chat["chat_id"]), body
                 )
+            pieces = ([_untrusted_spoiler(content_body)] if untrusted else
+                      message_relay.split_discord_content("", content_body))
             try:
                 await webhook.edit_message(
                     m.id,
-                    content=(_untrusted_spoiler(content_body) if untrusted else
-                             clip_text(content_body, DISCORD_MSG_LIMIT)) or "​",
+                    content=pieces[0] or "​",
                     allowed_mentions=(discord.AllowedMentions.none() if untrusted
                                       else RELAY_ALLOWED_MENTIONS),
                     **({"embeds": embeds} if embeds is not None else {}),
@@ -363,6 +380,24 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body,
             except Exception as e:
                 logger.warning("Relay webhook edit failed (channel=%s, message=%s): %s",
                                getattr(ch, "id", None), message_id_platform, e)
+                return
+            if message_db_id is not None and chat is not None and not untrusted:
+                username = m.author.display_name if m.author else None
+                avatar = str(m.author.display_avatar.url) if m.author else None
+
+                async def send_part(text):
+                    """Send a continuation under the copy's own webhook name."""
+                    sent = await webhook.send(text, username=username, avatar_url=avatar,
+                                              allowed_mentions=RELAY_ALLOWED_MENTIONS, wait=True)
+                    return sent.id
+
+                await message_relay.sync_copy_parts(
+                    message_db_id, chat, pieces[1:],
+                    edit_part=lambda part_id, text: webhook.edit_message(
+                        int(part_id), content=text, allowed_mentions=RELAY_ALLOWED_MENTIONS),
+                    send_part=send_part,
+                    delete_part=lambda part_id: webhook.delete_message(int(part_id)),
+                )
         return
 
     body_text = body
@@ -371,10 +406,11 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body,
             message_db_id, chat, get_chat_lang(chat["chat_id"]))
         if prefix_lines:
             body_text = "\n".join(prefix_lines + [body])
+    pieces = ([_untrusted_spoiler(f"{header}\n{body_text}".strip())] if untrusted
+              else message_relay.split_discord_content(header, body_text))
     try:
         await m.edit(
-            content=(_untrusted_spoiler(f"{header}\n{body_text}".strip()) if untrusted
-                     else clip_text(f"{header}\n{body_text}".strip(), DISCORD_MSG_LIMIT)),
+            content=pieces[0],
             allowed_mentions=(discord.AllowedMentions.none() if untrusted
                               else RELAY_ALLOWED_MENTIONS),
             suppress=untrusted,
@@ -383,6 +419,28 @@ async def edit_discord_relay_copy(ch, message_id_platform, header, body,
     except Exception as e:
         logger.warning("Relay edit failed (channel=%s, message=%s): %s",
                        getattr(ch, "id", None), message_id_platform, e)
+        return
+    if message_db_id is not None and chat is not None and not untrusted:
+
+        async def edit_part(part_id, text):
+            """Rewrite one continuation."""
+            part = await ch.fetch_message(int(part_id))
+            await part.edit(content=text, allowed_mentions=RELAY_ALLOWED_MENTIONS)
+
+        async def send_part(text):
+            """Send a continuation the longer edit needs."""
+            sent = await ch.send(text, allowed_mentions=RELAY_ALLOWED_MENTIONS)
+            return sent.id
+
+        async def delete_part(part_id):
+            """Delete a continuation the shorter edit no longer needs."""
+            part = await ch.fetch_message(int(part_id))
+            await part.delete()
+
+        await message_relay.sync_copy_parts(
+            message_db_id, chat, pieces[1:],
+            edit_part=edit_part, send_part=send_part, delete_part=delete_part,
+        )
 
 async def send_bridge_mention(bridge_id, origin_platform, origin_chat_id, target_uid,
                               sender_name, place_name, messenger_name, avatar_url=None):
@@ -516,7 +574,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
         texts = _split_attachment_texts(forward_text or "", forward_attachments)
         discord_texts = list(texts)
 
-    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False, embeds=None):
+    async def send_to_chat(chat, *, header, body_plain, body_discord, body_telegram_html, reply_line, reply_link_line=None, reply_to_platform_message_id=None, sender_name=None, place_name=None, messenger_name=None, avatar_url=None, is_bot_sender=False, embeds=None, prefer_plain=False):
         """Per-target delivery callback handed to relay_message: routes to the
         Discord or Telegram deliverer by the target chat's platform."""
         if chat["platform"] == "discord":
@@ -526,7 +584,7 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
                 reply_to_platform_message_id=reply_to_platform_message_id,
                 sender_name=sender_name, place_name=place_name,
                 messenger_name=messenger_name, avatar_url=avatar_url,
-                is_bot_sender=is_bot_sender, embeds=embeds,
+                is_bot_sender=is_bot_sender, embeds=embeds, prefer_plain=prefer_plain,
             )
 
         if chat["platform"] == "telegram":
@@ -546,12 +604,12 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             )
 
     if system_event_key:
-        origin_lang = get_chat_lang(origin_chat_id)
-        event_text = localized_discord_system_event(
-            sender_name,
-            system_event_key,
-            origin_lang,
-        )
+        def render_event(chat, lang):
+            """The event's sentence in one target's language."""
+            sentence = localized_discord_system_event(sender_name, system_event_key, lang)
+            return {"text": sentence, "discord": sentence,
+                    "telegram_html": discord_to_telegram_html(sentence)}
+
         await message_relay.relay_message(
             bridge_id=bridge_id,
             origin_platform="discord",
@@ -561,12 +619,14 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             messenger_name="Discord",
             place_name=place_name,
             sender_name=sender_name,
-            text=event_text,
-            discord_text=event_text,
-            telegram_html=discord_to_telegram_html(event_text),
-            reply_to_msg_db_id=None,
+            text=localized_discord_system_event(
+                sender_name, system_event_key, get_chat_lang(origin_chat_id)),
+            reply_to_msg_db_id=_pinned_message_db_id(message, origin_chat_id)
+            if system_event_key == "pinned_message" else None,
             send_to_chat_func=send_to_chat,
             avatar_url=avatar_url,
+            body_renderer=render_event,
+            system_event=True,
         )
         return
 
@@ -596,6 +656,27 @@ async def _relay_verified_discord_message(message: discord.Message, bridge_id, s
             is_bot_sender=is_bot_sender,
             avatar_url=avatar_url,
         )
+
+def _pinned_message_db_id(message, origin_chat_id):
+    """The relayed message a Discord pin notice points at — its own original
+    in this channel, or one of the bridge's copies here — so the relayed
+    notice can reply to it in every chat. None when the bridge never relayed
+    the pinned message."""
+    reference = getattr(message, "reference", None)
+    pinned_id = getattr(reference, "message_id", None)
+    if not pinned_id:
+        return None
+    row = db.cur.execute(
+        "SELECT message_id FROM message_copies WHERE platform='discord' AND chat_id=?"
+        " AND message_id_platform=?", (origin_chat_id, str(pinned_id))
+    ).fetchone()
+    if row:
+        return row["message_id"]
+    row = db.cur.execute(
+        "SELECT id FROM messages WHERE origin_platform='discord' AND origin_chat_id=?"
+        " AND origin_message_id=? ORDER BY id DESC LIMIT 1", (origin_chat_id, str(pinned_id))
+    ).fetchone()
+    return row["id"] if row else None
 
 async def _relay_pending_discord_first_message(pend_row):
     """Relay the message a user sent *before* consenting, once they consent.
@@ -737,19 +818,17 @@ async def process_discord_message_edit(*, guild, channel, message_id, author_dis
                     discord_text if discord_text is not None else text,
                     message_db_id=row["id"], chat=c, embeds=discord_embeds)
             elif c["platform"] == "telegram":
-                from telegram_bot import bot as tg_bot
-                chat_id, _ = c["chat_id"].split(":")
+                from telegram_bot.client import edit_relay_texts
+
                 ts_lang = get_chat_lang(c["chat_id"])
                 body_html, body_plain = message_relay.prefix_relay_edit_body(
                     row["id"], c, ts_lang,
                     convert_discord_timestamps(text_html, ts_lang),
                     convert_discord_timestamps(telegram_text, ts_lang),
                 )
-                await tg_bot.edit_message_text(
-                    chat_id=int(chat_id),
-                    message_id=int(c["message_id_platform"]),
-                    text=build_telegram_text(header, body_html, body_plain),
-                    parse_mode="HTML",
+                await edit_relay_texts(
+                    c["chat_id"], row["id"], c, c["message_id_platform"],
+                    message_relay.build_telegram_texts(header, body_html, body_plain),
                     **message_relay.relay_edit_link_preview_kwargs(
                         row["id"], c, ts_lang, body_html),
                 )
@@ -839,10 +918,59 @@ async def handle_delete_of_copy(platform, platform_message_id):
     if row:
         await delete_all_copies_and_origin(row["message_id"])
 
-async def delete_all_copies_and_origin(msg_id):
+_TELEGRAM_SERVICE_SENDERS = {"777000", "1087968824", "136817688"}
+"""Telegram's own accounts a group message can come from: the service
+notifications, an administrator posting anonymously, and a channel posting
+in its group. All three speak for whoever runs the group."""
+
+async def _telegram_origin_protected(chat_key, sender_id):
+    """Whether a Telegram original must survive the deletion of its copy.
+
+    Moderation of a copy elsewhere reaches the original in Telegram too, but
+    not the messages of the people who run that group: its owner and its
+    Telegram administrators, the bot's own administrators of the chat and
+    Bot Admins, and whatever was posted anonymously or as a channel. When the
+    bot cannot tell — no sender recorded, the membership not readable — the
+    message is kept."""
+    from utils import is_admin, is_chat_admin
+    from telegram_bot import bot as tg_bot
+
+    sender_id = str(sender_id or "")
+    if not sender_id.isdigit() or sender_id in _TELEGRAM_SERVICE_SENDERS:
+        return True
+    if is_admin("telegram", sender_id) or is_chat_admin("telegram", chat_key, sender_id):
+        return True
+    try:
+        member = await tg_bot.get_chat_member(int(chat_key.split(":")[0]), int(sender_id))
+    except Exception:
+        return True
+    return member.status in ("creator", "administrator")
+
+async def _delete_telegram_origin(msg):
+    """Delete a Telegram original — every part of an album — unless its
+    author is one `_telegram_origin_protected` keeps."""
+    from telegram_bot import bot as tg_bot
+
+    if await _telegram_origin_protected(msg["origin_chat_id"], msg["origin_sender_id"]):
+        return
+    group = int(msg["origin_chat_id"].split(":")[0])
+    ids = [row["message_id_platform"] for row in db.cur.execute(
+        "SELECT message_id_platform FROM media_group_members WHERE message_id=?", (msg["id"],))]
+    for message_id in ids or [msg["origin_message_id"]]:
+        try:
+            await tg_bot.delete_message(group, int(message_id))
+        except Exception:
+            pass
+
+async def delete_all_copies_and_origin(msg_id, *, origin_deleted=False):
     """Delete a relayed message everywhere: every platform copy, the origin
     message itself, the GALLERY re-upload (so handed-out CDN links die too),
-    and finally the database rows."""
+    and finally the database rows.
+
+    A Telegram original goes too, unless its author runs that group
+    (`_delete_telegram_origin`). `origin_deleted` is for the caller that
+    knows the original is already gone — the deletion check — and spares
+    asking Telegram about it."""
     msg = db.cur.execute(
         "SELECT * FROM messages WHERE id=?",
         (msg_id,)
@@ -892,6 +1020,9 @@ async def delete_all_copies_and_origin(msg_id):
     elif msg["origin_platform"] == "inbox":
         from inbox import delete_inbox_message
         await delete_inbox_message(msg["origin_chat_id"], msg["origin_message_id"])
+
+    elif msg["origin_platform"] == "telegram" and not origin_deleted:
+        await _delete_telegram_origin(msg)
 
     from discord_bot.feeds import drop_gallery_upload
     await drop_gallery_upload(msg_id)

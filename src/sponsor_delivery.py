@@ -157,10 +157,14 @@ async def drain_sponsor_copies(max_copies=200):
                     db.conn.commit()
                     continue
                 with db._db_lock:
-                    db.cur.execute(
-                        "INSERT INTO message_copies (message_id,platform,chat_id,message_id_platform,kind)"
-                        " VALUES (?,?,?,?,?)", (row["message_id"], row["platform"], row["chat_id"], sent, row["kind"]),
-                    )
+                    if row["kind"] == "main":
+                        from message_relay import record_copy
+                        record_copy(row["message_id"], chat, sent)
+                    else:
+                        db.cur.execute(
+                            "INSERT INTO message_copies (message_id,platform,chat_id,message_id_platform,kind)"
+                            " VALUES (?,?,?,?,?)", (row["message_id"], row["platform"], row["chat_id"], sent, row["kind"]),
+                        )
                     db.cur.execute("DELETE FROM sponsor_relay_queue WHERE id=?", (row["id"],))
                     db.conn.commit()
 

@@ -21,6 +21,60 @@ from utils import get_next_status_text, get_chat_lang, localized_deadtopic, DEFA
 
 logger = logging.getLogger("bridge.discord")
 
+DEADTOPIC_DEFAULT_DAYS = 6
+
+def thread_closed_by_hand(*, locked, archived, archived_at, window_minutes, last_activity):
+    """Whether a Discord thread was closed by a person rather than by Discord.
+
+    A lock is always a person's. An archive alone may be either: Discord
+    archives a thread by itself once `window_minutes` have passed without a
+    message, and a person may archive one at any moment. So an archive that
+    came more than an hour before the window could have run out since the
+    last message (`last_activity`) was a person's; anything later is taken
+    for Discord's own. Both the keep-alive and the inbox go by it: neither
+    may reopen a thread somebody closed on purpose."""
+    if locked:
+        return True
+    if not archived or archived_at is None or last_activity is None:
+        return False
+    window = int(window_minutes or 10080) * 60
+    return (archived_at - last_activity).total_seconds() < window - 3600
+
+def thread_last_activity(thread):
+    """When the last message in a thread was sent — read off the id of that
+    message, so a phantom the keep-alive deleted still counts, as it does
+    for Discord's own archive timer."""
+    return discord.utils.snowflake_time(int(thread.last_message_id or thread.id))
+
+def discord_thread_closed_by_hand(thread):
+    """`thread_closed_by_hand` for a discord.Thread."""
+    return thread_closed_by_hand(
+        locked=bool(getattr(thread, "locked", False)),
+        archived=bool(getattr(thread, "archived", False)),
+        archived_at=getattr(thread, "archive_timestamp", None),
+        window_minutes=getattr(thread, "auto_archive_duration", None),
+        last_activity=thread_last_activity(thread),
+    )
+
+def bridged_thread_keepalive_due(thread, now):
+    """Whether a bridged thread with no `/deadtopic` row of its own wants its
+    phantom message tonight.
+
+    One that Discord has already archived is restored. One still open gets
+    the phantom when Discord would archive it before the next nightly pass —
+    which, for the usual seven-day window, is after six quiet days, what
+    `/deadtopic` itself does. A window shorter than three days cannot be
+    beaten by a nightly pass at all, so such a thread is only restored once
+    archived. A thread a person locked or archived is left as they left it."""
+    if discord_thread_closed_by_hand(thread):
+        return False
+    if thread.archived:
+        return True
+    window = int(thread.auto_archive_duration or 10080) * 60
+    if window < 3 * 86400:
+        return False
+    return (now - thread_last_activity(thread)).total_seconds() >= window - 86400
+
 class DiscordBot(discord.Client):
     """The Discord half of the bridge.
 
@@ -220,15 +274,9 @@ class DiscordBot(discord.Client):
             await asyncio.sleep(60)
 
     async def deadtopic_loop(self):
-        """At every 00:00 UTC, keep /deadtopic chats alive: once a chat's own
-        window has passed since the last message (or the bot's own last
-        phantom), send a phantom message and delete it right away. Sleeping
-        until the next midnight — rather than a fixed interval — makes the
-        schedule survive restarts.
-
-        The window is per chat: 6 days for the ones `/deadtopic` enables, 3
-        for inbox conversation threads, which register themselves and cannot
-        afford to be archived while somebody waits for an answer."""
+        """Run `deadtopic_pass` at every 00:00 UTC. Sleeping until the next
+        midnight — rather than a fixed interval — makes the schedule survive
+        restarts."""
         await self.wait_until_ready()
         while not self.is_closed():
             now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -239,58 +287,111 @@ class DiscordBot(discord.Client):
             await asyncio.sleep(sleep_seconds)
 
             try:
-                now_utc = datetime.datetime.now(datetime.timezone.utc)
-                now_ts = int(time.time())
-                today_str = now_utc.strftime("%Y-%m-%d")
-                rows = db.cur.execute("SELECT * FROM deadtopic_chats").fetchall()
-
-                for r in rows:
-                    try:
-                        chat_id = r["chat_id"]
-
-                        bot_last_ts = r["bot_last_sent_ts"] or 0
-                        if bot_last_ts > 0:
-                            last_sent_day = datetime.datetime.fromtimestamp(
-                                bot_last_ts, tz=datetime.timezone.utc
-                            ).strftime("%Y-%m-%d")
-                            if last_sent_day == today_str:
-                                continue
-
-                        last_msg_ts = r["last_message_ts"] or 0
-                        ref_ts = max(last_msg_ts, bot_last_ts)
-
-                        if now_ts - ref_ts < (r["days"] or 6) * 86400:
-                            continue
-
-                        _, channel_id_str = chat_id.split(":")
-                        channel = self.get_channel(int(channel_id_str))
-                        if not channel:
-                            try:
-                                channel = await self.fetch_channel(int(channel_id_str))
-                            except Exception:
-                                continue
-
-                        lang = get_chat_lang(chat_id) or "en"
-                        phantom_text = localized_deadtopic("phantom_message", lang)
-
-                        sent = await channel.send(phantom_text)
-                        await asyncio.sleep(1)
-                        try:
-                            await sent.delete()
-                        except Exception:
-                            pass
-
-                        db.cur.execute(
-                            "UPDATE deadtopic_chats SET bot_last_sent_ts=? WHERE chat_id=?",
-                            (now_ts, chat_id)
-                        )
-                        db.conn.commit()
-
-                    except Exception as e:
-                        print(f"deadtopic_loop: error for {r['chat_id']}: {e}")
-
+                await self.deadtopic_pass()
             except Exception as e:
                 print(f"deadtopic_loop error: {e}")
+
+    async def _resolve_deadtopic_channel(self, chat_id):
+        """The channel or thread behind a ``<guild>:<channel>`` key — from the
+        cache, or asked for: an archived thread is no longer cached."""
+        guild_part, _, channel_part = str(chat_id).partition(":")
+        if not (guild_part.isdigit() and channel_part.isdigit()):
+            return None
+        channel = self.get_channel(int(channel_part))
+        if channel is None:
+            try:
+                channel = await self.fetch_channel(int(channel_part))
+            except Exception:
+                return None
+        return channel
+
+    async def _send_phantom(self, chat_id, channel):
+        """Send the phantom message and delete it at once. Sending into a
+        thread Discord archived is what unarchives it."""
+        lang = get_chat_lang(chat_id) or "en"
+        sent = await channel.send(localized_deadtopic("phantom_message", lang))
+        await asyncio.sleep(1)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+
+    async def deadtopic_pass(self):
+        """Keep threads and forum posts from staying archived for silence.
+
+        Two kinds of chat are looked after. The ones with a `deadtopic_chats`
+        row follow it: once the row's own window has passed since the last
+        message (or the bot's own last phantom), a phantom message is sent
+        and deleted right away — 6 days for the ones `/deadtopic enable`
+        sets, 3 for inbox conversation threads, which register themselves
+        and cannot afford to be archived while somebody waits for an answer.
+        Every other Discord thread and forum post that belongs to a bridge
+        is kept alive by default (`bridged_thread_keepalive_due`): restored
+        when Discord has archived it, and given its phantom before Discord
+        would. `/deadtopic disable` writes `disabled=1`, which takes a chat
+        out of both.
+
+        Neither kind ever reopens a thread a person locked or archived by
+        hand (`discord_thread_closed_by_hand`) — keeping a conversation
+        alive is not overruling the people who closed it."""
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_ts = int(time.time())
+        today_str = now_utc.strftime("%Y-%m-%d")
+        rows = db.cur.execute("SELECT * FROM deadtopic_chats").fetchall()
+
+        for r in rows:
+            try:
+                chat_id = r["chat_id"]
+                if r["disabled"]:
+                    continue
+
+                bot_last_ts = r["bot_last_sent_ts"] or 0
+                if bot_last_ts > 0:
+                    last_sent_day = datetime.datetime.fromtimestamp(
+                        bot_last_ts, tz=datetime.timezone.utc
+                    ).strftime("%Y-%m-%d")
+                    if last_sent_day == today_str:
+                        continue
+
+                last_msg_ts = r["last_message_ts"] or 0
+                ref_ts = max(last_msg_ts, bot_last_ts)
+
+                if now_ts - ref_ts < (r["days"] or DEADTOPIC_DEFAULT_DAYS) * 86400:
+                    continue
+
+                channel = await self._resolve_deadtopic_channel(chat_id)
+                if channel is None:
+                    continue
+                if isinstance(channel, discord.Thread) and discord_thread_closed_by_hand(channel):
+                    continue
+
+                await self._send_phantom(chat_id, channel)
+
+                db.cur.execute(
+                    "UPDATE deadtopic_chats SET bot_last_sent_ts=? WHERE chat_id=?",
+                    (now_ts, chat_id)
+                )
+                db.conn.commit()
+
+            except Exception as e:
+                print(f"deadtopic_loop: error for {r['chat_id']}: {e}")
+
+        configured = {r["chat_id"] for r in rows}
+        bridged = db.cur.execute(
+            "SELECT chat_id FROM chats WHERE platform='discord'"
+        ).fetchall()
+        for row in bridged:
+            chat_id = row["chat_id"]
+            if chat_id in configured:
+                continue
+            try:
+                channel = await self._resolve_deadtopic_channel(chat_id)
+                if not isinstance(channel, discord.Thread):
+                    continue
+                if bridged_thread_keepalive_due(channel, now_utc):
+                    await self._send_phantom(chat_id, channel)
+            except Exception as e:
+                print(f"deadtopic_loop: error for {chat_id}: {e}")
 
 bot = DiscordBot()
 

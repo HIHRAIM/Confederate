@@ -521,7 +521,7 @@
   },
   "help.cmd_deadtopic": {
     "status": "unverified",
-    "text": "/deadtopic enable|disable — once every 6 days without activity, send a phantom message to keep the topic alive"
+    "text": "/deadtopic enable|disable — once every 6 days without activity, send a phantom message to keep the topic alive. Bridged threads and forum posts are kept alive and restored without it; disable turns that off for this one"
   },
   "help.cmd_force_leave": {
     "status": "unverified",
@@ -1619,6 +1619,86 @@
   "sticker": {
     "status": "unverified",
     "text": "[Sticker]"
+  },
+  "tg_event_added": {
+    "status": "unverified",
+    "text": "{name} added {members}"
+  },
+  "tg_event_boosted": {
+    "status": "unverified",
+    "text": "{name} boosted the group"
+  },
+  "tg_event_joined": {
+    "status": "unverified",
+    "text": "{name} joined the group"
+  },
+  "tg_event_left": {
+    "status": "unverified",
+    "text": "{name} left the group"
+  },
+  "tg_event_photo": {
+    "status": "unverified",
+    "text": "{name} changed the group photo"
+  },
+  "tg_event_photo_removed": {
+    "status": "unverified",
+    "text": "{name} removed the group photo"
+  },
+  "tg_event_pinned": {
+    "status": "unverified",
+    "text": "{name} pinned a message"
+  },
+  "tg_event_removed": {
+    "status": "unverified",
+    "text": "{name} removed {member}"
+  },
+  "tg_event_title": {
+    "status": "unverified",
+    "text": "{name} renamed the group to “{title}”"
+  },
+  "tg_event_topic_closed": {
+    "status": "unverified",
+    "text": "{name} closed the topic"
+  },
+  "tg_event_topic_created": {
+    "status": "unverified",
+    "text": "{name} created the topic “{topic}”"
+  },
+  "tg_event_topic_icon": {
+    "status": "unverified",
+    "text": "{name} changed the topic icon"
+  },
+  "tg_event_topic_icon_removed": {
+    "status": "unverified",
+    "text": "{name} removed the topic icon"
+  },
+  "tg_event_topic_icon_to": {
+    "status": "unverified",
+    "text": "{name} changed the topic icon to {icon}"
+  },
+  "tg_event_topic_renamed": {
+    "status": "unverified",
+    "text": "{name} renamed the topic to “{topic}”"
+  },
+  "tg_event_topic_reopened": {
+    "status": "unverified",
+    "text": "{name} reopened the topic"
+  },
+  "tg_event_video_chat_ended": {
+    "status": "unverified",
+    "text": "{name} ended the video chat"
+  },
+  "tg_event_video_chat_started": {
+    "status": "unverified",
+    "text": "{name} started a video chat"
+  },
+  "tg_poll": {
+    "status": "unverified",
+    "text": "📊 Poll:"
+  },
+  "tg_quiz": {
+    "status": "unverified",
+    "text": "📊 Quiz:"
   },
   "tgfeed_already_attached": {
     "status": "unverified",
